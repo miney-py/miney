@@ -5,13 +5,13 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="miney",
-    version="0.1",
+    version="0.1.1",
     author="Robert Lieback",
     author_email="robertlieback@zetabyte.de",
     description="The python interface to minetest",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/zetabytes/miney",
+    url="https://github.com/miney-py/miney",
     packages=["miney"],
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -22,4 +22,5 @@ setuptools.setup(
         "Operating System :: OS Independent",
         "Topic :: Games/Entertainment"
     ],
+    python_requires='>=3.6',
 )

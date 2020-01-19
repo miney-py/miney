@@ -2,13 +2,13 @@
 
 Miney connects to the apisocket mod on a minetest server over network or internet.
 
-## Status: Alpha - Prepairing first official release
+## Status: Beta - Prepairing first official release
 
 The sourcecode is online for contribution and external services like appveyor.
 
 ## Requirement
 
-* Python 3.5+ (tested on 3.7)
+* Python 3.6+ (tested on 3.8)
 * A minetest-server with [mineysocket](https://github.com/Administerium/mineysocket) mod
 
 ## Todos
