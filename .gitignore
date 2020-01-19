@@ -90,6 +90,10 @@ _templates
 # Pycharm
 .idea
 
+# Python
+dist
+miney.egg-info
+
 # pyminetest
 minetest_configuration.json
 examples/minetest_configuration.json
