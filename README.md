@@ -1,15 +1,21 @@
 # miney - The python interface to minetest
 
-Miney connects to the apisocket mod on a minetest server over network or internet.
+Miney is an Python API to Minetest.
 
-## Status: Beta - Prepairing first official release
+Miney connects locally, over network or internet to the [mineysocket](https://github.com/miney-py/mineysocket) mod of minetest.
 
-The sourcecode is online for contribution and external services like appveyor.
+## Documentation
+
+https://miney.readthedocs.io/en/latest/
+
+## Status
+
+Beta
 
 ## Requirement
 
 * Python 3.6+ (tested on 3.8)
-* A minetest-server with [mineysocket](https://github.com/Administerium/mineysocket) mod
+* A minetest-server with [mineysocket](https://github.com/miney-py/mineysocket) mod
 
 ## Todos
 
