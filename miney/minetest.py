@@ -1,15 +1,8 @@
 import socket
 import json
+import webbrowser
 from typing import Dict
 import miney
-
-
-# TODO: Implement Secure Remote Password protocol to replace plain passwords
-# TODO: set_node with simple nodename or detailed dict with parameters
-# TODO: bulk node setter
-# TODO: vector node setter
-# TODO: backup/restore ability
-# TODO: Sending long strings to mineysocket
 
 
 class Minetest:
@@ -261,6 +254,14 @@ class Minetest:
         :return: None
         """
         self.connection.close()
+
+    def doc(self) -> None:
+        """
+        Open the documention in the webbrower. This is just a shortcut for IDLE or the python interactive console.
+
+        :return: None
+        """
+        webbrowser.open("https://miney.readthedocs.io/en/latest/")
 
     def __repr__(self):
         return '<minetest server "{}:{}">'.format(self.server, self.port)

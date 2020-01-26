@@ -37,6 +37,8 @@ $RECYCLE.BIN/
 [Ss]cripts
 pyvenv.cfg
 .venv
+env
+venv
 pip-selfcheck.json
 
 ### macOS template
@@ -91,6 +93,7 @@ _templates
 .idea
 
 # Python
+build
 dist
 miney.egg-info
 

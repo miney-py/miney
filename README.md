@@ -10,15 +10,9 @@ https://miney.readthedocs.io/en/latest/
 
 ## Status
 
-Beta
+Beta, the current todo list is in the [wiki](https://github.com/miney-py/miney/wiki).
 
 ## Requirement
 
 * Python 3.6+ (tested on 3.8)
 * A minetest-server with [mineysocket](https://github.com/miney-py/mineysocket) mod
-
-## Todos
-
-- [ ] Documentation: Installation instructions for different OS
-- [ ] Documentation: Preparations for first run
-- [ ] Minetest: Precompiled minetest distribution bundled with luasocket and cjson for windows
