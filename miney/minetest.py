@@ -255,14 +255,6 @@ class Minetest:
         """
         self.connection.close()
 
-    def doc(self) -> None:
-        """
-        Open the documention in the webbrower. This is just a shortcut for IDLE or the python interactive console.
-
-        :return: None
-        """
-        webbrowser.open("https://miney.readthedocs.io/en/latest/")
-
     def __repr__(self):
         return '<minetest server "{}:{}">'.format(self.server, self.port)
 
