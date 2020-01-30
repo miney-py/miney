@@ -1,6 +1,5 @@
 import socket
 import json
-import webbrowser
 from typing import Dict
 import miney
 
@@ -9,7 +8,7 @@ class Minetest:
     """__init__([server, playername, password, [port]])
     The Minetest server object. All other object are created from here. By creating an object you connect to Minetest.
 
-    **Parameters aren't required, if you run minetest on the same computer.**
+    **Parameters aren't required, if you run miney and minetest on the same computer.**
 
     *If you connect over LAN or Internet to a Minetest server with installed mineysocket, you have to provide a valid
     playername with a password:*
@@ -26,7 +25,7 @@ class Minetest:
     :param str password: Your password
     :param int port: The apisocket port, defaults to 29999
     """
-    def __init__(self, server: str = "127.0.0.1", playername: str = "Player", password: str = "", port: int = 29999):
+    def __init__(self, server: str = "127.0.0.1", playername: str = "Miney", password: str = "", port: int = 29999):
         """
         Connect to the minetest server.
 
@@ -42,12 +41,31 @@ class Minetest:
         self.event_queue = []  # List for collected but unprocessed events
         self.result_queue = {}  # List for unprocessed results
 
+        self._authenticate()
+
         # objects representing local properties
+        self._lua: miney.lua.Lua = miney.Lua(self)
         self._chat: miney.chat.Chat = miney.Chat(self)
         self._node: miney.node.Node = miney.Node(self)
-        self._lua: miney.lua.Lua = miney.Lua(self)
 
-        self._authenticate()
+        self.player = PlayerIterable(self, self.players)
+        """Get a single players object.
+        
+        Example, that makes a player 5 times faster::
+            
+            import miney
+            mt = miney.Minetest()
+            
+            mt.player.MyPlayername.speed = 5
+            
+        Example with a playername from a variable::
+        
+            import miney
+            mt = miney.Minetest()
+            player = "MyPlayername"
+            mt.player[player].speed = 5
+        
+        """
 
     def _authenticate(self):
         """
@@ -198,15 +216,6 @@ class Minetest:
         data = [] if len(data) == 0 else data
         return data
 
-    def player(self, name: str):
-        """
-        Get a single players object.
-
-        :param name: Name of the player
-        :return: player object
-        """
-        return miney.Player(self, name)
-
     @property
     def node(self):
         """
@@ -260,3 +269,31 @@ class Minetest:
 
     def __delete__(self, instance):
         self.connection.close()
+
+
+class PlayerIterable:
+    """Player, implemented as iterable for easy autocomplete in the interactive shell"""
+    def __init__(self, minetest: Minetest, online_players=None):
+        if online_players:
+            self.online_players = online_players
+            self.mt = minetest
+
+            # update list
+            for player in online_players:
+                self.__setattr__(player, miney.Player(minetest, player))
+
+    def __iter__(self):
+        player_object = []
+        for player in self.online_players:
+            player_object.append(miney.Player(self.mt, player))
+
+        return iter(player_object)
+
+    def __getitem__(self, item_key):
+        if item_key in self.online_players:
+            return self.__getattribute__(item_key)
+        else:
+            raise IndexError("unknown node type")
+
+    def __len__(self):
+        return len(self.online_players)

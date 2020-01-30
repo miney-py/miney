@@ -1,4 +1,11 @@
-# Minetest exeptions
+# Minetest exceptions
+class MinetestRunError(Exception):
+    """
+    Error: minetest was not found.
+    """
+    pass
+
+
 class LuaError(Exception):
     """
     Error during Lua code execution.
