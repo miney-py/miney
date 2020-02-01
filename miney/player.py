@@ -1,7 +1,6 @@
+import json
 import miney
 
-# todo: a single look attribute (with combined horizontal/vertical) with degrees unit.
-# todo: fly
 # todo: set modes creative/survival -> Not possible without installed minetest mods
 
 
@@ -28,6 +27,24 @@ class Player:
         else:
             raise miney.PlayerInvalid("There is no player with that name")
 
+        self.inventory: miney.Inventory = miney.Inventory(minetest, self)
+        """Manipulate player's inventory.
+        
+        :Example to add 99 dirt to player "IloveDirt"'s inventory:
+        
+            >>> import miney
+            >>> mt = miney.Minetest()
+            >>> mt.player.IloveDirt.inventory.add(mt.node.types.default.dirt, 99)
+            
+            
+        :Example to remove 99 dirt from player "IhateDirt"'s inventory::
+        
+            >>> import miney
+            >>> mt = miney.Minetest()
+            >>> mt.player.IhateDirt.inventory.remove(mt.node.types.default.dirt, 99)
+            
+        """
+
     def __repr__(self):
         return '<minetest player "{}">'.format(self.name)
 
@@ -36,7 +53,7 @@ class Player:
         """
         Returns the online status of this player.
 
-        :return: True/False
+        :return: True or False
         """
         # TODO: Better check without provoke a lua error
         try:
@@ -124,7 +141,43 @@ class Player:
             "return minetest.get_player_by_name('{}'):set_physics_override({{gravity = {}}})".format(self.name, value))
 
     @property
-    def look_vertical_rad(self):
+    def look(self) -> dict:
+        """
+        Get and set look in radians. Horizontal angle is counter-clockwise from the +z direction. Vertical angle ranges
+        between -pi/2 (~-1.563) and pi/2 (~1.563), which are straight up and down respectively.
+
+        :return: A dict like {'v': 0.34, 'h': 2.50} where h is horizontal and v = vertical
+        """
+
+        return self.mt.lua.run(
+            f"return {{"
+            f"h=minetest.get_player_by_name('{self.name}'):get_look_horizontal(), "
+            f"v=minetest.get_player_by_name('{self.name}'):get_look_vertical()"
+            f"}}"
+        )
+
+    @look.setter
+    def look(self, value: dict):
+        if type(value) is dict:
+            if "v" in value and "h" in value:
+                if type(value["v"]) in [int, float] and type(value["h"]) in [int, float]:
+                    self.mt.lua.run(
+                        f"""
+                        local player = minetest.get_player_by_name('{self.name}')
+                        player:set_look_horizontal({value["h"]})
+                        player:set_look_vertical({value["v"]})
+                        return true
+                        """
+                    )
+                else:
+                    raise TypeError("values for v or h aren't float or int")
+            else:
+                raise TypeError("There isn't the required v or h key in the dict")
+        else:
+            raise TypeError("The value isn't a dict, as required. Use a dict in the form: {\"h\": 1.1, \"v\": 1.1}")
+
+    @property
+    def look_vertical(self):
         """
         Get and set pitch in radians. Angle ranges between -pi/2 (~-1.563) and pi/2 (~1.563), which are straight
         up and down respectively.
@@ -133,12 +186,12 @@ class Player:
         """
         return self.mt.lua.run("return minetest.get_player_by_name('{}'):get_look_vertical()".format(self.name))
 
-    @look_vertical_rad.setter
-    def look_vertical_rad(self, value):
+    @look_vertical.setter
+    def look_vertical(self, value):
         self.mt.lua.run("return minetest.get_player_by_name('{}'):set_look_vertical({})".format(self.name, value))
 
     @property
-    def look_horizontal_rad(self):
+    def look_horizontal(self):
         """
         Get and set yaw in radians. Angle is counter-clockwise from the +z direction.
 
@@ -146,6 +199,52 @@ class Player:
         """
         return self.mt.lua.run("return minetest.get_player_by_name('{}'):get_look_horizontal()".format(self.name))
 
-    @look_horizontal_rad.setter
-    def look_horizontal_rad(self, value):
+    @look_horizontal.setter
+    def look_horizontal(self, value):
         self.mt.lua.run("return minetest.get_player_by_name('{}'):set_look_horizontal({})".format(self.name, value))
+
+    @property
+    def hp(self):
+        """
+        Get and set the number of hitpoints (2 * number of hearts)
+
+        :return:
+        """
+        return self.mt.lua.run(f"return minetest.get_player_by_name('{self.name}'):get_hp()")
+
+    @hp.setter
+    def hp(self, value):
+        self.mt.lua.run(
+            f"return minetest.get_player_by_name('{self.name}'):set_hp({value}, {{type=\"set_hp\"}})")
+
+    @property
+    def fly(self) -> bool:
+        """
+        Get and set the priviledge to fly to this player. He still needs to press K to enable fly mode.
+
+        :return:
+        """
+        return self.mt.lua.run(
+            f"""
+            local privs = minetest.get_player_privs(\"{self.name}\")
+            if privs["fly"] then
+                return true
+            else
+                return false
+            end
+            """
+        )
+
+    @fly.setter
+    def fly(self, value: bool):
+        if value:
+            state = "true"
+        else:
+            state = "false"
+        self.mt.lua.run(
+            f"""
+            local privs = minetest.get_player_privs(\"{self.name}\")
+            privs["fly"] = {state}
+            minetest.set_player_privs(\"{self.name}\", privs)
+            """
+        )
