@@ -17,8 +17,8 @@
 
 # -- Project information -----------------------------------------------------
 
-project = 'miney'
-copyright = '2019, Robert Lieback'
+project = 'Miney'
+copyright = '2020, Robert Lieback'
 author = 'Robert Lieback'
 
 # The full version, including alpha/beta/rc tags
@@ -52,6 +52,12 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # a list of builtin themes.
 #
 html_theme = 'sphinx_rtd_theme'
+
+html_theme_options = {
+    'logo_only': False,
+}
+
+html_logo = "miney-logo.png"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

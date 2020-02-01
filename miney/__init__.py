@@ -10,6 +10,7 @@ from .player import Player
 from .chat import Chat
 from .node import Node
 from .lua import Lua
+from .inventory import Inventory
 from .exceptions import *
 
 name = "miney"
@@ -17,7 +18,7 @@ name = "miney"
 
 def run_minetest(minetest_path: str = None, world_path: str = "Miney") -> None:
     """
-    Run minetest with the miney game. Miney will look for the minetest executable in common places for itself,
+    Run minetest with the miney world. Miney will look for the minetest executable in common places for itself,
     but it's also possible to provide the path as parameter or as environment variable 'MINETEST_BIN'.
 
     :param minetest_path: Path to the minetest executable

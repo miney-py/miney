@@ -15,7 +15,7 @@ class Minetest:
 
     ::
 
-        mt = Minetest("192.168.0.2", "MyNick", "secret_password")
+        >>> mt = Minetest("192.168.0.2", "MyNick", "secret_password")
 
     Account creation is done by starting Minetest and connect to a server with a username
     and password. https://wiki.minetest.net/Getting_Started#Play_Online
@@ -46,24 +46,28 @@ class Minetest:
         # objects representing local properties
         self._lua: miney.lua.Lua = miney.Lua(self)
         self._chat: miney.chat.Chat = miney.Chat(self)
-        self._node: miney.node.Node = miney.Node(self)
+        self.node: miney.node.Node = miney.Node(self)
+        """
+        Manipulate and get information's about nodes.
+
+        :return: :class:`miney.Node`: Node manipulation functions
+        """
 
         self.player = PlayerIterable(self, self.players)
         """Get a single players object.
         
-        Example, that makes a player 5 times faster::
+        :Example, that makes a player 5 times faster:
             
-            import miney
-            mt = miney.Minetest()
+            >>> import miney
+            >>> mt = miney.Minetest()
+            >>> mt.player.MyPlayername.speed = 5
             
-            mt.player.MyPlayername.speed = 5
-            
-        Example with a playername from a variable::
+        :Example with a playername from a variable:
         
-            import miney
-            mt = miney.Minetest()
-            player = "MyPlayername"
-            mt.player[player].speed = 5
+            >>> import miney
+            >>> mt = miney.Minetest()
+            >>> player = "MyPlayername"
+            >>> mt.player[player].speed = 5
         
         """
 
@@ -100,13 +104,13 @@ class Minetest:
 
         With the optional timeout the blocking waiting time for data can be changed.
 
-        Example to receive and print all events::
+        :Example to receive and print all events:
 
-            from miney import Minetest
-            mt = Minetest()
-
-            while True:
-                print("Event received:", mt.receive())
+            >>> from miney import Minetest
+            >>> mt = Minetest()
+            >>>
+            >>> while True:
+            >>>     print("Event received:", mt.receive())
 
         :param str result_id: Wait for this result id
         :param float timeout: Block further execution until data received or timeout in seconds is over.
@@ -178,11 +182,11 @@ class Minetest:
         """
         Object with chat functions.
 
-        Example::
+        :Example:
 
-            from miney import Minetest
-            mt = Minetest()
-            mt.chat.send_to_all("My chat message")
+            >>> import miney
+            >>> mt = miney.Minetest()
+            >>> mt.chat.send_to_all("My chat message")
 
         :return class:`minetest.Chat`: chat object
         """
@@ -217,20 +221,11 @@ class Minetest:
         return data
 
     @property
-    def node(self):
-        """
-        Manipulate and get information's about nodes.
-
-        :return class:`minetest.Node`: Node manipulation functions
-        """
-        return self._node
-
-    @property
     def lua(self):
         """
         Functions to run Lua inside Minetest.
 
-        :return class:`minetest.Lua`: Lua related functions
+        :return: :class:`miney.Lua`: Lua related functions
         """
         return self._lua
 

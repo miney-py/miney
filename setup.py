@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="miney",
-    version="0.1.1",
+    version="0.1.2",
     author="Robert Lieback",
     author_email="robertlieback@zetabyte.de",
     description="The python interface to minetest",

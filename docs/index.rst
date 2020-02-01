@@ -1,9 +1,15 @@
+.. image:: miney-logo.png
+   :alt: Miney logo
+   :align: center
+   :class: miney-logo-mainpage
+
+
 Welcome to miney's documentation!
 ======================================
 
 Miney provides an interface to minetest server over network and/or internet.
 
-First goal was to have fun and to use minetest as a sandbox for python.
+First goal is to have fun and to use minetest as a sandbox for python.
 
 **Do whatever you like:**
 
@@ -24,6 +30,7 @@ Table of Contents
    objects/Chat
    objects/Player
    objects/Node
+   objects/Inventory
    Exceptions
 
 Indices and tables

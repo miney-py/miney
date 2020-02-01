@@ -86,8 +86,6 @@ Temporary Items
 
 # Sphinx
 _build
-_static
-_templates
 
 # Pycharm
 .idea

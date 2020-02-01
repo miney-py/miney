@@ -13,31 +13,34 @@ class Node:
         self.types = Types(self._node_types)
         """All available node types in the game, sorted by categories.
         
-        Example::
+        :Example:
         
-            import miney
-            mt = miney.Minetest()
+            >>> import miney
+            >>> mt = miney.Minetest()
+            >>> mt.node.types.default.dirt
             
-            mt.node.types.default.dirt
-            
-        Example to iterate over all available types::
+        :Example to iterate over all available types:
         
-            import miney
-            mt = miney.Minetest()
+        
+            >>> import miney
+            >>> mt = miney.Minetest()
+            >>> 
+            >>> for node_type in mt.node.types:
+            >>>     print(node_type)
+            default:pine_tree
+            default:dry_grass_5
+            farming:desert_sand_soil
+            ... (there should be over 400 different types)
+            >>> print(len(mt.node.types))
+            421
             
-            for node_type in mt.node.types:
-                print(node_type)
-                
-            >>> default:pine_tree
-            >>> default:dry_grass_5
-            >>> farming:desert_sand_soil
-            >>> ... (there should be over 400 different types)
-            
-            print(len(mt.node.types))
-            >>> 421
-            
+        :Example to add 99 dirt to player "IloveDirt"'s inventory:
+        
+            >>> import miney
+            >>> mt = miney.Minetest()
+            >>> mt.player.IloveDirt.inventory.add(mt.node.types.default.dirt, 99)
+        
         """
-        # todo: Node - Example to add types to player inventories
 
     def __repr__(self):
         return '<minetest node functions>'
