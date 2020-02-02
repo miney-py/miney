@@ -25,7 +25,7 @@ class Minetest:
     :param str password: Your password
     :param int port: The apisocket port, defaults to 29999
     """
-    def __init__(self, server: str = "127.0.0.1", playername: str = "Miney", password: str = "", port: int = 29999):
+    def __init__(self, server: str = "127.0.0.1", playername: str = None, password: str = "", port: int = 29999):
         """
         Connect to the minetest server.
 
@@ -34,7 +34,10 @@ class Minetest:
         """
         self.server = server
         self.port = port
-        self.playername = playername
+        if playername:
+            self.playername = playername
+        else:
+            self.playername = miney.default_playername
         self.password = password
         self.connection = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.connection.settimeout(2.0)

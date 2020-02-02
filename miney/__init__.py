@@ -13,16 +13,33 @@ from .lua import Lua
 from .inventory import Inventory
 from .exceptions import *
 
-name = "miney"
+__version__ = "0.1.3"
+default_playername = "MineyPlayer"
 
 
-def run_minetest(minetest_path: str = None, world_path: str = "Miney") -> None:
+def run_miney_game():
     """
     Run minetest with the miney world. Miney will look for the minetest executable in common places for itself,
     but it's also possible to provide the path as parameter or as environment variable 'MINETEST_BIN'.
 
+    :return: None
+    """
+    run_minetest(show_menu=False)
+
+
+def run_minetest(
+        minetest_path: str = None,
+        show_menu: bool = True,
+        world_path: str = "Miney",
+        seed: str = "746036489947438842") -> None:
+    """
+    Run minetest. Miney will look for the minetest executable in common places for itself,
+    but it's also possible to provide the path as parameter or as environment variable 'MINETEST_BIN'.
+
     :param minetest_path: Path to the minetest executable
+    :param show_menu: Start in the world or in the menu
     :param world_path: Optional world path
+    :param seed: Optional world seed
     :return: None
     """
     if not minetest_path:
@@ -41,21 +58,40 @@ def run_minetest(minetest_path: str = None, world_path: str = "Miney") -> None:
             for p in possible_paths:
                 path = os.path.join(p, exe_name)
                 if os.path.isfile(path):
-                    minetest_path = p
+                    minetest_path = os.path.join(p, exe_name)
                     break
                 else:
                     raise MinetestRunError("Minetest was not found")
-    if world_path == "miney":
+    if world_path == "Miney":
         world_path = os.path.abspath(os.path.join(minetest_path, "..", "..", "worlds", "miney"))
 
-    # todo: run_minetest - implementation for linux/macos
-    # todo: run_minetest - ensure correct world creation if folder doesn't exists
-    # todo: run_minetest - check for mineysocket
+        if not os.path.isdir(world_path):  # We have to create the default world
+            if not os.path.isdir(os.path.abspath(os.path.join(world_path, "..", "..", "worlds"))):
+                os.mkdir(os.path.abspath(os.path.join(world_path, "..", "..", "worlds")))
+            os.mkdir(world_path)
+            with open(os.path.join(world_path, "world.mt"), "w") as world_config_file:
+                world_config_file.write(
+                    "enable_damage = true\ncreative_mode = false\ngameid = minetest\nplayer_backend = sqlite3\n"
+                    "backend = sqlite3\nauth_backend = sqlite3\nload_mod_mineysocket = true\nserver_announce = false\n"
+                )
+            with open(os.path.join(world_path, "map_meta.txt"), "w") as world_meta_file:
+                world_meta_file.write(f"seed = {seed}")
 
-    subprocess.Popen(
-        f"{minetest_path} "
-        f"--go --world \"{world_path}\" --name Player --address \"\""
-    )
+    if not os.path.isdir(os.path.abspath(os.path.join(minetest_path, "..", "..", "mods", "mineysocket"))):
+        raise MinetestRunError("Mineysocket mod is not installed")
+
+    # todo: run_minetest - implementation for linux/macos
+
+    if show_menu:
+        subprocess.Popen(
+            f"{minetest_path} "
+            f"--world \"{world_path}\" --name {default_playername} --address \"\""
+        )
+    else:
+        subprocess.Popen(
+            f"{minetest_path} "
+            f"--go --world \"{world_path}\" --name {default_playername} --address \"\""
+        )
 
 
 def doc() -> None:

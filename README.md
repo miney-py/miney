@@ -1,4 +1,8 @@
-# miney - The python interface to minetest
+<p align="center">
+<img src="https://github.com/miney-py/miney/raw/master/docs/miney-logo.png">
+</p>
+
+# Miney - The python interface to minetest
 
 Miney is an Python API to Minetest.
 
