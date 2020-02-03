@@ -34,10 +34,9 @@ class Player:
         
             >>> import miney
             >>> mt = miney.Minetest()
-            >>> mt.player.IloveDirt.inventory.add(mt.node.types.default.dirt, 99)
+            >>> mt.player.IloveDirt.inventory.add(mt.node.types.default.dirt, 99)      
             
-            
-        :Example to remove 99 dirt from player "IhateDirt"'s inventory::
+        :Example to remove 99 dirt from player "IhateDirt"'s inventory:
         
             >>> import miney
             >>> mt = miney.Minetest()

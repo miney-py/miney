@@ -5,6 +5,7 @@ import os
 import platform
 import subprocess
 import webbrowser
+import socket
 from .minetest import Minetest
 from .player import Player
 from .chat import Chat
@@ -17,6 +18,31 @@ __version__ = "0.1.3"
 default_playername = "MineyPlayer"
 
 
+def is_miney_available(ip: str = "127.0.0.1", port: int = 29999, timeout: int = 3.0) -> bool:
+    """
+    Check if there is a running miney game available on an optional given host and/or port.
+
+    :param ip: Optional IP or hostname
+    :param port: Optional port
+    :param timeout: Optional timeout
+    :return: True or False
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(timeout)
+    s.connect((ip, int(port)))
+    s.sendto(b"ping\n", (ip, port))
+    try:
+        reply = s.recv(4096).decode()
+        if reply == "pong\n":
+            return True
+        else:
+            return False
+    except (socket.timeout, ConnectionResetError):
+        return False
+    finally:
+        s.close()
+
+
 def run_miney_game():
     """
     Run minetest with the miney world. Miney will look for the minetest executable in common places for itself,
@@ -24,7 +50,10 @@ def run_miney_game():
 
     :return: None
     """
-    run_minetest(show_menu=False)
+    if is_miney_available():
+        raise MinetestRunError("A miney game is already running")
+    else:
+        run_minetest(show_menu=False)
 
 
 def run_minetest(

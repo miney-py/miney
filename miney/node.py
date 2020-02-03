@@ -10,7 +10,7 @@ class Node:
         self.mt = mt
         self._node_types_cache = None
 
-        self.types = Types(self._node_types)
+        self.types = Types(self, self.node_types)
         """All available node types in the game, sorted by categories.
         
         :Example:
@@ -67,7 +67,7 @@ class Node:
         return self.mt.lua.run("return minetest.get_node({})".format(self.mt.lua.dumps(position)))
 
     @property
-    def _node_types(self) -> List:
+    def node_types(self) -> List:
         """
         Get a list of all available nodes/blocks.
 
@@ -87,9 +87,11 @@ class Node:
 
 class Types:
     """Node types, implemented as iterable for easy autocomplete in the interactive shell"""
-    def __init__(self, nodes_types=None):
+    def __init__(self, parent, nodes_types=None):
+
+        self.__parent = parent
+
         if nodes_types:
-            self.node_types = nodes_types
 
             # get type categories list
             type_categories = {}
@@ -97,7 +99,7 @@ class Types:
                 if ":" in ntype:
                     type_categories[ntype.split(":")[0]] = ntype.split(":")[0]
             for tc in dict.fromkeys(type_categories):
-                self.__setattr__(tc, Types())
+                self.__setattr__(tc, Types(parent))
 
             # values to categories
             for ntype in nodes_types:
@@ -107,13 +109,15 @@ class Types:
                     self.__setattr__(ntype, ntype)  # for 'air' and 'ignore'
 
     def __iter__(self):
-        return iter(self.node_types)
+        return iter(self.__parent.node_types)
 
     def __getitem__(self, item_key):
-        if item_key in self.node_types:
+        if item_key in self.__parent.node_types:
             return item_key
         else:
+            if type(item_key) == int:
+                return self.__parent.node_types[item_key]
             raise IndexError("unknown node type")
 
     def __len__(self):
-        return len(self.node_types)
+        return len(self.__parent.node_types)

@@ -273,8 +273,8 @@ class PlayerIterable:
     """Player, implemented as iterable for easy autocomplete in the interactive shell"""
     def __init__(self, minetest: Minetest, online_players=None):
         if online_players:
-            self.online_players = online_players
-            self.mt = minetest
+            self.__online_players = online_players
+            self.__mt = minetest
 
             # update list
             for player in online_players:
@@ -282,16 +282,18 @@ class PlayerIterable:
 
     def __iter__(self):
         player_object = []
-        for player in self.online_players:
-            player_object.append(miney.Player(self.mt, player))
+        for player in self.__online_players:
+            player_object.append(miney.Player(self.__mt, player))
 
         return iter(player_object)
 
     def __getitem__(self, item_key):
-        if item_key in self.online_players:
+        if item_key in self.__online_players:
             return self.__getattribute__(item_key)
         else:
-            raise IndexError("unknown node type")
+            if type(item_key) == int:
+                return self.__getattribute__(self.__mt.players[item_key])
+            raise IndexError("unknown player")
 
     def __len__(self):
-        return len(self.online_players)
+        return len(self.__online_players)
