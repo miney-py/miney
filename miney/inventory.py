@@ -12,7 +12,7 @@ class Inventory:
 
     def add(self, item: str, amount: int = 1) -> None:
         """
-        Add an item to an inventory. Possible items can be obtained from mt.nodes.types.
+        Add an item to an inventory. Possible items can be obtained from :attr:`~miney.Node.type`.
 
         :param item: item type
         :param amount: item amount
@@ -27,7 +27,7 @@ class Inventory:
 
     def remove(self, item: str, amount: int = 1) -> None:
         """
-        Remove an item from an inventory. Possible items can be obtained from mt.nodes.types.
+        Remove an item from an inventory. Possible items can be obtained from mt.node.type.
 
         :param item: item type
         :param amount: item amount

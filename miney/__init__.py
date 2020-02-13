@@ -1,5 +1,5 @@
 """
-miney - The python interface to minetest
+Miney is the python interface to minetest
 """
 import os
 import platform
@@ -14,13 +14,14 @@ from .lua import Lua
 from .inventory import Inventory
 from .exceptions import *
 
-__version__ = "0.1.3"
+__version__ = "0.2.0"
 default_playername = "MineyPlayer"
 
 
 def is_miney_available(ip: str = "127.0.0.1", port: int = 29999, timeout: int = 3.0) -> bool:
     """
     Check if there is a running miney game available on an optional given host and/or port.
+    This functions pings mineysocket and waits **timeout** seconds for a pong.
 
     :param ip: Optional IP or hostname
     :param port: Optional port
@@ -46,7 +47,7 @@ def is_miney_available(ip: str = "127.0.0.1", port: int = 29999, timeout: int = 
 def run_miney_game():
     """
     Run minetest with the miney world. Miney will look for the minetest executable in common places for itself,
-    but it's also possible to provide the path as parameter or as environment variable 'MINETEST_BIN'.
+    but it's also possible to provide the path as parameter or as environment variable :envvar:`MINETEST_BIN`.
 
     :return: None
     """
@@ -60,7 +61,8 @@ def run_minetest(
         minetest_path: str = None,
         show_menu: bool = True,
         world_path: str = "Miney",
-        seed: str = "746036489947438842") -> None:
+        seed: str = "746036489947438842"
+) -> None:
     """
     Run minetest. Miney will look for the minetest executable in common places for itself,
     but it's also possible to provide the path as parameter or as environment variable 'MINETEST_BIN'.

@@ -87,13 +87,16 @@ Temporary Items
 # Sphinx
 _build
 
-# Pycharm
+# Pycharm/VScode
 .idea
+.vscode
 
 # Python
 build
 dist
 miney.egg-info
+__pycache__/
+*.pyc
 
 # miney
 minetest_configuration.json

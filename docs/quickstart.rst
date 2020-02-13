@@ -14,17 +14,32 @@ Installation
 
 Windows
 ^^^^^^^
-Precompiled binarys...
+
+ * Download the latest precompiled Miney distribution: https://github.com/miney-py/miney_distribution/releases
+ * Start the miney-launcher.exe and click on "Quickstart". This will open Minetest directly into a game and IDLE, the IDE shipped with python.
 
 Linux
 ^^^^^
-Packages Debian: Link to minetest wiki
-Ubuntu: link to minetest download page
-Maybe: A shellscript for installation
+
+Untested: Install Minetest, install luajit, install luasocket and luacjson. Then "pip install miney" and we should be ready.
 
 MacOS
 ^^^^^
-?
+
+Untested
 
 First lines of code
 -------------------
+
+The first lines of code with miney should be the import statement and the creation of the miney object "mt". This will
+connect miney to your already running Minetest.
+
+::
+
+    import miney
+
+    mt = miney.Minetest()
+
+.. Important::
+
+    Whenever you see a object "mt" in the documentation, it was created with this line!

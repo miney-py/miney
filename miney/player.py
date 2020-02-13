@@ -1,4 +1,4 @@
-import json
+from typing import Union
 import miney
 
 # todo: set modes creative/survival -> Not possible without installed minetest mods
@@ -34,13 +34,13 @@ class Player:
         
             >>> import miney
             >>> mt = miney.Minetest()
-            >>> mt.player.IloveDirt.inventory.add(mt.node.types.default.dirt, 99)      
+            >>> mt.player.IloveDirt.inventory.add(mt.node.type.default.dirt, 99)      
             
         :Example to remove 99 dirt from player "IhateDirt"'s inventory:
         
             >>> import miney
             >>> mt = miney.Minetest()
-            >>> mt.player.IhateDirt.inventory.remove(mt.node.types.default.dirt, 99)
+            >>> mt.player.IhateDirt.inventory.remove(mt.node.type.default.dirt, 99)
             
         """
 
@@ -67,7 +67,7 @@ class Player:
         """
         Get the players current position.
 
-        :return: A dict with x,y,z keys: {x: 0, y:1, z:2}
+        :return: A dict with x,y,z keys: {"x": 0, "y":1, "z":2}
         """
         try:
             return self.mt.lua.run("return minetest.get_player_by_name('{}'):get_pos()".format(self.name))
@@ -205,21 +205,43 @@ class Player:
     @property
     def hp(self):
         """
-        Get and set the number of hitpoints (2 * number of hearts)
+        Get and set the number of hitpoints (2 * number of hearts) between 0 and 20.
+        By setting his hitpoint to zero you instantly kill this player.
 
         :return:
         """
         return self.mt.lua.run(f"return minetest.get_player_by_name('{self.name}'):get_hp()")
 
     @hp.setter
-    def hp(self, value):
-        self.mt.lua.run(
-            f"return minetest.get_player_by_name('{self.name}'):set_hp({value}, {{type=\"set_hp\"}})")
+    def hp(self, value: int):
+        if type(value) is int and value in range(0, 21):
+            self.mt.lua.run(
+                f"return minetest.get_player_by_name('{self.name}'):set_hp({value}, {{type=\"set_hp\"}})")
+        else:
+            raise ValueError("HP has to be between 0 and 20.")
+
+    @property
+    def breath(self):
+        return self.mt.lua.run(f"return minetest.get_player_by_name('{self.name}'):get_breath()")
+
+    @breath.setter
+    def breath(self, value: int):
+        if type(value) is int and value in range(0, 21):
+            self.mt.lua.run(
+                f"return minetest.get_player_by_name('{self.name}'):set_breath({value}, {{type=\"set_hp\"}})")
+        else:
+            raise ValueError("HP has to be between 0 and 20.")
 
     @property
     def fly(self) -> bool:
         """
-        Get and set the priviledge to fly to this player. He still needs to press K to enable fly mode.
+        Get and set the privilege to fly to this player. Press K to enable and disable fly mode.
+        As a shortcut you can set fly to a number instead if `True` to also changes the players speed to this number.
+
+        .. Example:
+
+            >>> mt.player.MineyPlayer.fly = True  # the can player fly
+            >>> mt.player.MineyPlayer.fly = 5  # the can player fly 5 times faster
 
         :return:
         """
@@ -235,9 +257,12 @@ class Player:
         )
 
     @fly.setter
-    def fly(self, value: bool):
+    def fly(self, value: Union[bool, int]):
         if value:
             state = "true"
+            if type(value) is int:
+                if value > 0:
+                    self.speed = value
         else:
             state = "false"
         self.mt.lua.run(

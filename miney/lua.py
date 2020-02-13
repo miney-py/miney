@@ -31,7 +31,7 @@ class Lua:
 
     def dumps(self, data) -> str:
         """
-        Convert python data types to a string with lua data types.
+        Convert python data type to a string with lua data type.
 
         :param data: Python data
         :return: Lua data

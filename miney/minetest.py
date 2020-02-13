@@ -1,6 +1,7 @@
 import socket
 import json
-from typing import Dict
+import math
+from typing import Dict, Union
 import miney
 
 
@@ -49,30 +50,23 @@ class Minetest:
         # objects representing local properties
         self._lua: miney.lua.Lua = miney.Lua(self)
         self._chat: miney.chat.Chat = miney.Chat(self)
-        self.node: miney.node.Node = miney.Node(self)
-        """
-        Manipulate and get information's about nodes.
+        self._node: miney.node.Node = miney.Node(self)
 
-        :return: :class:`miney.Node`: Node manipulation functions
-        """
+        player = self.lua.run(
+            """
+            local players = {}
+            for _,player in ipairs(minetest.get_connected_players()) do
+                table.insert(players,player:get_player_name())
+            end
+            return players
+            """
+        )
+        if player:
+            player = [] if len(player) == 0 else player
+        else:
+            raise miney.DataError("Received malformed player data.")
 
-        self.player = PlayerIterable(self, self.players)
-        """Get a single players object.
-        
-        :Example, that makes a player 5 times faster:
-            
-            >>> import miney
-            >>> mt = miney.Minetest()
-            >>> mt.player.MyPlayername.speed = 5
-            
-        :Example with a playername from a variable:
-        
-            >>> import miney
-            >>> mt = miney.Minetest()
-            >>> player = "MyPlayername"
-            >>> mt.player[player].speed = 5
-        
-        """
+        self._player = PlayerIterable(self, player)
 
     def _authenticate(self):
         """
@@ -84,10 +78,13 @@ class Minetest:
         self.send({"playername": self.playername, "password": self.password})
         result = self.receive("auth")
 
-        if "auth_ok" not in result:
-            raise miney.AuthenticationError("Wrong playername or password")
+        if result:
+            if "auth_ok" not in result:
+                raise miney.AuthenticationError("Wrong playername or password")
+            else:
+                self.clientid = result[1]  # Clientid = <IP>:<Port>
         else:
-            self.clientid = result[1]  # Clientid = <IP>:<Port>
+            raise miney.DataError("Unexpected authentication result.")
 
     def send(self, data: Dict):
         """
@@ -96,9 +93,19 @@ class Minetest:
         :param data:
         :return:
         """
-        self.connection.sendto(str.encode(json.dumps(data) + "\n"), (self.server, self.port))
+        chunk_size = 4096
+        data: bytes = str.encode(json.dumps(data) + "\n")
 
-    def receive(self, result_id: str = None, timeout: float = None):
+        if len(data) < chunk_size:
+            self.connection.sendto(data, (self.server, self.port))
+        else:  # we need to break the message in chunks
+            for i in range(0, int(math.ceil((len(data)/chunk_size)))):
+                self.connection.sendto(
+                    data[i * chunk_size:chunk_size + (i * chunk_size)],
+                    (self.server, self.port)
+                )
+
+    def receive(self, result_id: str = None, timeout: float = None) -> Union[str, bool]:
         """
         Receive data and events from minetest.
 
@@ -117,7 +124,8 @@ class Minetest:
 
         :param str result_id: Wait for this result id
         :param float timeout: Block further execution until data received or timeout in seconds is over.
-        :return:
+        :rtype: Union[str, bool]
+        :return: Data from mineysocket
         """
 
         def format_result(result_data):
@@ -191,9 +199,18 @@ class Minetest:
             >>> mt = miney.Minetest()
             >>> mt.chat.send_to_all("My chat message")
 
-        :return class:`minetest.Chat`: chat object
+        :return: :class:`miney.Chat`: chat object
         """
         return self._chat
+
+    @property
+    def node(self):
+        """
+        Manipulate and get information's about nodes.
+
+        :return: :class:`miney.Node`: Node manipulation functions
+        """
+        return self._node
 
     def log(self, line: str):
         """
@@ -205,23 +222,29 @@ class Minetest:
         return self.lua.run('minetest.log("action", "{}")'.format(line))
 
     @property
-    def players(self):
+    def player(self):
         """
-        Get a list of all connected players on minetest server.
+        Get a single players object.
 
-        :return: List of players
+        :Examples:
+
+        Make a player 5 times faster:
+
+            >>> mt.player.MyPlayername.speed = 5
+
+        Use a playername from a variable:
+
+            >>> player = "MyPlayername"
+            >>> mt.player[player].speed = 5
+
+        Get a list of all players
+
+            >>> list(mt.player)
+            [<minetest player "MineyPlayer">, <minetest player "SecondPlayer">, ...]
+
+        :return: :class:`miney.Player`: Player related functions
         """
-        data = self.lua.run(
-            """
-            local players = {}
-            for _,player in ipairs(minetest.get_connected_players()) do
-                table.insert(players,player:get_player_name())
-            end
-            return players
-            """
-        )
-        data = [] if len(data) == 0 else data
-        return data
+        return self._player
 
     @property
     def lua(self):
@@ -242,8 +265,11 @@ class Minetest:
         return self.lua.run("return minetest.get_timeofday()")
 
     @time_of_day.setter
-    def time_of_day(self, value: int):
-        self.lua.run("return minetest.set_timeofday({})".format(value))
+    def time_of_day(self, value: float):
+        if 0 < value < 1:
+            self.lua.run("return minetest.set_timeofday({})".format(value))
+        else:
+            raise ValueError("Time value has to be between 0 and 1.")
 
     @property
     def settings(self) -> dict:
@@ -254,7 +280,7 @@ class Minetest:
         """
         return self.lua.run("return minetest.settings:to_table()")
 
-    def close(self) -> None:
+    def __del__(self) -> None:
         """
         Close the connection to the server.
 
