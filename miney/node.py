@@ -1,5 +1,5 @@
 import miney
-from typing import Dict, Union
+from typing import Dict, List, Union
 
 
 class Node:
@@ -30,16 +30,11 @@ class Node:
 
             Directly access a type:
 
-            >>> import miney
-            >>> mt = miney.Minetest()
             >>> mt.node.type.default.dirt
             'default:dirt'
 
             Iterate over all available types:
 
-            >>> import miney
-            >>> mt = miney.Minetest()
-            >>>
             >>> for node_type in mt.node.type:
             >>>     print(node_type)
             default:pine_tree
@@ -56,8 +51,6 @@ class Node:
 
             Add 99 dirt to player "IloveDirt"'s inventory:
 
-            >>> import miney
-            >>> mt = miney.Minetest()
             >>> mt.player.IloveDirt.inventory.add(mt.node.type.default.dirt, 99)
 
         :rtype: :class:`TypeIterable`
@@ -70,6 +63,13 @@ class Node:
         Set a single or multiple nodes at given position to another node type
         (something like mt.node.type.default.apple).
         You can get a list of all available nodes with :attr:`~miney.Minetest.node.type`
+
+        :Examples:
+
+            Set a single node over :
+
+            >>> pos = mt.player[0].position
+            >>> mt.node.set({pos[])
 
         :param position: a dict with x,y,z keys
         :param node_type: a valid node name

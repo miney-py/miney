@@ -66,7 +66,17 @@ class Minetest:
         else:
             raise miney.DataError("Received malformed player data.")
 
-        self._player = PlayerIterable(self, player)
+        self._player = miney.PlayerIterable(self, player)
+
+        self._tools_cache = self.lua.run(
+            """
+            local nodes = {}
+            for name, def in pairs(minetest.registered_tools) do
+                table.insert(nodes, name)
+            end return nodes
+            """
+        )
+        self._tool = miney.ToolIterable(self, self._tools_cache)
 
     def _authenticate(self):
         """
@@ -280,6 +290,45 @@ class Minetest:
         """
         return self.lua.run("return minetest.settings:to_table()")
 
+    @property
+    def tool(self) -> 'miney.ToolIterable':
+        """
+        All available tools in the game, sorted by categories. In the end it just returns the corresponding
+        minetest tool string, so `mt.tool.default.axe_stone` returns the string 'default:axe_stone'.
+        It's a nice shortcut in REPL, cause with auto completion you have only pressed 2-4 keys to get to your type.
+
+        :Examples:
+
+            Directly access a tool:
+
+            >>> mt.tool.default.pick_mese
+            'default:pick_mese'
+
+            Iterate over all available types:
+
+            >>> for tool_type in mt.tool:
+            >>>     print(tool_type)
+            default:shovel_diamond
+            default:sword_wood
+            default:shovel_wood
+            ... (there should be around 34 different tools)
+            >>> print(len(mt.tool))
+            34
+
+            Get a list of all types:
+
+            >>> list(mt.tool)
+            ['default:pine_tree', 'default:dry_grass_5', 'farming:desert_sand_soil', ...
+
+            Add a diamond pick axe to the first player's inventory:
+
+            >>> mt.player[0].inventory.add(mt.tool.default.pick_diamond, 1)
+
+        :rtype: :class:`ToolIterable`
+        :return: :class:`ToolIterable` object with categories. Look at the examples above for usage.
+        """
+        return self._tool
+
     def __del__(self) -> None:
         """
         Close the connection to the server.
@@ -293,33 +342,3 @@ class Minetest:
 
     def __delete__(self, instance):
         self.connection.close()
-
-
-class PlayerIterable:
-    """Player, implemented as iterable for easy autocomplete in the interactive shell"""
-    def __init__(self, minetest: Minetest, online_players=None):
-        if online_players:
-            self.__online_players = online_players
-            self.__mt = minetest
-
-            # update list
-            for player in online_players:
-                self.__setattr__(player, miney.Player(minetest, player))
-
-    def __iter__(self):
-        player_object = []
-        for player in self.__online_players:
-            player_object.append(miney.Player(self.__mt, player))
-
-        return iter(player_object)
-
-    def __getitem__(self, item_key):
-        if item_key in self.__online_players:
-            return self.__getattribute__(item_key)
-        else:
-            if type(item_key) == int:
-                return self.__getattribute__(self.__mt.players[item_key])
-            raise IndexError("unknown player")
-
-    def __len__(self):
-        return len(self.__online_players)

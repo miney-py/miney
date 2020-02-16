@@ -13,6 +13,8 @@ from .node import Node
 from .lua import Lua
 from .inventory import Inventory
 from .exceptions import *
+from .tool import ToolIterable
+from .player import PlayerIterable
 
 __version__ = "0.2.0"
 default_playername = "MineyPlayer"

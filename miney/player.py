@@ -272,3 +272,33 @@ class Player:
             minetest.set_player_privs(\"{self.name}\", privs)
             """
         )
+
+
+class PlayerIterable:
+    """Player, implemented as iterable for easy autocomplete in the interactive shell"""
+    def __init__(self, minetest: miney.Minetest, online_players: list = None):
+        if online_players:
+            self.__online_players = online_players
+            self.__mt = minetest
+
+            # update list
+            for player in online_players:
+                self.__setattr__(player, miney.Player(minetest, player))
+
+    def __iter__(self):
+        player_object = []
+        for player in self.__online_players:
+            player_object.append(miney.Player(self.__mt, player))
+
+        return iter(player_object)
+
+    def __getitem__(self, item_key):
+        if item_key in self.__online_players:
+            return self.__getattribute__(item_key)
+        else:
+            if type(item_key) == int:
+                return self.__getattribute__(self.__online_players[item_key])
+            raise IndexError("unknown player")
+
+    def __len__(self):
+        return len(self.__online_players)

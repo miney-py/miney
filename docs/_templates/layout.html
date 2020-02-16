@@ -2,3 +2,12 @@
 {% block extrahead %}
     <link href="{{ pathto("_static/style.css", True) }}" rel="stylesheet" type="text/css">
 {% endblock %}
+{% block footer %}
+<script type="text/javascript">
+<!-- Adds target=_blank to external links -->
+
+$(document).ready(function () {
+  $('a[href^="http://"], a[href^="https://"]').not('a[class*=internal]').attr('target', '_blank');
+});
+</script>
+{% endblock %}
