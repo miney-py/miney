@@ -29,7 +29,7 @@ def draw_donut(mt, mcx, mcy, mcz, R, r, mcblock):
                             }
                         )
     print("Spawning", len(positions), "nodes of", mcblock)
-    mt.node.set(positions, mcblock)
+    mt.node.set(position=positions, node_type=mcblock)
 
 
 if miney.is_miney_available():
@@ -39,11 +39,11 @@ if miney.is_miney_available():
 
     playerPos = mt.player[0].position
 
-    draw_donut(mt, playerPos["x"], playerPos["y"] + 1, playerPos["z"], 18, 6, mt.node.type.default.glass)
+    draw_donut(mt, playerPos["x"], playerPos["y"] + 1, playerPos["z"], 60, 10, mt.node.type.default.glass)
     mt.chat.send_to_all(mt.node.type.default.glass + " donut done")
     print(mt.node.type.default.glass + " donut done")
 
-    draw_donut(mt, playerPos["x"], playerPos["y"] + 1, playerPos["z"], 18, 6, mt.node.type.default.water_source)
+    draw_donut(mt, playerPos["x"], playerPos["y"] + 1, playerPos["z"], 60, 8, mt.node.type.default.lava_source)
     mt.chat.send_to_all(mt.node.type.default.lava_source + " donut done")
     print(mt.node.type.default.lava_source + " donut done")
 else:

@@ -13,6 +13,13 @@ class LuaError(Exception):
     pass
 
 
+class LuaResultTimeout(Exception):
+    """
+    The answer from Lua takes to long.
+    """
+    pass
+
+
 class DataError(Exception):
     """
     Malformed data received.

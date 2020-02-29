@@ -58,7 +58,7 @@ class Node:
         """
         return self._types
 
-    def set(self, position: Union[dict, list], node_type: str = "default:dirt") -> None:
+    def set(self, position: Union[dict, list], offset: dict = None, node_type: str = "air") -> None:
         """
         Set a single or multiple nodes at given position to another node type
         (something like mt.node.type.default.apple).
@@ -72,27 +72,77 @@ class Node:
             >>> mt.node.set({pos[])
 
         :param position: a dict with x,y,z keys
-        :param node_type: a valid node name
+        :param offset:
+        :param node_type: a valid node name like default:dirt as string or via :attr:`~miney.Minetest.node.type`
         """
-        if type(position) == dict:  # a single node
-            if "type" in position:
-                node_type = position["type"]
+        if offset and not all(name in ['x', 'y', 'z'] for name in offset):
+            raise ValueError("offset parameter dict needs y, x and z keys")
+        if type(position) is dict:  # a single node
+            if offset:
+                position["x"] = position["x"] + offset["x"]
+                position["y"] = position["y"] + offset["y"]
+                position["z"] = position["z"] + offset["z"]
+            if "name" in position:  # name = node_type in minetest
+                node_type = position["name"]
             self.mt.lua.run(f"minetest.set_node({self.mt.lua.dumps(position)}, {{name=\"{node_type}\"}})")
-        elif type(position) == list:  # bulk
-            chunk_size = 700
-            for x in range(0, len(position), chunk_size):
-                self.mt.lua.run(
-                    f"minetest.bulk_set_node({self.mt.lua.dumps(position[x:x+chunk_size])}, {{name=\"{node_type}\"}})")
+        elif type(position) is list:  # bulk
+            if offset:
+                new_positions = []
+                for pos in position:
+                    new_pos = {"x": pos["x"] + offset["x"], "y": pos["y"] + offset["y"], "z": pos["z"] + offset["z"]}
+                    if "name" in pos:
+                        new_pos["name"] = pos["name"]
+                    new_positions.append(new_pos)
+                position = new_positions
+            if 'name' not in position[0]:  # we have a list where all nodes get the same node type
+                chunk_size = 700  # limit from trial&error
+                for x in range(0, len(position), chunk_size):
+                    self.mt.lua.run(
+                        f"minetest.bulk_set_node({self.mt.lua.dumps(position[x:x+chunk_size])}, "
+                        f"{{name=\"{node_type}\"}})")
+            if "name" in position[0]:  # mixed node type, so we can't use bulk_set_node
+                lua = ""
+                for pos in position:
+                    # print("pos", pos)
+                    if pos["name"] != "ignore":
+                        lua = lua + f"minetest.set_node(" \
+                                    f"{self.mt.lua.dumps({'x': pos['x'], 'y': pos['y'], 'z': pos['z']})}, " \
+                                    f"{{name=\"{pos['name']}\"}})\n"
+                self.mt.lua.run(lua)
 
-    def get(self, position: Dict) -> str:
+    def get(self, position: dict, position2: dict = None) -> str:
         """
         Get the node type at given position (something like "default:wood").
-        You can get a list of all available node type with :attr:`~miney.Minetest.node.type`
+        If also position2 is given, this function returns a cuboid with the diagonal between position and position2.
+        You can get a list of all available node type with :attr:`~miney.Minetest.node.type`.
 
-        :param position: a dict with x,y,z keys
+        :param position: A dict with x,y,z keys
+        :param position2: Another point, if you want an area
         :return: The node type on this position
         """
-        return self.mt.lua.run("return minetest.get_node({})".format(self.mt.lua.dumps(position)))
+        if type(position) is dict and not position2:  # for a single node
+            return self.mt.lua.run(f"return minetest.get_node({self.mt.lua.dumps(position)})")
+        elif type(position2) is dict:  # Multiple nodes
+            return self.mt.lua.run(f"""
+                pos1 = {self.mt.lua.dumps(position)}
+                pos2 = {self.mt.lua.dumps(position2)}
+                nodes = {{}}
+                if pos1.x <= pos2.x then start_x = pos1.x end_x = pos2.x else start_x = pos2.x end_x = pos1.x end
+                if pos1.y <= pos2.y then start_y = pos1.y end_y = pos2.y else start_y = pos2.y end_y = pos1.y end
+                if pos1.z <= pos2.z then start_z = pos1.z end_z = pos2.z else start_z = pos2.z end_z = pos1.z end
+                
+                for x = start_x, end_x do
+                  for y = start_y, end_y do
+                    for z = start_z, end_z do
+                      node = minetest.get_node({{x = x, y = y, z = z}})
+                      node["x"] = x - start_x
+                      node["y"] = y - start_y
+                      node["z"] = z - start_z
+                      nodes[#nodes+1] = node  -- append node
+                    end
+                  end
+                end
+                return nodes""", timeout=180)
 
     def __repr__(self):
         return '<minetest node functions>'

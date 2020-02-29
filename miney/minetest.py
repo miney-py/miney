@@ -2,6 +2,7 @@ import socket
 import json
 import math
 from typing import Dict, Union
+import time
 import miney
 
 
@@ -40,8 +41,12 @@ class Minetest:
         else:
             self.playername = miney.default_playername
         self.password = password
-        self.connection = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        # setup connection
+        self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connection.settimeout(2.0)
+        self.connection.connect((server, port))
+
         self.event_queue = []  # List for collected but unprocessed events
         self.result_queue = {}  # List for unprocessed results
 
@@ -107,13 +112,14 @@ class Minetest:
         data: bytes = str.encode(json.dumps(data) + "\n")
 
         if len(data) < chunk_size:
-            self.connection.sendto(data, (self.server, self.port))
+            self.connection.sendall(data)
         else:  # we need to break the message in chunks
             for i in range(0, int(math.ceil((len(data)/chunk_size)))):
-                self.connection.sendto(
-                    data[i * chunk_size:chunk_size + (i * chunk_size)],
-                    (self.server, self.port)
+                self.connection.sendall(
+                    data[i * chunk_size:chunk_size + (i * chunk_size)]
                 )
+                time.sleep(0.01)  # Give luasocket a chance to read the buffer in time
+                # todo: Protocol change, that every chunked message needs a response before sending the next
 
     def receive(self, result_id: str = None, timeout: float = None) -> Union[str, bool]:
         """
@@ -126,9 +132,6 @@ class Minetest:
 
         :Example to receive and print all events:
 
-            >>> from miney import Minetest
-            >>> mt = Minetest()
-            >>>
             >>> while True:
             >>>     print("Event received:", mt.receive())
 
@@ -170,7 +173,7 @@ class Minetest:
                 data_buffer = data_buffer + self.connection.recv(4096)
             data = json.loads(data_buffer.decode())
         except socket.timeout:
-            return False
+            raise miney.LuaResultTimeout()
 
         # process data
         if "result" in data:
@@ -205,8 +208,6 @@ class Minetest:
 
         :Example:
 
-            >>> import miney
-            >>> mt = miney.Minetest()
             >>> mt.chat.send_to_all("My chat message")
 
         :return: :class:`miney.Chat`: chat object

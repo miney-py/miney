@@ -20,7 +20,7 @@ __version__ = "0.2.0"
 default_playername = "MineyPlayer"
 
 
-def is_miney_available(ip: str = "127.0.0.1", port: int = 29999, timeout: int = 3.0) -> bool:
+def is_miney_available(ip: str = "127.0.0.1", port: int = 29999, timeout: int = 1.0) -> bool:
     """
     Check if there is a running miney game available on an optional given host and/or port.
     This functions pings mineysocket and waits **timeout** seconds for a pong.
@@ -30,17 +30,17 @@ def is_miney_available(ip: str = "127.0.0.1", port: int = 29999, timeout: int = 
     :param timeout: Optional timeout
     :return: True or False
     """
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(timeout)
-    s.connect((ip, int(port)))
-    s.sendto(b"ping\n", (ip, port))
     try:
+        s.connect((ip, int(port)))
+        s.send(b"ping\n")
         reply = s.recv(4096).decode()
         if reply == "pong\n":
             return True
         else:
             return False
-    except (socket.timeout, ConnectionResetError):
+    except (socket.timeout, ConnectionResetError, ConnectionRefusedError):
         return False
     finally:
         s.close()
