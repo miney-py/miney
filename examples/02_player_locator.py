@@ -5,19 +5,18 @@ mt = Minetest()
 
 print("Connected to", mt)
 
-players = mt.players
+players = mt.player
 if len(players):
     mt.chat.send_to_all("I'm running the example script...")
 
     print("Player positions:")
     while True:
         for player in players:
-            player = mt.player(player)
 
             standing_position = player.position
             standing_position["y"] = standing_position["y"] - 1
 
-            print("\r", player.name, player.position, mt.node.get(standing_position), end='')
+            print("\r", player.name, player.position, player.look_horizontal, player.look_vertical, mt.node.get(standing_position), end='')
 
 
 else:

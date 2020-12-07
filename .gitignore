@@ -97,9 +97,8 @@ dist
 miney.egg-info
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # miney
-minetest_configuration.json
-examples/minetest_configuration.json
 tmp
 Minetest

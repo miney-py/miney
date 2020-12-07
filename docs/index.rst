@@ -52,7 +52,7 @@ Why Minetest?
    :alt: Python logo
    :align: left
 
-Why not Minecraft? Minecraft isn't free, while Minetest is. Not only you don't have to pay for Minetest (consider to `donate <https://www.minetest.net/get-involved/#donate>`_!), it's also open source!
+Why not Minecraft? Minetest is free. Not only you don't have to pay for Minetest (consider to `donate <https://www.minetest.net/get-involved/#donate>`_!), it's also open source!
 That's a big point, if you try to use this for example in a classroom.
 
 Also modding for minecraft isn't that easy, cause there is no official API or an embedded scripting language like Lua

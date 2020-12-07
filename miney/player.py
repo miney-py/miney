@@ -273,6 +273,38 @@ class Player:
             """
         )
 
+    @property
+    def creative(self) -> bool:
+        return self.mt.lua.run(
+            f"""
+            local privs = minetest.get_player_privs(\"{self.name}\")
+            if privs["creative"] then
+                return true
+            else
+                return false
+            end
+            """
+        )
+
+    @creative.setter
+    def creative(self, value: bool):
+        if type(value) is not bool:
+            raise ValueError("creative needs to be true or false")
+        if value is True:
+            state = "true"
+        else:
+            state = "false"
+
+        luastring = f"""
+            local privs = minetest.get_player_privs(\"{self.name}\")
+            privs["creative"] = {state}
+            minetest.set_player_privs(\"{self.name}\", privs)
+            """
+        print(luastring)
+        self.mt.lua.run(
+            luastring
+        )
+
 
 class PlayerIterable:
     """Player, implemented as iterable for easy autocomplete in the interactive shell"""
@@ -292,7 +324,7 @@ class PlayerIterable:
 
         return iter(player_object)
 
-    def __getitem__(self, item_key):
+    def __getitem__(self, item_key) -> Player:
         if item_key in self.__online_players:
             return self.__getattribute__(item_key)
         else:

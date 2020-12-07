@@ -1,10 +1,14 @@
 import miney
 from typing import Dict, List, Union
+import copy
 
 
 class Node:
     """
     Manipulate and get information's about nodes.
+
+    **Node manipulation is currently tested for up to 25.000 nodes, more optimization will come later**
+
     """
     def __init__(self, mt: miney.Minetest):
         self.mt = mt
@@ -58,74 +62,118 @@ class Node:
         """
         return self._types
 
-    def set(self, position: Union[dict, list], offset: dict = None, node_type: str = "air") -> None:
+    def set(self, nodes: Union[dict, list], name: str = None, offset: dict = None) -> None:
         """
         Set a single or multiple nodes at given position to another node type
         (something like mt.node.type.default.apple).
         You can get a list of all available nodes with :attr:`~miney.Minetest.node.type`
 
+        A node is defined as a dict with these keys:
+         * "x", "y", and "z" keys to define the absolute position
+         * "name" for a the node type like "default:dirt" (you can also get that from mt.node.type.default.dirt).
+           Dicts without name will be set as "air"
+         * some other optional minetest parameters
+
+        **The nodes parameter can be a single dict with the above parameters
+        or a list of these dicts for bulk spawning.**
+
         :Examples:
 
             Set a single node over :
 
-            >>> pos = mt.player[0].position
-            >>> mt.node.set({pos[])
+            >>> mt.node.set(mt.player[0].nodes, mt.node)
 
-        :param position: a dict with x,y,z keys
-        :param offset:
-        :param node_type: a valid node name like default:dirt as string or via :attr:`~miney.Minetest.node.type`
+        :param nodes: A dict or a list of dicts with node definitions
+        :param name: a type name like "default:dirt" as string or from :attr:`~miney.Minetest.node.type`. This overrides
+        node names defined in the :attr:`nodes` dict
+        :param offset: A dict with "x", "y", "z" keys. All node positions will be added with this values.
         """
-        if offset and not all(name in ['x', 'y', 'z'] for name in offset):
-            raise ValueError("offset parameter dict needs y, x and z keys")
-        if type(position) is dict:  # a single node
-            if offset:
-                position["x"] = position["x"] + offset["x"]
-                position["y"] = position["y"] + offset["y"]
-                position["z"] = position["z"] + offset["z"]
-            if "name" in position:  # name = node_type in minetest
-                node_type = position["name"]
-            self.mt.lua.run(f"minetest.set_node({self.mt.lua.dumps(position)}, {{name=\"{node_type}\"}})")
-        elif type(position) is list:  # bulk
-            if offset:
-                new_positions = []
-                for pos in position:
-                    new_pos = {"x": pos["x"] + offset["x"], "y": pos["y"] + offset["y"], "z": pos["z"] + offset["z"]}
-                    if "name" in pos:
-                        new_pos["name"] = pos["name"]
-                    new_positions.append(new_pos)
-                position = new_positions
-            if 'name' not in position[0]:  # we have a list where all nodes get the same node type
-                chunk_size = 700  # limit from trial&error
-                for x in range(0, len(position), chunk_size):
-                    self.mt.lua.run(
-                        f"minetest.bulk_set_node({self.mt.lua.dumps(position[x:x+chunk_size])}, "
-                        f"{{name=\"{node_type}\"}})")
-            if "name" in position[0]:  # mixed node type, so we can't use bulk_set_node
-                lua = ""
-                for pos in position:
-                    # print("pos", pos)
-                    if pos["name"] != "ignore":
-                        lua = lua + f"minetest.set_node(" \
-                                    f"{self.mt.lua.dumps({'x': pos['x'], 'y': pos['y'], 'z': pos['z']})}, " \
-                                    f"{{name=\"{pos['name']}\"}})\n"
-                self.mt.lua.run(lua)
 
-    def get(self, position: dict, position2: dict = None) -> str:
+        _nodes = copy.deepcopy(nodes)
+
+        if offset:
+            if not all(pos in ['x', 'y', 'z'] for pos in offset):
+                raise ValueError("offset parameter dict needs y, x and z keys")
+
+        # Set a single node
+        if type(_nodes) is dict:
+            if offset:
+                _nodes["x"] = _nodes["x"] + offset["x"]
+                _nodes["y"] = _nodes["y"] + offset["y"]
+                _nodes["z"] = _nodes["z"] + offset["z"]
+            if name:
+                _nodes["name"] = name
+            self.mt.lua.run(f"minetest.set_node({self.mt.lua.dumps(_nodes)}, {{name=\"{_nodes['name']}\"}})")
+
+        # Set many blocks
+        elif type(_nodes) is list:
+
+            lua = ""
+            # Loop over nodes, modify name/type, position/offset and generate lua code
+            for node in _nodes:
+                # default name to 'air'
+                if "name" not in node:
+                    node["name"] = "air"
+
+                if name:
+                    if node["name"] != "air" and node["name"] != "ignore":
+                        node["name"] = name
+
+                if offset:
+                    node["x"] = node["x"] + offset["x"]
+                    node["y"] = node["y"] + offset["y"]
+                    node["z"] = node["z"] + offset["z"]
+
+                if node["name"] != "ignore":
+                    lua = lua + f"minetest.set_node(" \
+                                f"{self.mt.lua.dumps({'x': node['x'], 'y': node['y'], 'z': node['z']})}, " \
+                                f"{{name=\"{node['name']}\"}})\n"
+            self.mt.lua.run(lua)
+
+    def get(self, position: dict, position2: dict = None, offset: dict = None) -> dict:
         """
-        Get the node type at given position (something like "default:wood").
-        If also position2 is given, this function returns a cuboid with the diagonal between position and position2.
-        You can get a list of all available node type with :attr:`~miney.Minetest.node.type`.
+        Get the node at given position. It returns a dict with the node definition.
+        This contains the "x", "y", "z", "param1", "param2" and "name" keys, where "name" is the node type like
+        "default:dirt".
+
+        If also position2 is given, this function returns a list of dicts with node definitions. This list contains a
+        cuboid of definitions with the diagonal between position and position2.
+
+        You can get a list of all available node types with :attr:`~miney.Minetest.node.type`.
 
         :param position: A dict with x,y,z keys
         :param position2: Another point, if you want an area
+        :param offset: A dict with "x", "y", "z" keys. All node positions will be added with this values.
         :return: The node type on this position
         """
         if type(position) is dict and not position2:  # for a single node
-            return self.mt.lua.run(f"return minetest.get_node({self.mt.lua.dumps(position)})")
-        elif type(position2) is dict:  # Multiple nodes
+            _position = copy.deepcopy(position)
+            if offset:
+                _position["x"] = _position["x"] + offset["x"]
+                _position["y"] = _position["y"] + offset["y"]
+                _position["z"] = _position["z"] + offset["z"]
+
+            node = self.mt.lua.run(f"return minetest.get_node({self.mt.lua.dumps(position)})")
+            node["x"] = position["x"]
+            node["y"] = position["y"]
+            node["z"] = position["z"]
+            return node
+        elif type(position) is dict and type(position2) is dict:  # Multiple nodes
+            _position = copy.deepcopy(position)
+            _position2 = copy.deepcopy(position2)
+
+            if offset:
+                _position["x"] = _position["x"] + offset["x"]
+                _position["y"] = _position["y"] + offset["y"]
+                _position["z"] = _position["z"] + offset["z"]
+                _position2["x"] = _position2["x"] + offset["x"]
+                _position2["y"] = _position2["y"] + offset["y"]
+                _position2["z"] = _position2["z"] + offset["z"]
+
             return self.mt.lua.run(f"""
-                pos1 = {self.mt.lua.dumps(position)}
-                pos2 = {self.mt.lua.dumps(position2)}
+                pos1 = {self.mt.lua.dumps(_position)}
+                pos2 = {self.mt.lua.dumps(_position2)}
+                minetest.load_area(pos1, pos2)
                 nodes = {{}}
                 if pos1.x <= pos2.x then start_x = pos1.x end_x = pos2.x else start_x = pos2.x end_x = pos1.x end
                 if pos1.y <= pos2.y then start_y = pos1.y end_y = pos2.y else start_y = pos2.y end_y = pos1.y end
@@ -176,6 +224,8 @@ class TypeIterable:
         return iter(self.__parent._types_cache)
 
     def __getitem__(self, item_key):
+        if type(self.__parent) is not type(self):  # if we don't have a category below
+            return self.__getattribute__(item_key)
         if item_key in self.__parent.node_types:
             return item_key
         else:

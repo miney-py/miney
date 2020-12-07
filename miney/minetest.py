@@ -3,6 +3,8 @@ import json
 import math
 from typing import Dict, Union
 import time
+import string
+from random import choices
 import miney
 
 
@@ -43,13 +45,14 @@ class Minetest:
         self.password = password
 
         # setup connection
-        self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.connection.settimeout(2.0)
-        self.connection.connect((server, port))
+        self.connection = None
+        self._connect()
 
         self.event_queue = []  # List for collected but unprocessed events
         self.result_queue = {}  # List for unprocessed results
+        self.callbacks = {}
 
+        self.clientid = None  # The clientid we got from mineysocket after successful authentication
         self._authenticate()
 
         # objects representing local properties
@@ -83,6 +86,12 @@ class Minetest:
         )
         self._tool = miney.ToolIterable(self, self._tools_cache)
 
+    def _connect(self):
+        # setup connection
+        self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connection.settimeout(2.0)
+        self.connection.connect((self.server, self.port))
+
     def _authenticate(self):
         """
         Authenticate to mineysocket.
@@ -109,17 +118,21 @@ class Minetest:
         :return:
         """
         chunk_size = 4096
-        data: bytes = str.encode(json.dumps(data) + "\n")
+        raw_data: bytes = str.encode(json.dumps(data) + "\n")
 
-        if len(data) < chunk_size:
-            self.connection.sendall(data)
-        else:  # we need to break the message in chunks
-            for i in range(0, int(math.ceil((len(data)/chunk_size)))):
-                self.connection.sendall(
-                    data[i * chunk_size:chunk_size + (i * chunk_size)]
-                )
-                time.sleep(0.01)  # Give luasocket a chance to read the buffer in time
-                # todo: Protocol change, that every chunked message needs a response before sending the next
+        try:
+            if len(raw_data) < chunk_size:
+                self.connection.sendall(raw_data)
+            else:  # we need to break the message in chunks
+                for i in range(0, int(math.ceil((len(raw_data)/chunk_size)))):
+                    self.connection.sendall(
+                        raw_data[i * chunk_size:chunk_size + (i * chunk_size)]
+                    )
+                    time.sleep(0.01)  # Give luasocket a chance to read the buffer in time
+                    # todo: Protocol change, that every chunked message needs a response before sending the next
+        except ConnectionAbortedError:
+            self._connect()
+            self.send(data)
 
     def receive(self, result_id: str = None, timeout: float = None) -> Union[str, bool]:
         """
@@ -157,49 +170,73 @@ class Minetest:
             result = format_result(self.result_queue[result_id])
             del self.result_queue[result_id]
             return result
+        # Without a result_id we run an event callback
         elif not result_id and len(self.event_queue):
             result = self.event_queue[0]
             del self.event_queue[0]
-            return result
-
-        # Set a new timeout to prevent long waiting for a timeout
-        if timeout:
-            self.connection.settimeout(timeout)
-
+            self._run_callback(result)
         try:
-            # receive the raw data and try to decode json
-            data_buffer = b""
-            while "\n" not in data_buffer.decode():
-                data_buffer = data_buffer + self.connection.recv(4096)
-            data = json.loads(data_buffer.decode())
-        except socket.timeout:
-            raise miney.LuaResultTimeout()
+            # Set a new timeout to prevent long waiting for a timeout
+            if timeout:
+                self.connection.settimeout(timeout)
+    
+            try:
+                # receive the raw data and try to decode json
+                data_buffer = b""
+                while "\n" not in data_buffer.decode():
+                    data_buffer = data_buffer + self.connection.recv(4096)
+                data = json.loads(data_buffer.decode())
+            except socket.timeout:
+                raise miney.LuaResultTimeout()
+    
+            # process data
+            if "result" in data:
+                if result_id:  # do we need a specific result?
+                    if data["id"] == result_id:  # we've got the result we wanted
+                        return format_result(data)
+                # We store this for later processing
+                self.result_queue[data["id"]] = data
+            elif "error" in data:
+                if data["error"] == "authentication error":
+                    if self.clientid:
+                        # maybe a server restart or timeout. We just reauthenticate.
+                        self._authenticate()
+                        raise miney.SessionReconnected()
+                    else:  # the server kicked us
+                        raise miney.AuthenticationError("Wrong playername or password")
+                else:
+                    raise miney.LuaError("Lua-Error: " + data["error"])
+            elif "event" in data:
+                self._run_callback(data)
+    
+            # if we don't got our result we have to receive again
+            if result_id:
+                self.receive(result_id)
 
-        # process data
-        if "result" in data:
-            if result_id:  # do we need a specific result?
-                if data["id"] == result_id:  # we've got the result we wanted
-                    return format_result(data)
-            # We store this for later processing
-            self.result_queue[data["id"]] = data
-        elif "error" in data:
-            if data["error"] == "authentication error":
-                # maybe a server restart or timeout. We just reauthenticate.
-                self._authenticate()
-                raise miney.SessionReconnected()
-            else:
-                raise miney.LuaError("Lua-Error: " + data["error"])
-        elif "event" in data:
-            # return event only if we don't want a specific result
-            if not result_id:
-                return data
-            else:
-                # We collect and store a event for later processing
-                self.event_queue.append(data)
+        except ConnectionAbortedError:
+            self._connect()
+            self.receive(result_id, timeout)
 
-        # if we don't got our result we have to receive again
-        if result_id:
-            self.receive(result_id)
+    def on_event(self, name: str, callback: callable) -> None:
+        """
+        Sets a callback function for specific events.
+
+        :param name: The name of the event
+        :param callback: A callback function
+        :return: None
+        """
+        # Match answer to request
+        result_id = ''.join(choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=6))
+        self.callbacks[name] = callback
+        self.send({'activate_event': {'event': name}, 'id': result_id})
+
+    def _run_callback(self, data: dict):
+        if data['event'] in self.callbacks:
+            # self.callbacks[data['event']](**data['event']['params'])
+            if type(data['params']) is dict:
+                self.callbacks[data['event']](**data['params'])
+            elif type(data['params']) is list:
+                self.callbacks[data['event']](*data['params'])
 
     @property
     def chat(self):
