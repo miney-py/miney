@@ -1,6 +1,7 @@
 """
 Miney is the python interface to minetest
 """
+from .typing import *
 from .minetest import Minetest
 from .player import Player
 from .chat import Chat

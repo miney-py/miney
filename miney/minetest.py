@@ -314,7 +314,7 @@ class Minetest:
 
     @time_of_day.setter
     def time_of_day(self, value: float):
-        if 0 < value < 1:
+        if 0 <= value <= 1:
             self.lua.run("return minetest.set_timeofday({})".format(value))
         else:
             raise ValueError("Time value has to be between 0 and 1.")

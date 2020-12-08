@@ -1,6 +1,6 @@
 import miney
-from typing import Dict, List, Union
-import copy
+from typing import Union
+from copy import deepcopy
 
 
 class Node:
@@ -89,7 +89,7 @@ class Node:
         :param offset: A dict with "x", "y", "z" keys. All node positions will be added with this values.
         """
 
-        _nodes = copy.deepcopy(nodes)
+        _nodes = deepcopy(nodes)
 
         if offset:
             if not all(pos in ['x', 'y', 'z'] for pos in offset):
@@ -112,11 +112,11 @@ class Node:
             # Loop over nodes, modify name/type, position/offset and generate lua code
             for node in _nodes:
                 # default name to 'air'
-                if "name" not in node:
+                if "name" not in node and not name:
                     node["name"] = "air"
 
                 if name:
-                    if node["name"] != "air" and node["name"] != "ignore":
+                    if "name" not in node or (node["name"] != "air" and node["name"] != "ignore"):
                         node["name"] = name
 
                 if offset:
@@ -130,7 +130,8 @@ class Node:
                                 f"{{name=\"{node['name']}\"}})\n"
             self.mt.lua.run(lua)
 
-    def get(self, position: dict, position2: dict = None, offset: dict = None) -> dict:
+    def get(self, position: miney.TypePosition, position2: miney.TypePosition = None, relative: bool = True,
+            offset: dict = None) -> Union[dict, list]:
         """
         Get the node at given position. It returns a dict with the node definition.
         This contains the "x", "y", "z", "param1", "param2" and "name" keys, where "name" is the node type like
@@ -142,12 +143,13 @@ class Node:
         You can get a list of all available node types with :attr:`~miney.Minetest.node.type`.
 
         :param position: A dict with x,y,z keys
-        :param position2: Another point, if you want an area
+        :param position2: Another point, to get multiple nodes as a list
+        :param relative: Return relative or absolute positions
         :param offset: A dict with "x", "y", "z" keys. All node positions will be added with this values.
         :return: The node type on this position
         """
         if type(position) is dict and not position2:  # for a single node
-            _position = copy.deepcopy(position)
+            _position = deepcopy(position)
             if offset:
                 _position["x"] = _position["x"] + offset["x"]
                 _position["y"] = _position["y"] + offset["y"]
@@ -159,8 +161,8 @@ class Node:
             node["z"] = position["z"]
             return node
         elif type(position) is dict and type(position2) is dict:  # Multiple nodes
-            _position = copy.deepcopy(position)
-            _position2 = copy.deepcopy(position2)
+            _position = deepcopy(position)
+            _position2 = deepcopy(position2)
 
             if offset:
                 _position["x"] = _position["x"] + offset["x"]
@@ -170,7 +172,20 @@ class Node:
                 _position2["y"] = _position2["y"] + offset["y"]
                 _position2["z"] = _position2["z"] + offset["z"]
 
-            return self.mt.lua.run(f"""
+            nodes_relative = """
+                node["x"] = x - start_x
+                node["y"] = y - start_y
+                node["z"] = z - start_z
+                """
+
+            nodes_absolute = """
+                node["x"] = x
+                node["y"] = y
+                node["z"] = z
+                """
+
+            return self.mt.lua.run(
+                f"""
                 pos1 = {self.mt.lua.dumps(_position)}
                 pos2 = {self.mt.lua.dumps(_position2)}
                 minetest.load_area(pos1, pos2)
@@ -183,9 +198,7 @@ class Node:
                   for y = start_y, end_y do
                     for z = start_z, end_z do
                       node = minetest.get_node({{x = x, y = y, z = z}})
-                      node["x"] = x - start_x
-                      node["y"] = y - start_y
-                      node["z"] = z - start_z
+                      {nodes_relative if relative else nodes_absolute}
                       nodes[#nodes+1] = node  -- append node
                     end
                   end

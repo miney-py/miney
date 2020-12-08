@@ -14,7 +14,7 @@ if len(players):
         for player in players:
 
             standing_position = player.position
-            standing_position["y"] = standing_position["y"] - 1
+            standing_position["y"] = standing_position["y"] - 0.5  # Position of the block under my feet
 
             print("\r", player.name, player.position, player.look_horizontal, player.look_vertical, mt.node.get(standing_position), end='')
 

@@ -300,7 +300,6 @@ class Player:
             privs["creative"] = {state}
             minetest.set_player_privs(\"{self.name}\", privs)
             """
-        print(luastring)
         self.mt.lua.run(
             luastring
         )

@@ -13,29 +13,25 @@ def test_node_types(mt: miney.Minetest):
 
 
 def test_node_set_and_get(mt: miney.Minetest):
-    pos = mt.player[0].position
-    pos1 = {"x": pos["x"] + 10, "y": pos["y"] + 10, "z": pos["z"] + 10}
-    pos2 = {"x": pos["x"] + 20, "y": pos["y"] + 20, "z": pos["z"] + 20}
+    pos1 = {"x": 22, "y": 28, "z": 22}
 
-    # assure we're hovering in the air
-    mt.player[0].fly = True
-    assert mt.player[0].fly
+    mt.node.set(pos1, name=mt.node.type.default.dirt, offset={"x": -1, "y": -1, "z": -1})
 
-    print(mt.node.get(pos1))
     pos1_node = mt.node.get(pos1)
     assert "name" in pos1_node
     assert pos1_node["name"] in mt.node.type
     assert "param1" in pos1_node
     assert "param2" in pos1_node
 
+    # we create a cube of dirt
     nodes = []
     for x in range(0, 9):
         for y in range(0, 9):
             for z in range(0, 9):
                 nodes.append({"x": pos1["x"] + x, "y": pos1["y"] + y, "z": pos1["z"] + z, "name": "default:dirt"})
 
-    # save for later recovery
-    before = mt.node.get(nodes[0], nodes[-1])
+    # save for later restore
+    before = mt.node.get(nodes[0], nodes[-1], relative=False)
 
     mt.node.set(nodes, name="default:dirt")
     dirt_nodes = mt.node.get(nodes[0], nodes[-1])
