@@ -10,7 +10,7 @@ import miney
 
 class Minetest:
     """__init__([server, playername, password, [port]])
-    The Minetest server object. All other object are created from here. By creating an object you connect to Minetest.
+    The Minetest server object. All other objects are accessable from here. By creating an object you connect to Minetest.
 
     **Parameters aren't required, if you run miney and minetest on the same computer.**
 

@@ -130,7 +130,7 @@ class Node:
                                 f"{{name=\"{node['name']}\"}})\n"
             self.mt.lua.run(lua)
 
-    def get(self, position: miney.TypePosition, position2: miney.TypePosition = None, relative: bool = True,
+    def get(self, position: dict, position2: dict = None, relative: bool = True,
             offset: dict = None) -> Union[dict, list]:
         """
         Get the node at given position. It returns a dict with the node definition.

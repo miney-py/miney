@@ -4,7 +4,7 @@ Minetest
 This is the starting point for this library. With creating a Minetest object you also connect to minetest.
 
 In this object are all functions that targets minetest itself.
-There is also some properties inside, to get other object like players or to manipulate nodes.
+There is also some properties inside, to get other objects like players or nodes.
 
 :Example:
 
