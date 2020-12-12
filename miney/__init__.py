@@ -1,7 +1,6 @@
 """
 Miney is the python interface to minetest
 """
-from .typing import *
 from .minetest import Minetest
 from .player import Player
 from .chat import Chat
@@ -13,6 +12,6 @@ from .tool import ToolIterable
 from .player import PlayerIterable
 from .helper import *
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 default_playername = "MineyPlayer"
 
