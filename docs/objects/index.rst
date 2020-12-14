@@ -8,7 +8,7 @@ API
    Minetest
    Lua
    Chat
-   Player
+   Players
    Nodes
    Inventory
    Exceptions

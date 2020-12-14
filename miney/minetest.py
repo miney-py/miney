@@ -60,7 +60,7 @@ class Minetest:
         self._chat: miney.chat.Chat = miney.Chat(self)
         self._nodes: miney.nodes.Nodes = miney.Nodes(self)
 
-        player = self.lua.run(
+        players = self.lua.run(
             """
             local players = {}
             for _,player in ipairs(minetest.get_connected_players()) do
@@ -69,12 +69,12 @@ class Minetest:
             return players
             """
         )
-        if player:
-            player = [] if len(player) == 0 else player
+        if players:
+            players = [] if len(players) == 0 else players
         else:
             raise miney.DataError("Received malformed player data.")
 
-        self._player = miney.PlayerIterable(self, player)
+        self._players = miney.PlayersIterable(self, players)
 
         self._tools_cache = self.lua.run(
             """
@@ -270,7 +270,7 @@ class Minetest:
         return self.lua.run('minetest.log("action", "{}")'.format(line))
 
     @property
-    def player(self):
+    def players(self):
         """
         Get a single players object.
 
@@ -278,21 +278,21 @@ class Minetest:
 
         Make a player 5 times faster:
 
-            >>> mt.player.MyPlayername.speed = 5
+            >>> mt.players.MyPlayername.speed = 5
 
         Use a playername from a variable:
 
             >>> player = "MyPlayername"
-            >>> mt.player[player].speed = 5
+            >>> mt.players[player].speed = 5
 
         Get a list of all players
 
-            >>> list(mt.player)
-            [<minetest player "MineyPlayer">, <minetest player "SecondPlayer">, ...]
+            >>> list(mt.players)
+            [<minetest player "MineyPlayers">, <minetest players "SecondPlayer">, ...]
 
-        :return: :class:`miney.Player`: Player related functions
+        :return: :class:`miney.Players`: Players related functions
         """
-        return self._player
+        return self._players
 
     @property
     def lua(self):

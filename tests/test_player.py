@@ -6,10 +6,10 @@ from time import sleep
 
 @pytest.fixture(scope="module")
 def mt_player(mt: miney.Minetest):
-    return mt.player[0]
+    return mt.players[0]
 
 
-def test_player(mt: miney.Minetest, mt_player: miney.Player):
+def test_player(mt: miney.Minetest, mt_player: miney.Players):
     """
     Test player basics.
 

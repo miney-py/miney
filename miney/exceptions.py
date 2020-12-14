@@ -41,7 +41,7 @@ class SessionReconnected(Exception):
     pass
 
 
-# Player exceptions
+# Players exceptions
 class PlayerInvalid(Exception):
     pass
 

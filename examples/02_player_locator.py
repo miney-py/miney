@@ -9,7 +9,7 @@ players = mt.player
 if len(players):
     mt.chat.send_to_all("I'm running the example script...")
 
-    print("Player positions:")
+    print("Players positions:")
     while True:
         for player in players:
 

@@ -47,7 +47,7 @@ def test_minetest(mt: miney.Minetest):
     :return: None
     """
     assert str(mt) == '<minetest server "{}:{}">'.format("127.0.0.1", "29999")
-    nodes = mt.node.type
+    nodes = mt.nodes.type
     assert "air" in nodes
     assert "default:stone" in nodes
 
@@ -92,18 +92,18 @@ def test_players(mt: miney.Minetest):
     :param mt: fixture
     :return: None
     """
-    players = mt.player
-    assert str(type(players)) == "<class 'miney.player.PlayerIterable'>"
+    players = mt.players
+    assert str(type(players)) == "<class 'miney.players.PlayersIterable'>"
     assert len(players) >= 1, "You should join the server for tests!"
 
     assert (mt.chat.send_to_all("Pytest is running...")) is None
 
     # get unknown player
     with pytest.raises(AttributeError) as e:
-        x = mt.player.stupidname123
+        x = mt.players.stupidname123
 
     player = players[0]
-    assert isinstance(player, miney.player.Player)
+    assert isinstance(player, miney.players.Players)
     assert len(player.name) > 0
 
     assert str(player) == "<minetest player \"{}\">".format(player.name)

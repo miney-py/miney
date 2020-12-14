@@ -11,5 +11,5 @@ def mt():
     #     assert miney.run_miney_game(), "Minetest with mineysocket isn't running."
 
     mt = miney.Minetest()
-    assert len(mt.player) >= 1
+    assert len(mt.players) >= 1
     return miney.Minetest()

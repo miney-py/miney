@@ -4,7 +4,7 @@ import miney
 # todo: set modes creative/survival -> Not possible without installed minetest mods
 
 
-class Player:
+class Players:
     """
     A player of the minetest server.
     """
@@ -13,7 +13,7 @@ class Player:
         Initialize the player object.
 
         :param minetest: Parent minetest object
-        :param name: Player name
+        :param name: Players name
         """
         self.mt = minetest
         self.name = name
@@ -34,13 +34,13 @@ class Player:
         
             >>> import miney
             >>> mt = miney.Minetest()
-            >>> mt.player.IloveDirt.inventory.add(mt.node.type.default.dirt, 99)      
+            >>> mt.players.IloveDirt.inventory.add(mt.node.type.default.dirt, 99)      
             
         :Example to remove 99 dirt from player "IhateDirt"'s inventory:
         
             >>> import miney
             >>> mt = miney.Minetest()
-            >>> mt.player.IhateDirt.inventory.remove(mt.node.type.default.dirt, 99)
+            >>> mt.players.IhateDirt.inventory.remove(mt.node.type.default.dirt, 99)
             
         """
 
@@ -240,8 +240,8 @@ class Player:
 
         .. Example:
 
-            >>> mt.player.MineyPlayer.fly = True  # the can player fly
-            >>> mt.player.MineyPlayer.fly = 5  # the can player fly 5 times faster
+            >>> mt.players.MineyPlayer.fly = True  # the can player fly
+            >>> mt.players.MineyPlayer.fly = 5  # the can player fly 5 times faster
 
         :return:
         """
@@ -305,8 +305,8 @@ class Player:
         )
 
 
-class PlayerIterable:
-    """Player, implemented as iterable for easy autocomplete in the interactive shell"""
+class PlayersIterable:
+    """Players, implemented as iterable for easy autocomplete in the interactive shell"""
     def __init__(self, minetest: miney.Minetest, online_players: list = None):
         if online_players:
             self.__online_players = online_players
@@ -314,16 +314,16 @@ class PlayerIterable:
 
             # update list
             for player in online_players:
-                self.__setattr__(player, miney.Player(minetest, player))
+                self.__setattr__(player, miney.Players(minetest, player))
 
     def __iter__(self):
         player_object = []
         for player in self.__online_players:
-            player_object.append(miney.Player(self.__mt, player))
+            player_object.append(miney.Players(self.__mt, player))
 
         return iter(player_object)
 
-    def __getitem__(self, item_key) -> Player:
+    def __getitem__(self, item_key) -> Players:
         if item_key in self.__online_players:
             return self.__getattribute__(item_key)
         else:
