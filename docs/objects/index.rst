@@ -9,12 +9,13 @@ API
    Lua
    Chat
    Player
-   Node
+   Nodes
    Inventory
    Exceptions
 
-.. rubric:: Indices and tables
+..
+    .. rubric:: Indices and tables
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+    * :ref:`genindex`
+    * :ref:`modindex`
+    * :ref:`search`

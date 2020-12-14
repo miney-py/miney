@@ -12,7 +12,7 @@ class Inventory:
 
     def add(self, item: str, amount: int = 1) -> None:
         """
-        Add an item to an inventory. Possible items can be obtained from :attr:`~miney.Node.type`.
+        Add an item to an inventory. Possible items can be obtained from :attr:`~miney.Nodes.type`.
 
         :param item: item type
         :param amount: item amount

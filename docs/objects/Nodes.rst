@@ -1,4 +1,4 @@
-Node
+Nodes
 ====
 
 Manipulate and get information's about nodes.
@@ -9,5 +9,5 @@ Nodes are defined as dicts in the form
 
 The keys "param1" and "param2" are optional storage variables.
 
-.. autoclass:: miney.Node
+.. autoclass:: miney.Nodes
    :members:

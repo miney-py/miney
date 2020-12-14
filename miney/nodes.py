@@ -3,11 +3,11 @@ from typing import Union
 from copy import deepcopy
 
 
-class Node:
+class Nodes:
     """
     Manipulate and get information's about nodes.
 
-    **Node manipulation is currently tested for up to 25.000 nodes, more optimization will come later**
+    **Nodes manipulation is currently tested for up to 25.000 nodes, more optimization will come later**
 
     """
     def __init__(self, mt: miney.Minetest):
@@ -210,7 +210,7 @@ class Node:
 
 
 class TypeIterable:
-    """Node type, implemented as iterable for easy autocomplete in the interactive shell"""
+    """Nodes type, implemented as iterable for easy autocomplete in the interactive shell"""
     def __init__(self, parent, nodes_types=None):
 
         self.__parent = parent

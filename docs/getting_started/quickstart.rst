@@ -1,11 +1,12 @@
 Quickstart
 ==========
 
-Welcome in the block sandbox!
+Welcome in the sandbox!
+-----------------------
 
 Blockgames like Minecraft or Minetest give you the ideal playground for creative playing and building just like a real sandbox.
 But other than real sandboxes, you can work on very large worlds together with your friends over the internet.
-And you can use (very simplified) physics, save the progress and many more.
+And you can use (very simplified) physics, save the progress and more.
 
 But what about learning programming while expressing your creativity? Why not automate things? Or build even greater things?
 

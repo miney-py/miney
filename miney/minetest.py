@@ -58,7 +58,7 @@ class Minetest:
         # objects representing local properties
         self._lua: miney.lua.Lua = miney.Lua(self)
         self._chat: miney.chat.Chat = miney.Chat(self)
-        self._node: miney.node.Node = miney.Node(self)
+        self._nodes: miney.nodes.Nodes = miney.Nodes(self)
 
         player = self.lua.run(
             """
@@ -252,13 +252,13 @@ class Minetest:
         return self._chat
 
     @property
-    def node(self):
+    def nodes(self):
         """
         Manipulate and get information's about nodes.
 
-        :return: :class:`miney.Node`: Node manipulation functions
+        :return: :class:`miney.Nodes`: Nodes manipulation functions
         """
-        return self._node
+        return self._nodes
 
     def log(self, line: str):
         """
