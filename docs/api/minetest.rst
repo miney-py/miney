@@ -27,10 +27,10 @@ There is also some properties inside, to get other objects like players or nodes
 .. toctree::
 
    Minetest
-   lua
-   chat
    player
    nodes
+   lua
+   chat
    inventory
 
 .. rubric:: Indices and tables
