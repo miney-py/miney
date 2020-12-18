@@ -1,17 +1,21 @@
 """
 Miney is the python interface to minetest
 """
+
+# base classes
+from .point import Point
+
 from .minetest import Minetest
-from .players import Players
+from .player import Player
 from .chat import Chat
 from .nodes import Nodes
 from .lua import Lua
 from .inventory import Inventory
 from .exceptions import *
 from .tool import ToolIterable
-from .players import PlayersIterable
+from .player import PlayerIterable
 from .helper import *
 
-__version__ = "0.2.3"
+__version__ = "0.3.0"
 default_playername = "MineyPlayer"
 

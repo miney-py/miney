@@ -1,4 +1,4 @@
-Nodes
+Node
 ====
 
 Manipulate and get information's about nodes.

@@ -18,7 +18,7 @@ class Inventory:
         :param amount: item amount
         :return: None
         """
-        if isinstance(self.parent, miney.Players):
+        if isinstance(self.parent, miney.Player):
             self.mt.lua.run(
                 f"minetest.get_inventory("
                 f"{{type = \"player\", name = \"{self.parent.name}\"}}"
@@ -33,7 +33,7 @@ class Inventory:
         :param amount: item amount
         :return: None
         """
-        if isinstance(self.parent, miney.Players):
+        if isinstance(self.parent, miney.Player):
             self.mt.lua.run(
                 f"minetest.get_inventory({{type = \"player\", "
                 f"name = \"{self.parent.name}\"}}):remove_item(\"main\", ItemStack(\"{item} {amount}\"))")

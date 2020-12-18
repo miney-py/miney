@@ -69,7 +69,7 @@ html_theme_options = {
     # 'titles_only': True
 }
 
-html_logo = "images/miney-logo.png"
+html_logo = "miney-logo.png"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

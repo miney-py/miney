@@ -58,9 +58,9 @@ class Minetest:
         # objects representing local properties
         self._lua: miney.lua.Lua = miney.Lua(self)
         self._chat: miney.chat.Chat = miney.Chat(self)
-        self._nodes: miney.nodes.Nodes = miney.Nodes(self)
+        self._node: miney.nodes.Nodes = miney.Nodes(self)
 
-        players = self.lua.run(
+        player = self.lua.run(
             """
             local players = {}
             for _,player in ipairs(minetest.get_connected_players()) do
@@ -69,12 +69,12 @@ class Minetest:
             return players
             """
         )
-        if players:
-            players = [] if len(players) == 0 else players
+        if player:
+            player = [] if len(player) == 0 else player
         else:
             raise miney.DataError("Received malformed player data.")
 
-        self._players = miney.PlayersIterable(self, players)
+        self._player = miney.PlayerIterable(self, player)
 
         self._tools_cache = self.lua.run(
             """
@@ -252,13 +252,13 @@ class Minetest:
         return self._chat
 
     @property
-    def nodes(self):
+    def node(self):
         """
         Manipulate and get information's about nodes.
 
         :return: :class:`miney.Nodes`: Nodes manipulation functions
         """
-        return self._nodes
+        return self._node
 
     def log(self, line: str):
         """
@@ -270,7 +270,7 @@ class Minetest:
         return self.lua.run('minetest.log("action", "{}")'.format(line))
 
     @property
-    def players(self):
+    def player(self):
         """
         Get a single players object.
 
@@ -278,21 +278,21 @@ class Minetest:
 
         Make a player 5 times faster:
 
-            >>> mt.players.MyPlayername.speed = 5
+            >>> mt.player.MyPlayername.speed = 5
 
         Use a playername from a variable:
 
             >>> player = "MyPlayername"
-            >>> mt.players[player].speed = 5
+            >>> mt.player[player].speed = 5
 
         Get a list of all players
 
-            >>> list(mt.players)
-            [<minetest player "MineyPlayers">, <minetest players "SecondPlayer">, ...]
+            >>> list(mt.player)
+            [<minetest player "MineyPlayer">, <minetest player "SecondPlayer">, ...]
 
-        :return: :class:`miney.Players`: Players related functions
+        :return: :class:`miney.Player`: Player related functions
         """
-        return self._players
+        return self._player
 
     @property
     def lua(self):

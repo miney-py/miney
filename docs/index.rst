@@ -1,4 +1,4 @@
-.. image:: images/miney-slogan.png
+.. image:: miney-slogan.png
    :alt: Miney logo
    :align: center
    :class: miney-logo-mainpage
@@ -7,19 +7,9 @@
 Welcome to the Miney documentation!
 ====================================
 
-Blockgames like Minecraft or `Minetest <https://www.minetest.net/>`_ give you the ideal playground for creative playing and building just like a real sandbox.
-But other than real sandboxes, you can work on very large worlds together with your friends over the internet.
-And you can use (very simplified) physics, save the progress and more.
+Miney provides an `Python <https://www.python.org/>`_ interface to `Minetest <https://www.minetest.net/>`_.
 
-But what about learning programming while expressing your creativity? Why not automate things? Or build even greater things?
-
-What is Miney?
-----------------
-
-Miney provides you with an `Python <https://www.python.org/>`_ programming interface to `Minetest <https://www.minetest.net/>`_.
-
-First goal is to have fun with a 3D sandbox for Python.
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+First goal is to have fun with a sandbox for Python.
 
 **Do whatever you like:**
 
@@ -40,11 +30,9 @@ First goal is to have fun with a 3D sandbox for Python.
 Why Python?
 -------------
 
-.. image:: images/python-logo.png
+.. image:: python-logo.png
    :alt: Python logo
    :align: right
-Python is a great programming language for beginners and experts.
-
 Some marketing text from the `Python website <https://www.python.org/about/>`_:
 
    | Python is powerful... and fast;
@@ -55,12 +43,12 @@ Some marketing text from the `Python website <https://www.python.org/about/>`_:
 
    These are some of the reasons people who use Python would rather not use anything else.
 
-And it's popular! And cause of that it has a `giant package index <https://pypi.org/>`_ filled by over 450.000 users!
+And it's popular! And cause of that it has a `giant package index <https://pypi.org/>`_ filled by over 400.000 users!
 
 
 Why Minetest?
 ---------------
-.. image:: images/minetest-logo.png
+.. image:: minetest-logo.png
    :alt: Python logo
    :align: left
 
@@ -77,18 +65,14 @@ Table of Contents
 -----------------
 
 .. toctree::
-   :maxdepth: 1
    :caption: Getting started
 
-   getting_started/quickstart
-   getting_started/basics
+   quickstart
 
 .. toctree::
-   :maxdepth: 1
    :caption: Reference
 
-   objects/index
-   helpers
+   api/index
    tech_background
 
 Miney version: |release|

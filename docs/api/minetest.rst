@@ -21,3 +21,20 @@ There is also some properties inside, to get other objects like players or nodes
 
 .. autoclass:: miney.Minetest
    :members:
+
+.. rubric:: Objects
+
+.. toctree::
+
+   Minetest
+   lua
+   chat
+   player
+   nodes
+   inventory
+
+.. rubric:: Indices and tables
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
