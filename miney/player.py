@@ -45,7 +45,7 @@ class Player:
         """
 
     def __repr__(self):
-        return '<minetest player "{}">'.format(self.name)
+        return '<minetest Player "{}">'.format(self.name)
 
     @property
     def is_online(self) -> bool:
@@ -63,36 +63,37 @@ class Player:
             return False
 
     @property
-    def position(self) -> dict:
+    def position(self) -> miney.Point:
         """
-        Get the players current position.
+        Get or set the players current position.
 
-        :return: A dict with x,y,z keys: {"x": 0, "y":1, "z":2}
+        To place a player on top of a specific node, add 0.5 to the y value and his feet will touch this node.
+        A player needs two blocks in the y axis (he's around 1,5 nodes tall), or he is stuck.
+
+        :return: :class:`miney.Point`
         """
         try:
-            return self.mt.lua.run("return minetest.get_player_by_name('{}'):get_pos()".format(self.name))
+            return miney.Point(
+                **self.mt.lua.run("return minetest.get_player_by_name('{}'):get_pos()".format(self.name))
+            )
         except miney.LuaError:
             raise miney.PlayerOffline("The player has no position, he could be offline")
 
     @position.setter
-    def position(self, values: dict):
+    def position(self, values: miney.Point) -> None:
         """
         Set player position
         :param values:
-        :return:
+        :return: None
         """
-        if all(k in values for k in ("x", "y", "z")):  # if we have all keys
-            self.mt.lua.run(
-                "return minetest.get_player_by_name('{}'):set_pos({{x = {}, y = {}, z = {}}})".format(
-                    self.name,
-                    values["x"],
-                    values["y"],
-                    values["z"],
-                )
+        self.mt.lua.run(
+            "return minetest.get_player_by_name('{}'):set_pos({{x = {}, y = {}, z = {}}})".format(
+                self.name,
+                values.x,
+                values.y,
+                values.z
             )
-        else:
-            raise miney.NoValidPosition(
-                "A valid position need x,y,z values in an dict ({\"x\": 12, \"y\": 70, \"z\": 12}).")
+        )
 
     @property
     def speed(self) -> int:
@@ -236,12 +237,10 @@ class Player:
     def fly(self) -> bool:
         """
         Get and set the privilege to fly to this player. Press K to enable and disable fly mode.
-        As a shortcut you can set fly to a number instead if `True` to also changes the players speed to this number.
 
         .. Example:
 
             >>> mt.player.MineyPlayer.fly = True  # the can player fly
-            >>> mt.player.MineyPlayer.fly = 5  # the can player fly 5 times faster
 
         :return:
         """
@@ -257,12 +256,9 @@ class Player:
         )
 
     @fly.setter
-    def fly(self, value: Union[bool, int]):
+    def fly(self, value: bool):
         if value:
             state = "true"
-            if type(value) is int:
-                if value > 0:
-                    self.speed = value
         else:
             state = "false"
         self.mt.lua.run(
@@ -271,6 +267,78 @@ class Player:
             privs["fly"] = {state}
             minetest.set_player_privs(\"{self.name}\", privs)
             """
+        )
+
+    @property
+    def fast(self) -> bool:
+        """
+        Get and set the privilege for fast mode to this player. Press J to enable and disable fast mode.
+
+        .. Example:
+
+            >>> mt.player.MineyPlayer.fast = True  # the player is fast
+
+        :return:
+        """
+        return self.mt.lua.run(
+            f"""
+            local privs = minetest.get_player_privs(\"{self.name}\")
+            if privs["fast"] then
+                return true
+            else
+                return false
+            end
+            """
+        )
+
+    @fast.setter
+    def fast(self, value: bool):
+        if value:
+            state = "true"
+        else:
+            state = "false"
+        self.mt.lua.run(
+            f"""
+            local privs = minetest.get_player_privs(\"{self.name}\")
+            privs["fast"] = {state}
+            minetest.set_player_privs(\"{self.name}\", privs)
+            """
+        )
+
+    @property
+    def noclip(self) -> bool:
+        """
+        Get and set the privilege for noclip mode to this player. Press H to enable and disable noclip mode.
+
+        .. Example:
+
+            >>> mt.player.MineyPlayer.noclip = True  # the player can go through walls
+
+        :return:
+        """
+        return self.mt.lua.run(
+            f"""
+                local privs = minetest.get_player_privs(\"{self.name}\")
+                if privs["noclip"] then
+                    return true
+                else
+                    return false
+                end
+                """
+        )
+
+    @noclip.setter
+    def noclip(self, value: bool):
+        if value:
+            state = "true"
+        else:
+            state = "false"
+        self.mt.lua.run(
+            f"""
+                local privs = minetest.get_player_privs(\"{self.name}\")
+                privs["noclip"] = {state}
+                minetest.set_player_privs(\"{self.name}\", privs)
+                """
         )
 
     @property

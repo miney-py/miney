@@ -1,13 +1,14 @@
-from dataclasses import dataclass
 from typing import Union
 from math import sqrt, acos, degrees
 
 
-@dataclass()
 class Point:
-    x: Union[int, float]
-    y: Union[int, float]
-    z: Union[int, float]
+
+    def __init__(self, x: Union[int, float] = 0, y: Union[int, float] = 0, z: Union[int, float] = 0):
+        print("point")
+        self.x = x
+        self.y = y
+        self.z = z
 
     def distance(self, b: "Point") -> float:
         return sqrt((b.x - self.x) ** 2 + (b.y - self.y) ** 2 + (b.z - self.z) ** 2)
@@ -53,3 +54,6 @@ class Point:
     def angle(self, b):
         m = self.x * b.x + self.y * b.y + self.z * b.z
         return degrees(acos(m / (self.length() * b.length())))
+
+    def __repr__(self):
+        return f"<minetest Point(x={self.x}, y={self.y}, z={self.z})>"

@@ -33,4 +33,5 @@ Minetest uses the word "node" instead of "block", but it's basically the same th
 Nodes or blocks are the fundamental cubic unit of a world and appears to a player as roughly 1x1x1 meters in size.
 
 .. hint:: You can count nodes to get the axis values and coordinates.
+   Full numbers without decimals are every time the center of the node/cuboid.
 

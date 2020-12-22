@@ -4,6 +4,7 @@ Miney is the python interface to minetest
 
 # base classes
 from .point import Point
+from .node import Node
 
 from .minetest import Minetest
 from .player import Player

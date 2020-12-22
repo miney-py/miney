@@ -1,5 +1,5 @@
-Node
-====
+Nodes
+=====
 
 Manipulate and get information's about nodes.
 

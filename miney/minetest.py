@@ -5,7 +5,12 @@ from typing import Dict, Union
 import time
 import string
 from random import choices
+import logging
+import os
 import miney
+
+
+logger = logging.getLogger(__name__ + "." + os.path.basename(__file__))
 
 
 class Minetest:
@@ -59,6 +64,16 @@ class Minetest:
         self._lua: miney.lua.Lua = miney.Lua(self)
         self._chat: miney.chat.Chat = miney.Chat(self)
         self._node: miney.nodes.Nodes = miney.Nodes(self)
+
+        self.singleplayer = self.lua.run(
+            """
+            return minetest.is_singleplayer()
+            """
+        )
+        if self.singleplayer:
+            logger.warning("""You running Minetest in single player mode. 
+Thats not recommended, as minetest pause the game and also stops miney when you press escape. 
+Start in hosted mode by enabling "Host Server" in the main menu to prevent side effects.""")
 
         player = self.lua.run(
             """

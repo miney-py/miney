@@ -29,6 +29,7 @@ thats a shortcut for
 .. toctree::
 
    minetest
+   point
    helpers
    exceptions
 

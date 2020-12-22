@@ -84,8 +84,8 @@ class Nodes:
             >>> mt.node.set(mt.player[0].nodes, mt.node)
 
         :param nodes: A dict or a list of dicts with node definitions
-        :param name: a type name like "default:dirt" as string or from :attr:`~miney.Minetest.node.type`. This overrides
-        node names defined in the :attr:`nodes` dict
+        :param name: a type name like "default:dirt" as string or from :attr:`~miney.Minetest.node.type`.
+            This overrides node names defined in the :attr:`nodes` dict
         :param offset: A dict with "x", "y", "z" keys. All node positions will be added with this values.
         """
 

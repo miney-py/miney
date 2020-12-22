@@ -21,7 +21,7 @@ First goal is to have fun with a sandbox for Python.
 
 .. important::
 
-   For the best way to get everything running, take a look at the :doc:`quickstart` page.
+   For the best way to get everything running, take a look at the :doc:`getting_started/quickstart` page.
 
 .. warning::
 
@@ -33,6 +33,7 @@ Why Python?
 .. image:: python-logo.png
    :alt: Python logo
    :align: right
+
 Some marketing text from the `Python website <https://www.python.org/about/>`_:
 
    | Python is powerful... and fast;
@@ -67,7 +68,8 @@ Table of Contents
 .. toctree::
    :caption: Getting started
 
-   quickstart
+   getting_started/quickstart
+   getting_started/basics
 
 .. toctree::
    :caption: Reference

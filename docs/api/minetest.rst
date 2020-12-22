@@ -26,7 +26,6 @@ There is also some properties inside, to get other objects like players or nodes
 
 .. toctree::
 
-   Minetest
    player
    nodes
    lua
