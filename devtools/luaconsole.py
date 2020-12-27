@@ -9,7 +9,7 @@ except ModuleNotFoundError:
     from miney import Minetest, exceptions
 
 server = sys.argv[1] if 1 < len(sys.argv) else "127.0.0.1"
-port = sys.argv[2] if 2 < len(sys.argv) else 29999
+port = int(sys.argv[2]) if 2 < len(sys.argv) else 29999
 playername = sys.argv[3] if 3 < len(sys.argv) else "Players"
 password = sys.argv[4] if 4 < len(sys.argv) else ""
 

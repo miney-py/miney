@@ -10,7 +10,7 @@ import os
 import miney
 
 
-logger = logging.getLogger(__name__ + "." + os.path.basename(__file__))
+logger = logging.getLogger(__name__)
 
 
 class Minetest:
@@ -63,7 +63,7 @@ class Minetest:
         # objects representing local properties
         self._lua: miney.lua.Lua = miney.Lua(self)
         self._chat: miney.chat.Chat = miney.Chat(self)
-        self._node: miney.nodes.Nodes = miney.Nodes(self)
+        self._nodes: miney.nodes.Nodes = miney.Nodes(self)
 
         self.singleplayer = self.lua.run(
             """
@@ -84,19 +84,17 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
             return players
             """
         )
-        if player:
-            player = [] if len(player) == 0 else player
-        else:
-            raise miney.DataError("Received malformed player data.")
+        if not player:
+            player = []
 
         self._player = miney.PlayerIterable(self, player)
 
         self._tools_cache = self.lua.run(
             """
-            local nodes = {}
+            local node = {}
             for name, def in pairs(minetest.registered_tools) do
-                table.insert(nodes, name)
-            end return nodes
+                table.insert(node, name)
+            end return node
             """
         )
         self._tool = miney.ToolIterable(self, self._tools_cache)
@@ -267,13 +265,13 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
         return self._chat
 
     @property
-    def node(self):
+    def nodes(self):
         """
-        Manipulate and get information's about nodes.
+        Manipulate and get information's about node.
 
         :return: :class:`miney.Nodes`: Nodes manipulation functions
         """
-        return self._node
+        return self._nodes
 
     def log(self, line: str):
         """

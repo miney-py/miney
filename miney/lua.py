@@ -1,7 +1,12 @@
 import re
 import string
 from random import choices
+import logging
+import os
 import miney
+
+
+logger = logging.getLogger(__name__)
 
 
 class Lua:
@@ -19,8 +24,10 @@ class Lua:
         :param timeout: How long to wait for a result
         :return: The return value. Multiple values as a list.
         """
-        # generates nearly unique id's (under 1000 collisions in 10 million values)
+        # generates nearly unique id's
         result_id = ''.join(choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=6))
+        lua_code = lua_code.replace("    ", "")
+        logger.debug("lua code: \n" + lua_code)
 
         self.mt.send({"lua": lua_code, "id": result_id})
 
@@ -65,9 +72,13 @@ class Lua:
             t = "{"
             t += ", ".join(
                 [
-                    '[\"{}\"]={}'.format(re.escape(k), self.dumps(v)) for k, v in data.items()
+                    # '[\"{}\"]={}'.format(re.escape(k), self.dumps(v)) for k, v in data.items()
+                    '{}={}'.format(re.escape(k), self.dumps(v)) for k, v in data.items()
                 ]
             )
             t += "}"
             return t
+        if data is None:
+            return "nil"
+
         raise ValueError("Unknown type {}".format(type(data)))

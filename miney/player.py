@@ -68,7 +68,7 @@ class Player:
         Get or set the players current position.
 
         To place a player on top of a specific node, add 0.5 to the y value and his feet will touch this node.
-        A player needs two blocks in the y axis (he's around 1,5 nodes tall), or he is stuck.
+        A player needs two blocks in the y axis (he's around 1,5 node tall), or he is stuck.
 
         :return: :class:`miney.Point`
         """

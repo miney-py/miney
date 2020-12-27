@@ -2,6 +2,7 @@ import pytest
 import miney
 import math
 from time import sleep
+from typing import Union
 
 
 @pytest.fixture(scope="module")
@@ -20,9 +21,9 @@ def test_player(mt: miney.Minetest, mt_player: miney.Player):
     assert mt_player.is_online is True
 
     position = mt_player.position
-    assert "x" in position
-    assert "y" in position
-    assert "z" in position
+    assert isinstance(position.x, (int, float))
+    assert isinstance(position.y, (int, float))
+    assert isinstance(position.z, (int, float))
 
     mt_player.gravity = 0
     assert mt_player.gravity == 0
@@ -34,12 +35,13 @@ def test_player(mt: miney.Minetest, mt_player: miney.Player):
     mt_player.creative = True
     assert mt_player.creative
 
-    mt_player.position = {"x": 12, "y": 8.5, "z": 12}
+    # mt_player.position = {"x": 12, "y": 8.5, "z": 12}
+    mt_player.position = miney.Point(12, 8.5, 12)
     sleep(0.1)  # give the value some time to get to the client
     position = mt_player.position
-    assert 12.1 > position["x"] > 11.9
-    assert 9 > position["y"] > 8
-    assert 12.1 > position["z"] > 11.9
+    assert 12.1 > position.x > 11.9
+    assert 9 > position.y > 8
+    assert 12.1 > position.z > 11.9
 
     mt_player.gravity = 0.8
     assert round(mt_player.gravity, 1) == 0.8

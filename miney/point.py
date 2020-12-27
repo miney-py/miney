@@ -5,7 +5,6 @@ from math import sqrt, acos, degrees
 class Point:
 
     def __init__(self, x: Union[int, float] = 0, y: Union[int, float] = 0, z: Union[int, float] = 0):
-        print("point")
         self.x = x
         self.y = y
         self.z = z
@@ -15,9 +14,6 @@ class Point:
 
     def center(self, b: "Point") -> "Point":
         return Point((b.x - self.x) / 2, (b.y - self.y) / 2, (b.z - self.z) / 2)
-    
-    def dict(self) -> dict:
-        return self.__dict__
 
     def __add__(self, other: "Point") -> "Point":
         return Point(self.x + other.x, self.y + other.y, self.z + other.z)
@@ -54,6 +50,15 @@ class Point:
     def angle(self, b):
         m = self.x * b.x + self.y * b.y + self.z * b.z
         return degrees(acos(m / (self.length() * b.length())))
+
+    def __iter__(self):
+        vals = []
+        for key in self.__dict__:
+            vals.append((key, self.__dict__[key]))
+        return iter(vals)
+
+    def __getitem__(self, item_key):
+        return self.__getattribute__(item_key)
 
     def __repr__(self):
         return f"<minetest Point(x={self.x}, y={self.y}, z={self.z})>"

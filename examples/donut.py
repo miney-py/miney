@@ -52,9 +52,9 @@ def draw_donut(mt, mcx, mcy, mcz, R, r, mcblock):
                                 "z": (mcy + z)
                             }
                         )
-    print("Spawning", len(positions), "nodes of", mcblock)
+    print("Spawning", len(positions), "node of", mcblock)
     print(positions)
-    mt.node.set(nodes=positions, name=mcblock)
+    mt.node.set(node=positions, name=mcblock)
 
 
 if miney.is_miney_available():

@@ -10,7 +10,7 @@ class Chat:
         self.mt = mt
 
     def __repr__(self):
-        return '<minetest chat functions>'
+        return '<minetest Chat>'
 
     def send_to_all(self, message: str) -> None:
         """

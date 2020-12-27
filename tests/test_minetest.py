@@ -1,37 +1,20 @@
 """
 Tests Minetest class' methods
 """
-import socket
 import miney
 import pytest
 
 
-def test_connection(mt: miney.Minetest):
-    """
-    Test connection with some missconfigurations.
-
-    :param mt: fixture
-    :return: None
-    """
-    # wrong server name
-    with pytest.raises(socket.gaierror) as e:
-        mt_fail = miney.Minetest("someunresolveableserver", "someuser", "somepass")
-
-    # wrong port / apisocket unreachable or not running
-    with pytest.raises((socket.timeout, ConnectionResetError)) as e:
-        mt_fail = miney.Minetest(port=12345)
-
-
 def test_send_corrupt_data(mt: miney.Minetest):
     """
-    Send corrupt data, they shouldn't crash the server.
+    Send corrupt data, they shouldn't crash the server and raise a exception.
 
     :param mt: fixture
     :return: None
     """
     mt.connection.sendto(
         str.encode(
-            "}s876" + "\n"
+            "}corruptdata" + "\n"
         ),
         ("127.0.0.1", 29999)
     )
@@ -47,7 +30,7 @@ def test_minetest(mt: miney.Minetest):
     :return: None
     """
     assert str(mt) == '<minetest server "{}:{}">'.format("127.0.0.1", "29999")
-    nodes = mt.node.type
+    nodes = mt.nodes.type
     assert "air" in nodes
     assert "default:stone" in nodes
 
@@ -106,4 +89,4 @@ def test_players(mt: miney.Minetest):
     assert isinstance(player, miney.player.Player)
     assert len(player.name) > 0
 
-    assert str(player) == "<minetest player \"{}\">".format(player.name)
+    assert str(player) == "<minetest Player \"{}\">".format(player.name)
