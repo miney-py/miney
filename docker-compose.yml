@@ -1,0 +1,15 @@
+version: "3.2"
+services:
+  pytest_minetest:
+    image: miney/miney-server
+    ports:
+      - "29999:29999"
+      - "30000:30000/udp"
+      - "30000:30000/tcp"
+    environment:
+      MT_MG_NAME: flat
+      MT_MG_FLAGS: nocaves,nodungeons,light,nodecorations,biomes
+      MT_MGFLAT_GROUND_LEVEL: -1
+      MT_WATER_LEVEL: -2
+      MT_CREATIVE_MODE: "true"
+      MT_STATIC_SPAWNPOINT: (0,0,0)

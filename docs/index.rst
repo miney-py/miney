@@ -44,7 +44,7 @@ Some marketing text from the `Python website <https://www.python.org/about/>`_:
 
    These are some of the reasons people who use Python would rather not use anything else.
 
-And it's popular! And cause of that it has a `giant package index <https://pypi.org/>`_ filled by over 400.000 users!
+And it's popular! And cause of that it has a `giant package index <https://pypi.org/>`_ filled by over 450.000 users!
 
 
 Why Minetest?

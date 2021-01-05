@@ -14,9 +14,17 @@ https://miney.readthedocs.io/en/latest/
 
 ## Status
 
-Beta, the current todo list is in the [wiki](https://github.com/miney-py/miney/wiki).
+Beta, the current todo list is in the [here](https://github.com/orgs/miney-py/projects/1).
 
 ## Requirement
 
 * Python 3.6+ (tested on 3.8)
 * A minetest-server with [mineysocket](https://github.com/miney-py/mineysocket) mod
+
+# Development
+
+We write tests with pytest and run them inside a docker container started with this:
+
+    docker up -d
+
+Connect at least one client to the minetest server before running the tests.

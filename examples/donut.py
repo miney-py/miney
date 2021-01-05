@@ -63,11 +63,11 @@ if miney.is_miney_available():
     playerPos = mt.player[0].position
 
     draw_donut(mt, playerPos["x"], playerPos["y"] + 1, playerPos["z"], 4, 2, 'default:glass')
-    mt.chat.send_to_all(mt.node.type.default.glass + " donut done")
-    print(mt.node.type.default.glass + " donut done")
+    mt.chat.send_to_all(mt.node.name.default.glass + " donut done")
+    print(mt.node.name.default.glass + " donut done")
 
     draw_donut(mt, playerPos["x"], playerPos["y"] + 1, playerPos["z"], 4, 1, 'default:water_source')
-    mt.chat.send_to_all(mt.node.type.default.lava_source + " donut done")
-    print(mt.node.type.default.lava_source + " donut done")
+    mt.chat.send_to_all(mt.node.name.default.lava_source + " donut done")
+    print(mt.node.name.default.lava_source + " donut done")
 else:
     raise miney.MinetestRunError("Please start Minetest with the miney game")

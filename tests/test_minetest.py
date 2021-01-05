@@ -5,23 +5,6 @@ import miney
 import pytest
 
 
-def test_send_corrupt_data(mt: miney.Minetest):
-    """
-    Send corrupt data, they shouldn't crash the server and raise a exception.
-
-    :param mt: fixture
-    :return: None
-    """
-    mt.connection.sendto(
-        str.encode(
-            "}corruptdata" + "\n"
-        ),
-        ("127.0.0.1", 29999)
-    )
-    with pytest.raises(miney.exceptions.LuaError):
-        mt.receive()
-
-
 def test_minetest(mt: miney.Minetest):
     """
     Test basic functionality.
@@ -30,7 +13,7 @@ def test_minetest(mt: miney.Minetest):
     :return: None
     """
     assert str(mt) == '<minetest server "{}:{}">'.format("127.0.0.1", "29999")
-    nodes = mt.nodes.type
+    nodes = mt.nodes.name
     assert "air" in nodes
     assert "default:stone" in nodes
 

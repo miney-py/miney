@@ -131,7 +131,7 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
         :return:
         """
         chunk_size = 4096
-        raw_data: bytes = str.encode(json.dumps(data) + "\n")
+        raw_data: bytes = str.encode(json.dumps(data) + "\r\n")
 
         try:
             if len(raw_data) < chunk_size:
@@ -196,7 +196,7 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
             try:
                 # receive the raw data and try to decode json
                 data_buffer = b""
-                while "\n" not in data_buffer.decode():
+                while "\r\n" not in data_buffer.decode():
                     data_buffer = data_buffer + self.connection.recv(4096)
                 data = json.loads(data_buffer.decode())
             except socket.timeout:

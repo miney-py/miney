@@ -3,16 +3,30 @@ from math import sqrt, acos, degrees
 
 
 class Point:
-
+    """
+    A point is a position inside a three dimensional system.
+    """
     def __init__(self, x: Union[int, float] = 0, y: Union[int, float] = 0, z: Union[int, float] = 0):
         self.x = x
         self.y = y
         self.z = z
 
     def distance(self, b: "Point") -> float:
+        """
+        Measure the distance between this point and Point b.
+
+        :param b: Another Point
+        :return: Distance
+        """
         return sqrt((b.x - self.x) ** 2 + (b.y - self.y) ** 2 + (b.z - self.z) ** 2)
 
     def center(self, b: "Point") -> "Point":
+        """
+        Get the exact point in the center between this point and point b.
+
+        :param b: Another Point
+        :return: The center point
+        """
         return Point((b.x - self.x) / 2, (b.y - self.y) / 2, (b.z - self.z) / 2)
 
     def __add__(self, other: "Point") -> "Point":

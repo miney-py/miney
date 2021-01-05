@@ -18,5 +18,5 @@ from .player import PlayerIterable
 from .helper import *
 
 __version__ = "0.3.0"
-default_playername = "MineyPlayer"
+default_playername = "Miney"
 

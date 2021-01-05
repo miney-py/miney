@@ -13,7 +13,7 @@ class Nodes:
     def __init__(self, mt: miney.Minetest):
         self.mt = mt
 
-        self._types_cache = self.mt.lua.run(
+        self._names_cache = self.mt.lua.run(
             """
             local node = {}
             for name, def in pairs(minetest.registered_nodes) do
@@ -21,43 +21,46 @@ class Nodes:
             end return node
             """
         )
-        self._types = TypeIterable(self, self._types_cache)
+        self._types = NameIterable(self, self._names_cache)
 
     @property
-    def type(self) -> 'TypeIterable':
+    def name(self) -> 'NameIterable':
         """
-        All available node types in the game, sorted by categories. In the end it just returns the corresponding
-        minetest type string, so `mt.node.types.default.dirt` returns the string 'default:dirt'.
-        It's a nice shortcut in REPL, cause with auto completion you have only pressed 2-4 keys to get to your type.
+        In Minetest, the type of the node, something like "dirt", is the "name" of this node.
+
+        This property returns all available node names in the game, sorted by categories. In the end it just returns the
+        corresponding minetest name string, so `mt.node.types.default.dirt` returns the string 'default:dirt'.
+        It's only a nice shortcut in REPL, cause with auto completion you have only pressed 2-4 keys to get to your
+        type.
 
         :Examples:
 
             Directly access a type:
 
-            >>> mt.node.type.default.dirt
+            >>> mt.node.name.default.dirt
             'default:dirt'
 
             Iterate over all available types:
 
-            >>> for node_type in mt.node.type:
+            >>> for node_type in mt.node.name:
             >>>     print(node_type)
             default:pine_tree
             default:dry_grass_5
             farming:desert_sand_soil
             ... (there should be over 400 different types)
-            >>> print(len(mt.node.type))
+            >>> print(len(mt.node.name))
             421
 
             Get a list of all types:
 
-            >>> list(mt.node.type)
+            >>> list(mt.node.name)
             ['default:pine_tree', 'default:dry_grass_5', 'farming:desert_sand_soil', ...
 
             Add 99 dirt to player "IloveDirt"'s inventory:
 
-            >>> mt.player.IloveDirt.inventory.add(mt.node.type.default.dirt, 99)
+            >>> mt.player.IloveDirt.inventory.add(mt.node.name.default.dirt, 99)
 
-        :rtype: :class:`TypeIterable`
+        :rtype: :class:`NameIterable`
         :return: :class:`TypeIterable` object with categories. Look at the examples above for usage.
         """
         return self._types
@@ -87,7 +90,7 @@ class Nodes:
                 f"{{name=\"{ node.name }\"}})"
             )
 
-        # Set many blocks
+        # Set many nodes
         elif type(node) is list:
 
             lua = ""
@@ -98,16 +101,16 @@ class Nodes:
                             f"{{name=\"{n.name}\"}})\n"
             self.mt.lua.run(lua)
 
-    def get(self, point: Union[Point, Iterable]) -> Union[Node, list]:
+    def get(self, point: Union[Point, Node, Iterable]) -> Union[Node, list]:
         """
-        Get the node at given position. It returns a dict with the node definition.
-        This contains the "x", "y", "z", "param1", "param2" and "name" keys, where "name" is the node type like
+        Get the node at given position. It returns a node object.
+        This contains the "x", "y", "z", "param1", "param2" and "name" attributes, where "name" is the node type like
         "default:dirt".
 
-        If also position2 is given, this function returns a list of dicts with node definitions. This list contains a
-        cuboid of definitions with the diagonal between position and position2.
+        If instead of a single point/node a list or tuple with 2 points/nodes is given, this function returns a list of
+        nodes. This list contains a cuboid of nodes with the diagonal between the given points.
 
-        You can get a list of all available node types with :attr:`~miney.Minetest.node.type`.
+        Tip: You can get a list of all available node types with :attr:`~miney.Minetest.node.type`.
 
         :param point: A Point object
         :return: The node type on this position
@@ -148,11 +151,11 @@ class Nodes:
         return '<minetest node functions>'
 
 
-class TypeIterable:
-    """Nodes type, implemented as iterable for easy autocomplete in the interactive shell"""
+class NameIterable:
+    """Node names, implemented as iterable for easy autocomplete in the interactive shell"""
     def __init__(self, parent, nodes_types=None):
 
-        self.__parent = parent
+        self._parent = parent
 
         if nodes_types:
 
@@ -162,7 +165,7 @@ class TypeIterable:
                 if ":" in ntype:
                     type_categories[ntype.split(":")[0]] = ntype.split(":")[0]
             for tc in dict.fromkeys(type_categories):
-                self.__setattr__(tc, TypeIterable(parent))
+                self.__setattr__(tc, NameIterable(parent))
 
             # values to categories
             for ntype in nodes_types:
@@ -173,17 +176,17 @@ class TypeIterable:
 
     def __iter__(self):
         # todo: list(mt.node.type.default) should return only default group
-        return iter(self.__parent._types_cache)
+        return iter(self._parent._names_cache)
 
     def __getitem__(self, item_key):
-        if type(self.__parent) is not type(self):  # if we don't have a category below
+        if type(self._parent) is not type(self):  # if we don't have a category below
             return self.__getattribute__(item_key)
-        if item_key in self.__parent.node_types:
+        if item_key in self._parent.node_types:
             return item_key
         else:
             if type(item_key) == int:
-                return self.__parent.node_types[item_key]
+                return self._parent.node_types[item_key]
             raise IndexError("unknown node type")
 
     def __len__(self):
-        return len(self.__parent._types_cache)
+        return len(self._parent._names_cache)
