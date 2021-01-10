@@ -32,15 +32,15 @@ class Player:
         
         :Example to add 99 dirt to player "IloveDirt"'s inventory:
         
-            >>> import miney
-            >>> mt = miney.Minetest()
-            >>> mt.player.IloveDirt.inventory.add(mt.node.type.default.dirt, 99)      
+        >>> import miney
+        >>> mt = miney.Minetest()
+        >>> mt.player.IloveDirt.inventory.add(mt.node.type.default.dirt, 99)      
             
         :Example to remove 99 dirt from player "IhateDirt"'s inventory:
         
-            >>> import miney
-            >>> mt = miney.Minetest()
-            >>> mt.player.IhateDirt.inventory.remove(mt.node.type.default.dirt, 99)
+        >>> import miney
+        >>> mt = miney.Minetest()
+        >>> mt.player.IhateDirt.inventory.remove(mt.node.type.default.dirt, 99)
             
         """
 

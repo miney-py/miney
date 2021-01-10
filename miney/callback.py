@@ -22,7 +22,7 @@ class Callback:
 
         self.mt.send(
             {
-                'activate_event':
+                'register_event':
                     {
                         'event': event,
                     },

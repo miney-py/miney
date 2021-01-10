@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Union
 import miney
 
 
@@ -21,35 +21,66 @@ class Chat:
         """
         self.mt.lua.run("minetest.chat_send_all('{}')".format(message.replace("\'", "\\'")))
 
-    def send_to_player(self, playername: str, message: str):
-        return self.mt.lua.run("return minetest.chat_send_player({}, {}})".format(playername, message))
+    def send_to_player(self, player: Union[str, miney.Player], message: str) -> None:
+        """
+        Send a message to a player.
+
+        :Send "Hello" to the first player on the server:
+
+        >>> mt.chat.send_to_player(mt.player[0], "Hello")
+
+        :Send "Hello" to the player "Miney" on the server:
+
+        >>> mt.chat.send_to_player("Miney", "Hello")
+
+        :param player: A Player object or a string with the name.
+        :param message: The message
+        :return: None
+        """
+        if isinstance(player, miney.Player):
+            player = player.name
+
+        self.mt.lua.run("return minetest.chat_send_player(\"{}\", \"{}\")".format(player, message))
 
     def format_message(self, playername: str, message: str):
-        return self.mt.lua.run("return minetest.format_chat_message({}}, {}})".format(playername, message))
+        return self.mt.lua.run("return minetest.format_chat_message({}, {})".format(playername, message))
 
-    def registered_commands(self):
-        return self.mt.lua.run("return minetest.registered_chatcommands")
+    # def registered_commands(self):
+    #     return self.mt.lua.run("return minetest.registered_chatcommands()")
 
-    def register_command(self, name, parameter: str, callback_function, description: str = "", privileges: Dict = None):
-
-        if isinstance(callback_function, callable):
-            pass
-        elif isinstance(callback_function, str):
-            pass
-
-        return self.mt.lua.run(
-            """
-            return minetest.register_chatcommand(
-                {name}, 
-                {{params = {params}, description={description}, privs={privs}, func={func}}
-            )""".format(
-                name=name,
-                params=parameter,
-                description=description,
-                privs=self.mt.lua.dumps(privileges) if privileges else "{}",
-                func=callback_function
+    def register_command(self, name, callback_function, parameter: str = "", description: str = "", privileges: Dict = None):
+        self.mt.lua.run(
+            f"""
+            minetest.register_chatcommand(
+                "{name}", 
+                {{func = function(name, param) 
+                    mineysocket.send_event({{ event = {{ "chatcommand_{name}", param }} }})
+                    return true, ""
+                end,}}
             )
-        )
+            """)
+        self.mt.on_event(f"chatcommand_{name}", callback_function)
+        # if not privileges:
+        #     privileges = {}
+        #
+        # if isinstance(callback_function, callable):
+        #     pass
+        # elif isinstance(callback_function, str):
+        #     pass
+        #
+        # return self.mt.lua.run(
+        #     """
+        #     return minetest.register_chatcommand(
+        #         {name},
+        #         {{params = {params}, description={description}, privs={privs}, func={func}}
+        #     )""".format(
+        #         name=name,
+        #         params=parameter,
+        #         description=description,
+        #         privs=self.mt.lua.dumps(privileges) if privileges else "{}",
+        #         func=callback_function
+        #     )
+        # )
 
     def override_command(self, definition):
         pass

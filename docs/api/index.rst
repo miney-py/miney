@@ -11,7 +11,7 @@ You can access the node manipulation on two different ways:
 
     >>> mt = miney.Minetest()
     >>> mt.node.get(0, 0, 0)
-    >>> mt.node.set({"x": 0, "y": 0, "z": 0, "name": "default:dirt"})
+    >>> mt.node.set(miney.Node(0, 0, 0, "default:dirt"))
 
 thats a shortcut for
 
@@ -21,7 +21,7 @@ thats a shortcut for
 
     >>> mt = miney.Minetest()
     >>> nf = miney.NodeFunctions(mt)
-    >>> nf.get(0, 0, 0)
+    >>> nf.get(miney.Point(0, 0, 0))
 
 
 .. rubric:: Objects

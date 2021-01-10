@@ -119,7 +119,7 @@ class Nodes:
             node = Node(point.x, point.y, point.z, **self.mt.lua.run(
                 f"return minetest.get_node({self.mt.lua.dumps(point.__dict__)})"))
             return node
-        elif isinstance(point, Iterable):  # Multiple node
+        elif isinstance(point, (list, tuple)):  # Multiple nodes
             lnodes = self.mt.lua.run(  # We sort them by the smallest coordinates and get them node per node
                 f"""
                 pos1 = {self.mt.lua.dumps(dict(point[0]))}

@@ -2,7 +2,6 @@ import re
 import string
 from random import choices
 import logging
-import os
 import miney
 
 
@@ -27,7 +26,8 @@ class Lua:
         # generates nearly unique id's
         result_id = ''.join(choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=6))
         lua_code = lua_code.replace("    ", "")
-        logger.debug("lua code: \n" + lua_code)
+
+        logger.debug("Sending this lua code: \n" + lua_code)
 
         self.mt.send({"lua": lua_code, "id": result_id})
 
@@ -72,7 +72,6 @@ class Lua:
             t = "{"
             t += ", ".join(
                 [
-                    # '[\"{}\"]={}'.format(re.escape(k), self.dumps(v)) for k, v in data.items()
                     '{}={}'.format(re.escape(k), self.dumps(v)) for k, v in data.items()
                 ]
             )

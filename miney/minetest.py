@@ -1,4 +1,5 @@
 import socket
+import selectors
 import json
 import math
 from typing import Dict, Union
@@ -6,7 +7,6 @@ import time
 import string
 from random import choices
 import logging
-import os
 import miney
 
 
@@ -130,8 +130,12 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
         :param data:
         :return:
         """
+        data = json.dumps(data)
+
+        logger.debug("Sending: \n" + data)
+
         chunk_size = 4096
-        raw_data: bytes = str.encode(json.dumps(data) + "\r\n")
+        raw_data: bytes = str.encode(data + "\n")
 
         try:
             if len(raw_data) < chunk_size:
@@ -196,7 +200,7 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
             try:
                 # receive the raw data and try to decode json
                 data_buffer = b""
-                while "\r\n" not in data_buffer.decode():
+                while "\n" not in data_buffer.decode():
                     data_buffer = data_buffer + self.connection.recv(4096)
                 data = json.loads(data_buffer.decode())
             except socket.timeout:
@@ -241,7 +245,7 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
         # Match answer to request
         result_id = ''.join(choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=6))
         self.callbacks[name] = callback
-        self.send({'activate_event': {'event': name}, 'id': result_id})
+        self.send({'register_event': name, 'id': result_id})
 
     def _run_callback(self, data: dict):
         if data['event'] in self.callbacks:

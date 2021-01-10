@@ -3,7 +3,6 @@ Test all node related.
 """
 
 import miney
-from pprint import pprint
 
 
 def test_node_types(mt: miney.Minetest):
@@ -43,11 +42,9 @@ def test_node_set_and_get_multiple(mt: miney.Minetest):
 
     # save for later restore
     before = mt.nodes.get((set_nodes[0], set_nodes[-1]))
-    pprint(before)
 
     mt.nodes.set(set_nodes)
     dirt_nodes = mt.nodes.get((set_nodes[0], set_nodes[-1]))
-    pprint(dirt_nodes)
     assert dirt_nodes[0].name == "default:dirt"
     assert dirt_nodes[-1].name == "default:dirt"
     assert "param1" in dict(dirt_nodes[0])
@@ -55,6 +52,5 @@ def test_node_set_and_get_multiple(mt: miney.Minetest):
 
     mt.nodes.set(before)
     restored_nodes = mt.nodes.get([before[0], before[-1]])
-    pprint(restored_nodes)
     assert restored_nodes[0].name == before[0].name != "default:dirt"
     assert restored_nodes[-1].name == before[-1].name != "default:dirt"
