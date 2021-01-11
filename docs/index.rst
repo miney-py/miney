@@ -16,8 +16,10 @@ First goal is to have fun with a sandbox for Python.
 * Play and fiddle around while learning python
 * Visualize data in unusual ways
 * Automate things with bots
-* Connect minetest to external services like twitter, ebay or whatsoever
+* Connect minetest to external services like discord, twitch or whatsoever
 * Do whatever you want!
+
+**Join the Miney community on Discord: https://discord.gg/8KRUsW92 **
 
 .. important::
 
