@@ -1,4 +1,5 @@
 from typing import Dict, Union
+import re
 import miney
 
 
@@ -39,14 +40,12 @@ class Chat:
         """
         if isinstance(player, miney.Player):
             player = player.name
-
+        message = message.replace("\"", "'")  # replace " with '
+        # todo: Find a solution to support " again without breaking security.
         self.mt.lua.run("return minetest.chat_send_player(\"{}\", \"{}\")".format(player, message))
 
     def format_message(self, playername: str, message: str):
         return self.mt.lua.run("return minetest.format_chat_message({}, {})".format(playername, message))
-
-    # def registered_commands(self):
-    #     return self.mt.lua.run("return minetest.registered_chatcommands()")
 
     def register_command(self, name, callback_function, parameter: str = "", description: str = "", privileges: Dict = None):
         self.mt.lua.run(
@@ -54,33 +53,12 @@ class Chat:
             minetest.register_chatcommand(
                 "{name}", 
                 {{func = function(name, param) 
-                    mineysocket.send_event({{ event = {{ "chatcommand_{name}", param }} }})
+                    mineysocket.send_event({{ event = {{ "chatcommand_{name}", name, param }} }})
                     return true, ""
                 end,}}
             )
             """)
         self.mt.on_event(f"chatcommand_{name}", callback_function)
-        # if not privileges:
-        #     privileges = {}
-        #
-        # if isinstance(callback_function, callable):
-        #     pass
-        # elif isinstance(callback_function, str):
-        #     pass
-        #
-        # return self.mt.lua.run(
-        #     """
-        #     return minetest.register_chatcommand(
-        #         {name},
-        #         {{params = {params}, description={description}, privs={privs}, func={func}}
-        #     )""".format(
-        #         name=name,
-        #         params=parameter,
-        #         description=description,
-        #         privs=self.mt.lua.dumps(privileges) if privileges else "{}",
-        #         func=callback_function
-        #     )
-        # )
 
     def override_command(self, definition):
         pass

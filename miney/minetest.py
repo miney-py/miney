@@ -51,6 +51,7 @@ class Minetest:
 
         # setup connection
         self.connection = None
+        self.socket_selector = None
         self._connect()
 
         self.event_queue = []  # List for collected but unprocessed events
@@ -102,8 +103,10 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
     def _connect(self):
         # setup connection
         self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.connection.settimeout(2.0)
         self.connection.connect((self.server, self.port))
+        self.connection.setblocking(False)
+        self.socket_selector = selectors.DefaultSelector()
+        self.socket_selector.register(self.connection, selectors.EVENT_READ | selectors.EVENT_WRITE,)
 
     def _authenticate(self):
         """
@@ -113,8 +116,8 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
         """
         # authenticate
         self.send({"playername": self.playername, "password": self.password})
-        result = self.receive("auth")
-
+        result = self.receive(result_id="auth")
+        logger.debug("Auth result: " + str(result))
         if result:
             if "auth_ok" not in result:
                 raise miney.AuthenticationError("Wrong playername or password")
@@ -130,23 +133,25 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
         :param data:
         :return:
         """
-        data = json.dumps(data)
+        json_data = json.dumps(data)
 
-        logger.debug("Sending: \n" + data)
+        logger.debug("Sending: " + json_data)
 
         chunk_size = 4096
-        raw_data: bytes = str.encode(data + "\n")
+        raw_data: bytes = str.encode(json_data + "\n")
 
         try:
-            if len(raw_data) < chunk_size:
-                self.connection.sendall(raw_data)
-            else:  # we need to break the message in chunks
-                for i in range(0, int(math.ceil((len(raw_data)/chunk_size)))):
-                    self.connection.sendall(
-                        raw_data[i * chunk_size:chunk_size + (i * chunk_size)]
-                    )
-                    time.sleep(0.01)  # Give luasocket a chance to read the buffer in time
-                    # todo: Protocol change, that every chunked message needs a response before sending the next
+            key, mask = self.socket_selector.select()[0]
+            if mask & selectors.EVENT_WRITE:
+                if len(raw_data) < chunk_size:
+                    key.fileobj.sendall(raw_data)
+                else:  # we need to break the message in chunks
+                    for i in range(0, int(math.ceil((len(raw_data)/chunk_size)))):
+                        key.fileobj.sendall(  # todo: Use the selector to look that we are ready to write
+                            raw_data[i * chunk_size:chunk_size + (i * chunk_size)]
+                        )
+                        time.sleep(0.01)  # Give luasocket a chance to read the buffer in time
+                        # todo: Protocol change, that every chunked message needs a response before sending the next
         except ConnectionAbortedError:
             self._connect()
             self.send(data)
@@ -193,16 +198,22 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
             del self.event_queue[0]
             self._run_callback(result)
         try:
-            # Set a new timeout to prevent long waiting for a timeout
-            if timeout:
-                self.connection.settimeout(timeout)
-    
             try:
-                # receive the raw data and try to decode json
-                data_buffer = b""
-                while "\n" not in data_buffer.decode():
-                    data_buffer = data_buffer + self.connection.recv(4096)
-                data = json.loads(data_buffer.decode())
+                key, mask = self.socket_selector.select()[0]
+                if mask & selectors.EVENT_READ:  # there is something to receive
+                    # receive the raw data and try to decode json
+                    data_buffer = b""
+                    while "\n" not in data_buffer.decode():
+                        key, mask = self.socket_selector.select()[0]
+                        if mask & selectors.EVENT_READ:
+                            data_buffer = data_buffer + key.fileobj.recv(4096)
+                        else:
+                            time.sleep(0.1)  # todo: We shouldn't use sleep
+                    data = json.loads(data_buffer.decode())
+                    logger.debug("We received: " + data_buffer.decode())
+                else:  # there is nothing to receive
+                    logger.debug("There is nothing to receive")
+                    data = {}
             except socket.timeout:
                 raise miney.LuaResultTimeout()
     
@@ -210,6 +221,7 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
             if "result" in data:
                 if result_id:  # do we need a specific result?
                     if data["id"] == result_id:  # we've got the result we wanted
+                        logger.debug("returning: " + str(format_result(data)))
                         return format_result(data)
                 # We store this for later processing
                 self.result_queue[data["id"]] = data
@@ -228,7 +240,9 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
     
             # if we don't got our result we have to receive again
             if result_id:
-                self.receive(result_id)
+                logger.debug("We don't got our result for " + result_id + ", so we retry.")
+                time.sleep(0.1)  # todo: We shouldn't use sleep
+                return self.receive(result_id)
 
         except ConnectionAbortedError:
             self._connect()
@@ -248,12 +262,9 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
         self.send({'register_event': name, 'id': result_id})
 
     def _run_callback(self, data: dict):
-        if data['event'] in self.callbacks:
-            # self.callbacks[data['event']](**data['event']['params'])
-            if type(data['params']) is dict:
-                self.callbacks[data['event']](**data['params'])
-            elif type(data['params']) is list:
-                self.callbacks[data['event']](*data['params'])
+        eventname = data["event"][0]
+        params = data["event"][1:]
+        self.callbacks[eventname](*params)
 
     @property
     def chat(self):
@@ -390,10 +401,12 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
 
         :return: None
         """
+        self.socket_selector.unregister(self.connection)
         self.connection.close()
 
     def __repr__(self):
         return '<minetest server "{}:{}">'.format(self.server, self.port)
 
     def __delete__(self, instance):
+        self.socket_selector.unregister(self.connection)
         self.connection.close()

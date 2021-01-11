@@ -1,24 +1,24 @@
 """
-This example shows a simple chatbot, that listens on commands but also on any messages.
+This example shows a simple chatbot, that listens on commands.
 """
 from miney import Minetest
-import logging
+import time
 
-
-logging.basicConfig(level=logging.DEBUG)
 
 mt = Minetest()
-mt.lua.run("mineysocket.debug = true")
+mt.lua.run("mineysocket.debug = false")
 
 
-def mycommand(*args):
-    print(args)
+def miney_command(playername, message):
+    print(f"{playername} wrote: {message}")
+    mt.chat.send_to_player(playername, f"You've wrote: \"{message}\"")
 
 
-# print(mt.chat.send_to_all("all"))
-# print(mt.chat.send_to_player("Miney", "Miney"))
-
-mt.chat.register_command(name="miney", callback_function=mycommand)
+mt.chat.register_command(name="miney", callback_function=miney_command)
 
 while True:
-    mt.receive(timeout=False)
+    mt.receive()
+    time.sleep(0.1)
+
+# Todo: receive doesn't react to connection drop
+# Todo: On __del__ of chat unregister_chatcommand
