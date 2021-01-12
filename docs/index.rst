@@ -19,7 +19,7 @@ First goal is to have fun with a sandbox for Python.
 * Connect minetest to external services like discord, twitch or whatsoever
 * Do whatever you want!
 
-**Join the Miney community on Discord: https://discord.gg/8KRUsW92 **
+**Join the Miney community on Discord: https://discord.gg/jCzZ7qs6ZT **
 
 .. important::
 
