@@ -54,7 +54,6 @@ class Minetest:
         self.socket_selector = None
         self._connect()
 
-        self.event_queue = []  # List for collected but unprocessed events
         self.result_queue = {}  # List for unprocessed results
         self.callbacks = {}
 
@@ -192,11 +191,7 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
             result = format_result(self.result_queue[result_id])
             del self.result_queue[result_id]
             return result
-        # Without a result_id we run an event callback
-        elif not result_id and len(self.event_queue):
-            result = self.event_queue[0]
-            del self.event_queue[0]
-            self._run_callback(result)
+
         try:
             try:
                 key, mask = self.socket_selector.select()[0]
@@ -236,7 +231,7 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
                 else:
                     raise miney.LuaError("Lua-Error: " + data["error"])
             elif "event" in data:
-                self._run_callback(data)
+                self.callbacks[data["event"]](*data["params"])
     
             # if we don't got our result we have to receive again
             if result_id:
@@ -248,23 +243,18 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
             self._connect()
             self.receive(result_id, timeout)
 
-    def on_event(self, name: str, callback: callable) -> None:
+    def on_event(self, name: str, run: callable) -> None:
         """
         Sets a callback function for specific events.
 
         :param name: The name of the event
-        :param callback: A callback function
+        :param run: A callback function
         :return: None
         """
         # Match answer to request
         result_id = ''.join(choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=6))
-        self.callbacks[name] = callback
+        self.callbacks[name] = run
         self.send({'register_event': name, 'id': result_id})
-
-    def _run_callback(self, data: dict):
-        eventname = data["event"][0]
-        params = data["event"][1:]
-        self.callbacks[eventname](*params)
 
     @property
     def chat(self):
@@ -401,7 +391,8 @@ Start in hosted mode by enabling "Host Server" in the main menu to prevent side 
 
         :return: None
         """
-        self.socket_selector.unregister(self.connection)
+        if self.socket_selector:
+            self.socket_selector.unregister(self.connection)
         self.connection.close()
 
     def __repr__(self):

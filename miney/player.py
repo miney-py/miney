@@ -1,8 +1,6 @@
 from typing import Union
 import miney
 
-# todo: set modes creative/survival -> Not possible without installed minetest mods
-
 
 class Player:
     """

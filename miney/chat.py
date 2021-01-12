@@ -53,7 +53,7 @@ class Chat:
             minetest.register_chatcommand(
                 "{name}", 
                 {{func = function(name, param) 
-                    mineysocket.send_event({{ event = {{ "chatcommand_{name}", name, param }} }})
+                    mineysocket.send_event("chatcommand_{name}", {{ name, param }})
                     return true, ""
                 end,}}
             )
