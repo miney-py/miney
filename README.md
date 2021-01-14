@@ -23,8 +23,11 @@ Beta, the current todo list is in the [here](https://github.com/orgs/miney-py/pr
 
 # Development
 
+Clone the repo with submodules:
+```
+git clone --recursive https://github.com/miney-py/miney.git
+```
+
 We write tests with pytest and run them inside a docker container started with this:
 
-    docker up -d
-
-Connect at least one client to the minetest server before running the tests.
+    docker-compose -p miney_pytest -f tests/docker-compose.yml up -d
