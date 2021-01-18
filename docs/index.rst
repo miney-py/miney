@@ -19,7 +19,7 @@ First goal is to have fun with a sandbox for Python.
 * Connect minetest to external services like discord, twitch or whatsoever
 * Do whatever you want!
 
-**Join the Miney community on Discord: https://discord.gg/jCzZ7qs6ZT **
+**Join the Miney community on Discord:** https://discord.gg/jCzZ7qs6ZT
 
 .. important::
 
@@ -63,6 +63,13 @@ in Minetest. Mods have to be written in Java, but have to be recompiled on every
 Cause of that many attempt for APIs appeared and disappeared in recent years.
 
 In contrast Minetest modding in Lua is easy: no compilation, a official API and all game logic is also in Lua.
+
+Support Miney
+---------------------
+
+.. raw:: html
+
+    <center><script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="miney" data-color="#FF5F5F" data-emoji=""  data-font="Lato" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#ffffff" data-coffee-color="#FFDD00" ></script></center>
 
 Table of Contents
 -----------------
