@@ -15,8 +15,9 @@ from .inventory import Inventory
 from .exceptions import *
 from .tool import ToolIterable
 from .player import PlayerIterable
+from .contentdb import ContentDB
+from .installation import Installation
 from .helper import *
 
 __version__ = "0.3.0"
 default_playername = "Miney"
-

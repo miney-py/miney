@@ -71,9 +71,10 @@ class Minetest:
             """
         )
         if self.singleplayer:
-            logger.warning("""You running Minetest in single player mode. 
-Thats not recommended, as minetest pause the game and also stops miney when you press escape. 
-Start in hosted mode by enabling "Host Server" in the main menu to prevent side effects.""")
+            logger.warning("""You run minetest in single player mode.
+This is not recommended as minetest will pause the game and miney will also stop when you hit the escape key.
+Start in hosted mode by checking "Host Server" from the main menu to avoid side effects, 
+even if you are the only player.""")
 
         player = self.lua.run(
             """

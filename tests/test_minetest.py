@@ -5,6 +5,11 @@ import miney
 import pytest
 
 
+def test_wrong_login(mt: miney.Minetest):
+    with pytest.raises(miney.AuthenticationError) as e:
+        mt = miney.Minetest("127.0.0.1", playername="slkjldj", password="lkjlj")
+
+
 def test_minetest(mt: miney.Minetest):
     """
     Test basic functionality.

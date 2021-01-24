@@ -6,6 +6,13 @@ class MinetestRunError(Exception):
     pass
 
 
+class ContentDBError(Exception):
+    """
+    Errors with/from contentDB
+    """
+    pass
+
+
 class LuaError(Exception):
     """
     Error during Lua code execution.

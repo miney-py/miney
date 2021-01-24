@@ -59,6 +59,7 @@ class Chat:
             )
             """)
         self.mt.on_event(f"chatcommand_{name}", callback_function)
+        # todo: register_command - implement parameter, description, privs
 
     def override_command(self, definition):
         pass

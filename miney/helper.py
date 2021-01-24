@@ -1,13 +1,12 @@
 import socket
 import time
 import os
-import platform
 import subprocess
 import webbrowser
 import miney
 
 
-def is_miney_available(ip: str = "127.0.0.1", port: int = 29999, timeout: int = 1.0) -> bool:
+def is_miney_available(ip: str = "127.0.0.1", port: int = 29999, timeout: int = 0.5) -> bool:
     """
     Check if there is a running miney game available on an optional given host and/or port.
     This functions pings mineysocket and waits **timeout** seconds for a pong.
@@ -58,7 +57,7 @@ def run_miney_game():
 def run_minetest(
         minetest_path: str = None,
         show_menu: bool = True,
-        world_path: str = "Miney",
+        world_name: str = "Miney",
         seed: str = "746036489947438842"
 ) -> None:
     """
@@ -71,32 +70,17 @@ def run_minetest(
     :param seed: Optional world seed
     :return: None
     """
-    if not minetest_path:
-        if os.environ.get('MINETEST_BIN') and os.path.isfile(os.environ.get('MINETEST_BIN')):
-            minetest_path = os.environ['MINETEST_BIN']
-        else:
-            if platform.system() == 'Windows':
-                exe_name = "minetest.exe"
-            else:
-                exe_name = "minetest"
+    infos = miney.Installation()
 
-            # we have to guess the path
-            possible_paths = [
-                os.path.join(os.getcwd(), "Minetest", "bin"),
-            ]
-            for p in possible_paths:
-                path = os.path.join(p, exe_name)
-                if os.path.isfile(path):
-                    minetest_path = os.path.join(p, exe_name)
-                    break
-                else:
-                    raise miney.MinetestRunError("Minetest was not found")
-    if world_path == "Miney":
-        world_path = os.path.abspath(os.path.join(minetest_path, "..", "..", "worlds", "miney"))
+    if not minetest_path:
+        minetest_path = infos.executable
+
+    if world_name == "Miney":
+        world_path = os.path.abspath(os.path.join(infos.worlds_dir, "miney"))
 
         if not os.path.isdir(world_path):  # We have to create the default world
-            if not os.path.isdir(os.path.abspath(os.path.join(world_path, "..", "..", "worlds"))):
-                os.mkdir(os.path.abspath(os.path.join(world_path, "..", "..", "worlds")))
+            if not os.path.isdir(infos.worlds_dir):
+                os.mkdir(infos.worlds_dir)
             os.mkdir(world_path)
             with open(os.path.join(world_path, "world.mt"), "w") as world_config_file:
                 world_config_file.write(
@@ -104,12 +88,10 @@ def run_minetest(
                     "backend = sqlite3\nauth_backend = sqlite3\nload_mod_mineysocket = true\nserver_announce = false\n"
                 )
             with open(os.path.join(world_path, "map_meta.txt"), "w") as world_meta_file:
-                world_meta_file.write(f"seed = {seed}")
+                world_meta_file.write(f"seed = {seed}\n")
 
     if not os.path.isdir(os.path.abspath(os.path.join(minetest_path, "..", "..", "mods", "mineysocket"))):
         raise miney.MinetestRunError("Mineysocket mod is not installed")
-
-    # todo: run_minetest - implementation for linux/macos
 
     if show_menu:
         subprocess.Popen(
@@ -123,7 +105,7 @@ def run_minetest(
         )
 
 
-def doc() -> None:
+def doc(self) -> None:
     """
     Open the documention in the webbrower. This is just a shortcut for IDLE or the python interactive console.
 
