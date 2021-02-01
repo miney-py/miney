@@ -1,5 +1,6 @@
 import urllib.request
 import urllib.error
+import urllib.parse
 import json
 import io
 from typing import Union, BinaryIO
@@ -13,6 +14,7 @@ class ContentDB:
     Documentation: https://content.minetest.net/help/api/
     """
     def _query(self, path: str = ""):
+        path = urllib.parse.quote(path)
         try:
             return json.loads(urllib.request.urlopen("https://content.minetest.net/api/" + path).read().decode())
         except urllib.error.HTTPError as e:

@@ -27,12 +27,14 @@ class Installation:
         self.executable = None
         self.games_dir = None
         self.irrlicht = None
+        self.is_snap = False
         self.mods_dir = None
         self.protocol_version = None
         self.run_in_place = None
         self.share_dir = None
         self.static_localedir = None
         self.static_sharedir = None
+        self.texture_dir = None
         self.use_curl = None
         self.use_freetype = None
         self.use_gettext = None
@@ -115,10 +117,15 @@ class Installation:
                 infos["user_dir"] = os.path.abspath(os.path.join(os.getenv('APPDATA'), "Minetest"))
             if platform.system() == 'Linux':
                 infos["share_dir"] = infos["static_sharedir"]
-                infos["user_dir"] = os.path.abspath(os.path.join("~", ".minetest"))
+                if minetest[:6] == "/snap/":  # Installed with snap
+                    infos["user_dir"] = os.path.abspath(os.path.join("~", "snap", "minetest", "current"))
+                    self.is_snap = True
+                else:
+                    infos["user_dir"] = os.path.abspath(os.path.join("~", ".minetest"))
         self.mods_dir = os.path.join(self.user_dir, "mods")
         self.games_dir = os.path.join(self.user_dir, "games")
         self.worlds_dir = os.path.join(self.user_dir, "worlds")
+        self.texture_dir = os.path.join(self.user_dir, "textures")
 
         # find protocol version
         if self.version[:1] == "5":
@@ -133,62 +140,80 @@ class Installation:
             self.protocol_version = 39  # We just set to latest known version
             logger.warning("Detected unsupported version, there could be problems with mod and game installation.")
 
-    def install_mod(self, username: str, package: str, with_dependencies: bool = False, with_optional_dependencies: bool = False) -> False:
+    def install_package(self, username: str, package: str, with_dependencies: bool = False, with_optional_dependencies: bool = False) -> False:
         """
-        Automatically install a mod to the correct folder. It can also autmatically install dependency mods.
+        Automatically install a package to the correct folder. It can also automatically install dependency mods.
 
         :param username: The username of the package creator
         :param package: The package name
         :param with_dependencies: Set to True to install with dependencies
         :param with_optional_dependencies: Set to True to install with optional dependencies
         """
+
+        # Does it exists? Is it mod or game?
+        type_ = self.contentdb.package(username, package)["type"]
+        if type_ == "mod":
+            install_dir = self.mods_dir
+            conf_file = "mod.conf"
+        elif type_ == "game":
+            install_dir = self.games_dir
+            conf_file = "game.conf"
+        elif type_ == "txp":
+            install_dir = self.texture_dir
+            conf_file = "texture_pack.conf"
+        else:
+            raise InstallationException("Couldn't detect package type.")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             try:
-                os.mkdir(os.path.join(self.mods_dir, package))
+                os.mkdir(os.path.join(install_dir, package))
             except FileExistsError:
                 pass
+
             self.contentdb.download_package(username, package, os.path.join(tmpdir, package + ".zip"))
+
             with ZipFile(os.path.join(tmpdir, package + ".zip"), 'r') as zipObj:
-                modfolder = os.path.join(self.mods_dir, package)
-                zipObj.extractall(modfolder)
+                pack_folder = os.path.join(install_dir, package)
+                zipObj.extractall(pack_folder)
 
                 # some may be in subfolders, we need to fix this
-                if "mod.conf" not in zipObj.namelist():
+                if conf_file not in zipObj.namelist():
                     logger.debug(f"Fixing filepaths for {package}")
                     # find subfolder name
                     for file in zipObj.namelist():
-                        if "mod.conf" in file:
-                            folder = file[:-9]
+                        if conf_file in file:
+                            folder = file[:-(len(conf_file) + 1)]  # extract folder path
                             break
                     # move files
-                    for file in os.listdir(os.path.join(modfolder, folder)):
-                        if os.path.isdir(os.path.join(modfolder, file)):
-                            shutil.rmtree(os.path.join(modfolder, file))
+                    for file in os.listdir(os.path.join(pack_folder, folder)):
+                        if os.path.isdir(os.path.join(pack_folder, file)):
+                            shutil.rmtree(os.path.join(pack_folder, file))
                         else:
                             try:
-                                os.remove(os.path.join(modfolder, file))
+                                os.remove(os.path.join(pack_folder, file))
                             except FileNotFoundError:
                                 pass
-                        shutil.move(os.path.join(modfolder, folder, file), os.path.join(modfolder, file))
-                    shutil.rmtree(os.path.join(modfolder, folder))
+                        shutil.move(os.path.join(pack_folder, folder, file), os.path.join(pack_folder, file))
+                    shutil.rmtree(os.path.join(pack_folder, folder))
 
-                logger.info(f"Installed '{package}' to '{os.path.join(self.mods_dir, package)}'.")
+                logger.info(f"Installed '{package}' to '{os.path.join(install_dir, package)}'.")
 
         if with_dependencies or with_optional_dependencies:
             dependencies = self.contentdb.package_dependencies(username, package)[username + "/" + package]
 
             for dep in dependencies:
-                logger.debug(f"Looking for dependency '{dep['name']}'")
-                for pack in dep["packages"]:
-                    usr = pack.split("/")[0]
-                    packname = pack.split("/")[1]
-                    if packname == dep['name']:
-                        if not dep['is_optional'] and dep['name'] != "default":
-                            logger.debug(f"Found dependency '{dep['name']}' for '{package}': {pack}")
-                            self.install_mod(usr, packname, with_dependencies=True)
-                        if with_optional_dependencies and dep['is_optional'] and dep['name'] != "default":
-                            logger.debug(f"Found optional dependency '{dep['name']}' for '{package}': {pack}")
-                            self.install_mod(usr, packname, with_optional_dependencies=True)
+                if dep['name'] != "default":
+                    logger.debug(f"Looking for dependency '{dep['name']}'")
+                    for pack in dep["packages"]:
+                        usr = pack.split("/")[0]
+                        packname = pack.split("/")[1]
+                        if packname == dep['name']:
+                            if not dep['is_optional'] and dep['name'] != "default":
+                                logger.debug(f"Found dependency '{dep['name']}' for '{package}': {pack}")
+                                self.install_package(usr, packname, with_dependencies=True)
+                            if with_optional_dependencies and dep['is_optional'] and dep['name'] != "default":
+                                logger.debug(f"Found optional dependency '{dep['name']}' for '{package}': {pack}")
+                                self.install_package(usr, packname, with_optional_dependencies=True)
 
     def remove_mod(self, package: str) -> None:
         """
@@ -198,3 +223,6 @@ class Installation:
         """
         shutil.rmtree(os.path.join(self.mods_dir, package))
 
+
+class InstallationException(Exception):
+    pass
