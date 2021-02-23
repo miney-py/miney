@@ -34,6 +34,9 @@ class Minetest:
     :param str password: Your password
     :param int port: The apisocket port, defaults to 29999
     """
+
+    system = miney.System()
+
     def __init__(self, server: str = "127.0.0.1", playername: str = None, password: str = "", port: int = 29999):
         """
         Connect to the minetest server.

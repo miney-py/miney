@@ -9,15 +9,16 @@ import subprocess
 import logging
 import tempfile
 from zipfile import ZipFile
-import miney
-from miney import ContentDB
+# import miney
+from .contentdb import ContentDB
+from .exceptions import MinetestRunError
 
 
 logger = logging.getLogger(__name__)
 protocol_versions = {"5.3": 39, "5.2": 39, "5.1": 38, "5.0": 37, "0.4.17": 32, "0.4.16": 32, "0.4.15": 28}
 
 
-class Installation:
+class System:
     """
     Manage a local minetest installation
     """
@@ -47,6 +48,7 @@ class Installation:
         self.discover_minetest(path)
         self.contentdb = ContentDB()
 
+    @staticmethod
     def discover_minetest(self, path: str = None) -> None:
         """
         Find a minetest installation or portable version and get all relevant information about.
@@ -79,12 +81,12 @@ class Installation:
                     break
 
         if not minetest:
-            raise miney.MinetestRunError(f"Couldn't find minetest executable.")
+            raise MinetestRunError(f"Couldn't find minetest executable.")
 
         try:
             result = subprocess.Popen([minetest, "--version"], shell=False, stdout=subprocess.PIPE)
         except FileNotFoundError as e:
-            raise miney.MinetestRunError(f"Couldn't run minetest binary from {minetest}")
+            raise MinetestRunError(f"Couldn't run minetest binary from {minetest}")
         infos = self.__dict__
         for line in result.stdout.readlines():  # read and store result in log file
             if line:
@@ -103,7 +105,7 @@ class Installation:
                 else:
                     infos[line[0].lower()] = line[1].replace("\"", "")
         if not infos:
-            raise miney.MinetestRunError("Couldn't get minetest paths.")
+            raise MinetestRunError("Couldn't get minetest paths.")
 
         infos["executable"] = minetest
         infos["bin_dir"] = os.path.dirname(minetest)
