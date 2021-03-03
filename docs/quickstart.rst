@@ -33,7 +33,7 @@ Then install the mineysocket mod in minetest
 
 $ cd ~/.minetest/mods
 
-$ git clone git@github.com:miney-py/mineysocket.git
+$ git clone https://github.com/miney-py/mineysocket.git
 
 Don't forget to enable the mods in the configuration tab for your new game!
 
