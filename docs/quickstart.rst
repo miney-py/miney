@@ -21,7 +21,20 @@ Windows
 Linux
 ^^^^^
 
-Untested: Install Minetest, install luajit, install luasocket and luacjson. Then "pip install miney" and we should be ready.
+Tested under lubuntu 20.04LTS
+
+$ sudo apt-get install minetest fonts-crosextra-caladea fonts-crosextra-carlito minetest-mod-moreblocks minetest-mod-moreores minetest-mod-pipeworks minetest-server minetestmapper
+
+$ sudo apt-get install luajit lua-socket lua-cjson idle3 python3-pip
+
+$ pip3 install miney
+
+Then install the mineysocket mod in minetest
+
+$ cd ~/.minetest/mods
+$ git clone git@github.com:miney-py/mineysocket.git
+
+Don't forget to enable the mods in the configuration tab for your new game!
 
 MacOS
 ^^^^^
