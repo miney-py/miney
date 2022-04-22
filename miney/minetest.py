@@ -1,7 +1,7 @@
 import socket
 import json
 import math
-from typing import Dict, Union
+from typing import Dict, Union, List, Any
 import time
 import string
 from random import choices
@@ -47,6 +47,7 @@ class Minetest:
         # setup connection
         self.connection = None
         self._connect()
+        self.__data_buffer: bytes = b""
 
         self.event_queue = []  # List for collected but unprocessed events
         self.result_queue = {}  # List for unprocessed results
@@ -179,16 +180,16 @@ class Minetest:
             # Set a new timeout to prevent long waiting for a timeout
             if timeout:
                 self.connection.settimeout(timeout)
-    
+
             try:
                 # receive the raw data and try to decode json
-                data_buffer = b""
-                while "\n" not in data_buffer.decode():
-                    data_buffer = data_buffer + self.connection.recv(4096)
-                data = json.loads(data_buffer.decode())
+                while b"\n" not in self.__data_buffer:
+                    self.__data_buffer += self.connection.recv(4096)
+                data_result, self.__data_buffer = self.__data_buffer.split(b'\n', 1)
+                data = json.loads(data_result.decode())
             except socket.timeout:
                 raise miney.LuaResultTimeout()
-    
+
             # process data
             if "result" in data:
                 if result_id:  # do we need a specific result?
@@ -228,15 +229,13 @@ class Minetest:
         # Match answer to request
         result_id = ''.join(choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=6))
         self.callbacks[name] = callback
-        self.send({'activate_event': {'event': name}, 'id': result_id})
+        self.send({'register_event': {'event': name}, 'id': result_id})
 
-    def _run_callback(self, data: dict):
-        if data['event'] in self.callbacks:
-            # self.callbacks[data['event']](**data['event']['params'])
-            if type(data['params']) is dict:
-                self.callbacks[data['event']](**data['params'])
-            elif type(data['params']) is list:
-                self.callbacks[data['event']](*data['params'])
+    def _run_callback(self, data: Dict[str, List[Any]]):
+        event_name = data['event'][0]
+        if event_name in self.callbacks:
+            params = data['event'][1:]
+            self.callbacks[event_name](*params)
 
     @property
     def chat(self):
