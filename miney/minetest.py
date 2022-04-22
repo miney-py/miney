@@ -1,7 +1,7 @@
 import socket
 import json
 import math
-from typing import Dict, Union
+from typing import Dict, Union, List, Any
 import time
 import string
 from random import choices
@@ -230,13 +230,11 @@ class Minetest:
         self.callbacks[name] = callback
         self.send({'register_event': {'event': name}, 'id': result_id})
 
-    def _run_callback(self, data: dict):
-        if data['event'] in self.callbacks:
-            # self.callbacks[data['event']](**data['event']['params'])
-            if type(data['params']) is dict:
-                self.callbacks[data['event']](**data['params'])
-            elif type(data['params']) is list:
-                self.callbacks[data['event']](*data['params'])
+    def _run_callback(self, data: Dict[str, List[Any]]):
+        event_name = data['event'][0]
+        if event_name in self.callbacks:
+            params = data['event'][1:]
+            self.callbacks[event_name](*params)
 
     @property
     def chat(self):
