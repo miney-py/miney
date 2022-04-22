@@ -228,7 +228,7 @@ class Minetest:
         # Match answer to request
         result_id = ''.join(choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=6))
         self.callbacks[name] = callback
-        self.send({'activate_event': {'event': name}, 'id': result_id})
+        self.send({'register_event': {'event': name}, 'id': result_id})
 
     def _run_callback(self, data: dict):
         if data['event'] in self.callbacks:
