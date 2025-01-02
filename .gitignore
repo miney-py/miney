@@ -102,3 +102,4 @@ __pycache__/
 # miney
 tmp
 Minetest
+.aider*

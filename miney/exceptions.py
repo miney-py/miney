@@ -1,7 +1,7 @@
-# Minetest exceptions
-class MinetestRunError(Exception):
+# Luanti exceptions
+class MineyRunError(Exception):
     """
-    Error: minetest was not found.
+    Error: Luanti was not found.
     """
     pass
 

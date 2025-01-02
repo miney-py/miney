@@ -9,9 +9,9 @@ You can access the node manipulation on two different ways:
 
     >>> import miney
 
-    >>> mt = miney.Minetest()
-    >>> mt.node.get(0, 0, 0)
-    >>> mt.node.set(miney.Node(0, 0, 0, "default:dirt"))
+    >>> lt = miney.Luanti()
+    >>> lt.node.get(0, 0, 0)
+    >>> lt.node.set(miney.Node(0, 0, 0, "default:dirt"))
 
 thats a shortcut for
 
@@ -19,8 +19,8 @@ thats a shortcut for
 
     >>> import miney
 
-    >>> mt = miney.Minetest()
-    >>> nf = miney.NodeFunctions(mt)
+    >>> lt = miney.Luanti()
+    >>> nf = miney.NodeFunctions(lt)
     >>> nf.get(miney.Point(0, 0, 0))
 
 
@@ -28,7 +28,7 @@ thats a shortcut for
 
 .. toctree::
 
-   minetest
+   Luanti
    point
    helpers
    exceptions

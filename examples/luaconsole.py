@@ -3,28 +3,27 @@ import os
 import socket
 
 try:
-    from miney import Minetest, exceptions
+    from miney import Luanti, exceptions
 except ModuleNotFoundError:
     sys.path.append(os.getcwd())
-    from miney import Minetest, exceptions
+    from miney import Luanti, exceptions
 
 server = sys.argv[1] if 1 < len(sys.argv) else "127.0.0.1"
-port = int(sys.argv[2]) if 2 < len(sys.argv) else 29999
-playername = sys.argv[3] if 3 < len(sys.argv) else "Players"
-password = sys.argv[4] if 4 < len(sys.argv) else ""
+port = int(sys.argv[2]) if 2 < len(sys.argv) else 30000
+playername = sys.argv[3] if 3 < len(sys.argv) else "miney"
+password = sys.argv[4] if 4 < len(sys.argv) else "ChangeThePassword!"
 
-mt = Minetest(server, playername, password, port)
+lt = Luanti(server, playername, password, port)
 
 print("python luaconsole.py [<server> <port> <playername> <password>] - All parameter optional on localhost")
 print("Press ctrl+c to quit. Start multiline mode with \"--\", run it with two empty lines, exit it with ctrl+c")
+print("All Lua code you are sending runs inside a function block. You have to use 'return' in your lua code to return something and get it back to python.")
 
 multiline_mode = False
 multiline_cmd = ""
 ret = ""
 
 while True:
-    if mt.event_queue:
-        print(mt.event_queue)
     try:
         if not multiline_mode:
             cmd = input(">> ")
@@ -39,12 +38,12 @@ while True:
                 multiline_cmd = multiline_cmd + cmd + "\n"
 
                 if "\n\n" in multiline_cmd:
-                    ret = mt.lua.run(multiline_cmd)
+                    ret = lt.lua.run(multiline_cmd)
                     multiline_mode = False
                     if not isinstance(ret, type(None)):  # print everything but none
                         print("<<", ret)
             else:
-                ret = mt.lua.run(cmd)
+                ret = lt.lua.run(cmd)
 
                 if not isinstance(ret, type(None)):  # print everything but none
                     print("<<", ret)

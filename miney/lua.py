@@ -1,8 +1,20 @@
+"""
+This module provides an interface for executing Lua code on the Luanti server. The miney mod on the server is required for this functionality to work.
+"""
+
 import re
-import string
-from random import choices
 import logging
-import miney
+import typing
+import uuid
+import time
+import json
+from typing import Any
+
+from .exceptions import LuaResultTimeout, LuaError
+from .luanticlient.exceptions import LuantiConnectionError, LuantiPermissionError
+from .luanticlient.constants import ClientState
+if typing.TYPE_CHECKING:
+    from .luanticlient import LuantiClient
 
 
 logger = logging.getLogger(__name__)
@@ -10,50 +22,228 @@ logger = logging.getLogger(__name__)
 
 class Lua:
     """
-    Lua specific functions.
+    Provides an interface for executing Lua code on the Luanti server.
+
+    This functionality is dependent on the 'miney' mod being installed and
+    running on the server. The mod provides the necessary formspec
+    ('miney:code_form') and server-side logic to receive, execute, and
+    return results from Lua code snippets. Without this mod, any attempts
+    to execute code will fail.
     """
-    def __init__(self, mt: miney.Minetest):
-        self.mt = mt
+    def __init__(self, luanti: 'LuantiClient'):
+        self.luanti = luanti
+        self.form_ready: bool = False
+        self.pending_lua_results: dict[str, dict | None] = {}
+        self._register_handlers()
 
-    def run(self, lua_code: str, timeout: float = 10.0):
+    def _register_handlers(self):
+        """Register miney-specific handlers with the client's command handler."""
+        if self.luanti.command_handler:
+            self.luanti.command_handler.register_formspec_handler(
+                "miney:code_form", self._handle_miney_code_form
+            )
+            logger.debug("Luanti-specific handlers registered for Lua execution.")
+
+    def _handle_miney_code_form(self, formspec: str):
         """
-        Run load code on the minetest server.
+        Processes the `miney:code_form` response from the server.
 
-        :param lua_code: Lua code to run
-        :param timeout: How long to wait for a result
-        :return: The return value. Multiple values as a list.
+        For this client, the formspec is a raw JSON string.
+
+        :param formspec: The formspec string received from the server.
         """
-        # generates nearly unique id's
-        result_id = ''.join(choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=6))
-        lua_code = lua_code.replace("    ", "")
-
-        logger.debug("Sending this lua code: \n" + lua_code)
-
-        self.mt.send({"lua": lua_code, "id": result_id})
+        self.form_ready = True
+        logger.debug(f"Received miney_code_form response: {formspec}")
 
         try:
-            return self.mt.receive(result_id, timeout=timeout)
-        except miney.SessionReconnected:
-            # We rerun the code, cause he was dropped during reconnect
-            return self.run(lua_code, timeout=timeout)
+            # The server sends a raw JSON string as the formspec content for our client.
+            response_data = json.loads(formspec)
 
-    def run_file(self, filename):
+            # The initial form call might result in a null JSON object, which is fine.
+            if response_data is None:
+                logger.debug("Received null JSON response. Likely an initial form. Ignoring.")
+                return
+
+            execution_id = response_data.get("execution_id")
+
+            if not execution_id:
+                logger.debug("Received formspec without an execution_id. Likely an initial form. Ignoring.")
+                return
+
+            if execution_id in self.pending_lua_results:
+                # Store the entire parsed JSON object as the result
+                self.pending_lua_results[execution_id] = response_data
+                logger.debug(f"Stored matching Lua result for ID {execution_id}.")
+            else:
+                logger.warning(f"Received Lua result for unknown or already processed ID: '{execution_id}'.")
+        except json.JSONDecodeError:
+            # This might happen if we connect to an old mod version that still sends a formspec string.
+            logger.warning(f"Failed to parse formspec as JSON. It might be a legacy format. Content: {formspec}")
+        except Exception as e:
+            logger.error(f"Error processing miney_code_form response: {e}", exc_info=True)
+
+
+    def send_command(self, command: str) -> bool:
         """
-        Loads and runs Lua code from a file. This is useful for debugging, cause Minetest can throws errors with
-        correct line numbers. It's also easier usable with a Lua capable IDE.
+        Sends a chat command prefixed with /miney to the server.
 
-        :param filename:
-        :return:
+        :param command: The command string to send after '/miney'.
+        :return: True if the message was sent, False otherwise.
+        """
+        return self.luanti.send_chat_message(f"/miney {command}")
+
+    def run(self, lua_code: str, timeout: int = 10, execution_id: str = None) -> Any:
+        """
+        Execute Lua code on the server and return the result.
+
+        :param lua_code: The Lua code to execute.
+        :param timeout: Maximum wait time in seconds for the result.
+        :param execution_id: A unique ID for this execution. If None, one will be generated.
+        :return: The result of the Lua execution. Can be None if the script returns no value.
+        :raises LuaResultTimeout: When the timeout is reached.
+        :raises LuantiConnectionError: When there is no connection to the server or the required 'miney' mod is missing.
+        :raises LuantiPermissionError: When the user lacks the required 'miney' privilege on the server.
+        :raises LuaError: When the Lua code execution results in an error on the server.
+        """
+        if not self.luanti.state.connected or self.luanti.state.state < ClientState.JOINED:
+            logger.warning(f"Cannot execute Lua code: not fully connected (state: {self.luanti.state.state})")
+            raise LuantiConnectionError("Not fully connected to the server")
+
+        # Ensure the code form is ready before proceeding.
+        if not self.form_ready:
+            logger.debug("Code form is not ready, requesting it now...")
+            self.send_command("form")
+
+            # Wait for the form to become ready
+            form_timeout = time.time() + 5
+            while not self.form_ready and time.time() < form_timeout:
+                time.sleep(0.1)
+
+            if not self.form_ready:
+                logger.error("Failed to receive code form from the server after request.")
+                raise LuantiConnectionError("Cannot execute Lua code: 'miney:code_form' is not available. "
+                                      "Ensure the 'miney' mod is installed on the server.")
+
+        # Generate a unique ID if none was provided
+        if execution_id is None:
+            execution_id = str(uuid.uuid4())
+
+        # Register the execution ID as pending
+        self.pending_lua_results[execution_id] = None
+
+        # Send Lua code through the form with execution ID
+        logger.debug(f"Sending Lua code with ID {execution_id}: {lua_code}")
+        fields = {
+            "lua": lua_code,
+            "execute": "true",
+            "execution_id": execution_id
+        }
+
+        try:
+            self.luanti.send_formspec_response("miney:code_form", fields)
+        except ValueError as e:
+            logger.error(f"Failed to send Lua code: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error sending Lua code: {e}")
+            return f"Error: {str(e)}"
+
+        # Wait for the result with polling
+        start_time = time.time()
+        last_log_time = start_time
+
+        result = None
+        while time.time() - start_time < timeout:
+            result = self.pending_lua_results.get(execution_id)
+            if result is not None:
+                break
+
+            # Output status message every 2 seconds
+            current_time = time.time()
+            if current_time - last_log_time >= 2:
+                elapsed = current_time - start_time
+                logger.debug(f"Waiting for Lua result (ID: {execution_id}), elapsed: {elapsed:.1f}s/{timeout}s")
+                last_log_time = current_time
+
+            time.sleep(0.001)
+
+        # Clean up the pending result entry and get the final result
+        parsed_response = self.pending_lua_results.pop(execution_id, None)
+
+        if parsed_response is None:
+            logger.error(f"Timeout waiting for Lua execution result (ID: {execution_id})")
+            raise LuaResultTimeout(f"Timeout waiting for Lua execution result (ID: {execution_id})")
+
+        logger.debug(f"Received Lua execution response for ID {execution_id}: {parsed_response}")
+
+        # The response is already a parsed dictionary from _handle_miney_code_form
+        if "error" in parsed_response:
+            # Check if it's a permission error (indicated by the 'admins' key)
+            if "admins" in parsed_response:
+                admins = parsed_response.get("admins", [])
+                command_to_grant = f"/grant {self.luanti.playername} miney"
+
+                if admins:
+                    helpful_players = ", ".join(admins)
+                    who_can_help = f"The following players can grant this privilege: {helpful_players}"
+                else:
+                    who_can_help = "No players with the required 'privs' privilege were found on the server."
+
+                error_message = (
+                    f"{parsed_response['error']}\n"
+                    f"{who_can_help}\n"
+                    f"Command to grant privilege: {command_to_grant}"
+                )
+                raise LuantiPermissionError(error_message)
+
+            # It's a regular Lua execution error
+            raise LuaError(parsed_response["error"])
+
+        if "result" in parsed_response:
+            final_result = parsed_response["result"]
+            logger.debug(f"Successfully processed Lua result for ID {execution_id}")
+            return final_result
+
+        # If there's no error and no result, the execution completed without returning a value.
+        # This is a valid outcome, so we return None.
+        logger.debug(f"Lua execution for ID {execution_id} completed without a return value.")
+        return None
+
+    def run_file(self, filename: str) -> Any:
+        """
+        Loads and runs Lua code from a file.
+
+        This is useful for debugging, as Luanti can throw errors with
+        correct line numbers. It's also easier to use with a Lua capable IDE.
+
+        :param filename: Path to the Lua file to execute.
+        :return: The result of the Lua execution.
         """
         with open(filename, "r") as f:
             return self.run(f.read())
+            
+    def get_node_info(self, node_name: str = None) -> Any:
+        """
+        Get information about a specific node or all registered nodes.
+
+        :param node_name: The name of the node to get information about.
+                          If None, returns information about all registered nodes.
+        :return: The result of the Lua execution with node information.
+        """
+        if node_name:
+            lua_code = f'return dump(minetest.registered_nodes["{node_name}"])'
+        else:
+            lua_code = 'local count = 0; for _ in pairs(minetest.registered_nodes) do count = count + 1 end; return {count = count, names = table.keys(minetest.registered_nodes)}'
+        
+        return self.run(lua_code)
 
     def dumps(self, data) -> str:
         """
-        Convert python data type to a string with lua data type.
+        Convert Python data type to a string with Lua data type.
 
-        :param data: Python data
-        :return: Lua data
+        :param data: Python data to convert to Lua format.
+        :return: Lua formatted string representation of the data.
+        :raises ValueError: If the data type is not supported.
         """
         # credits:
         # https://stackoverflow.com/questions/54392760/serialize-a-dict-as-lua-table/54392761#54392761
@@ -81,3 +271,4 @@ class Lua:
             return "nil"
 
         raise ValueError("Unknown type {}".format(type(data)))
+        

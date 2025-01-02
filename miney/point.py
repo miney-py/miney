@@ -75,4 +75,4 @@ class Point:
         return self.__getattribute__(item_key)
 
     def __repr__(self):
-        return f"<minetest Point(x={self.x}, y={self.y}, z={self.z})>"
+        return f"<Luanti Point(x={self.x}, y={self.y}, z={self.z})>"

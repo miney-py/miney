@@ -2,11 +2,11 @@
 <img src="https://github.com/miney-py/miney/raw/master/docs/miney-logo.png">
 </p>
 
-# Miney - The python interface to minetest
+# Miney - The python interface to Luanti
 
-Miney is an Python API to Minetest.
+Miney is the Python API to Luanti/Minetest.
 
-Miney connects locally, over network or internet to the [mineysocket](https://github.com/miney-py/mineysocket) mod of minetest.
+Miney connects locally, over network or internet with the Lunanti protocol and provides a pythonic interface to the server, players, blocks and more.
 
 ## Documentation
 
@@ -25,9 +25,5 @@ Beta, the current todo list is in the [here](https://github.com/orgs/miney-py/pr
 
 Clone the repo with submodules:
 ```
-git clone --recursive https://github.com/miney-py/miney.git
+git clone https://github.com/miney-py/miney.git
 ```
-
-We write tests with pytest and run them inside a docker container started with this:
-
-    docker-compose -p miney_pytest -f tests/docker-compose.yml up -d

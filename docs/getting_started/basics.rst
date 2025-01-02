@@ -2,13 +2,13 @@ Basics
 ==========
 
 .. figure:: ../images/xyz.gif
-   :alt: Minetest coordinate system
+   :alt: Luanti coordinate system
    :align: right
    :scale: 50 %
 
-   Minetest coordinate system
+   Luanti coordinate system
 
-On this page we try to give you some basic informations needed to program for minetest.
+On this page we try to give you some basic informations needed to program for Luanti.
 
 Coordinates
 ---------------
@@ -28,7 +28,7 @@ Nodes
 
    A node or block
 
-Minetest uses the word "node" instead of "block", but it's basically the same thing you know form games like minecraft.
+Luanti uses the word "node" instead of "block", but it's basically the same thing you know form games like minecraft.
 
 Nodes or blocks are the fundamental cubic unit of a world and appears to a player as roughly 1x1x1 meters in size.
 

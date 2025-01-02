@@ -1,14 +1,12 @@
 """
-Miney is the python interface to minetest
+Miney is the python interface to Luanti
 """
 
 # base classes
 from .point import Point
 from .node import Node
 
-from .contentdb import ContentDB
-from .local import System
-from .minetest import Minetest
+from .luanti import Luanti
 from .player import Player
 from .chat import Chat
 from .nodes import Nodes
@@ -18,6 +16,8 @@ from .exceptions import *
 from .tool import ToolIterable
 from .player import PlayerIterable
 from .helper import *
+from .luanticlient import LuantiClient
 
-__version__ = "0.3.0"
-default_playername = "Miney"
+
+__version__ = "0.5.0"
+default_playername = "Luanti"

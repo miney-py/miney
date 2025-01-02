@@ -1,17 +1,20 @@
 from typing import Dict, Union
 import re
+import logging
 import miney
 
+
+logger = logging.getLogger(__name__)
 
 class Chat:
     """
     Chat functions.
     """
-    def __init__(self, mt: miney.Minetest):
-        self.mt = mt
+    def __init__(self, luanti: miney.Luanti):
+        self.lt = luanti
 
     def __repr__(self):
-        return '<minetest Chat>'
+        return '<Luanti Chat>'
 
     def send_to_all(self, message: str) -> None:
         """
@@ -20,7 +23,7 @@ class Chat:
         :param message: The chat message
         :return: None
         """
-        self.mt.lua.run("minetest.chat_send_all('{}')".format(message.replace("\'", "\\'")))
+        self.lt.lua.run("minetest.chat_send_all('{}')".format(message.replace("\'", "\\'")))
 
     def send_to_player(self, player: Union[str, miney.Player], message: str) -> None:
         """
@@ -28,11 +31,11 @@ class Chat:
 
         :Send "Hello" to the first player on the server:
 
-        >>> mt.chat.send_to_player(mt.player[0], "Hello")
+        >>> lt.chat.send_to_player(lt.player[0], "Hello")
 
-        :Send "Hello" to the player "Miney" on the server:
+        :Send "Hello" to the player "Luanti" on the server:
 
-        >>> mt.chat.send_to_player("Miney", "Hello")
+        >>> lt.chat.send_to_player("Luanti", "Hello")
 
         :param player: A Player object or a string with the name.
         :param message: The message
@@ -42,27 +45,18 @@ class Chat:
             player = player.name
         message = message.replace("\"", "'")  # replace " with '
         # todo: Find a solution to support " again without breaking security.
-        self.mt.lua.run("return minetest.chat_send_player(\"{}\", \"{}\")".format(player, message))
+        self.lt.lua.run("return minetest.chat_send_player(\"{}\", \"{}\")".format(player, message))
 
     def format_message(self, playername: str, message: str):
-        return self.mt.lua.run("return minetest.format_chat_message({}, {})".format(playername, message))
+        return self.lt.lua.run("return minetest.format_chat_message({}, {})".format(playername, message))
 
     def register_command(self, name, callback_function, parameter: str = "", description: str = "", privileges: Dict = None):
-        self.mt.lua.run(
-            f"""
-            minetest.register_chatcommand(
-                "{name}", 
-                {{func = function(name, param) 
-                    mineysocket.send_event("chatcommand_{name}", {{ name, param }})
-                    return true, ""
-                end,}}
-            )
-            """)
-        self.mt.on_event(f"chatcommand_{name}", callback_function)
-        # todo: register_command - implement parameter, description, privs
+        # TODO: Reimplement this function
+        logger.warning("Registering commands is not yet implemented")
+        pass
 
     def override_command(self, definition):
         pass
 
     def unregister_command(self, name: str):
-        return self.mt.lua.run("return minetest.register_chatcommand({})".format(name))
+        return self.lt.lua.run("return minetest.register_chatcommand({})".format(name))

@@ -7,9 +7,9 @@
 Welcome to the Miney documentation!
 ====================================
 
-Miney provides an `Python <https://www.python.org/>`_ interface to `Minetest <https://www.minetest.net/>`_.
+Miney provides an `Python <https://www.python.org/>`_ interface to `Luanti <https://www.luanti.org/>`_.
 
-First goal is to have fun with a sandbox for Python.
+First goal is to have fun with a 3D sandbox for Python.
 
 **Do whatever you like:**
 
@@ -49,20 +49,20 @@ Some marketing text from the `Python website <https://www.python.org/about/>`_:
 And it's popular! And cause of that it has a `giant package index <https://pypi.org/>`_ filled by over 450.000 users!
 
 
-Why Minetest?
+Why Luanti?
 ---------------
 .. image:: minetest-logo.png
    :alt: Python logo
    :align: left
 
-Why not Minecraft? Minetest is free. Not only you don't have to pay for Minetest (consider to `donate <https://www.minetest.net/get-involved/#donate>`_!), it's also open source!
+Why not Minecraft? Luanti is free. Not only you don't have to pay for Luanti (consider to `donate <https://www.luanti.org/get-involved/#donate>`_!), it's also open source!
 That's a big point, if you try to use this for example in a classroom.
 
 Also modding for minecraft isn't that easy, cause there is no official API or an embedded scripting language like Lua
-in Minetest. Mods have to be written in Java, but have to be recompiled on every Minecraft update.
+in Luanti. Mods have to be written in Java, but have to be recompiled on every Minecraft update.
 Cause of that many attempt for APIs appeared and disappeared in recent years.
 
-In contrast Minetest modding in Lua is easy: no compilation, a official API and all game logic is also in Lua.
+In contrast Luanti modding in Lua is easy: no compilation, a official API and all game logic is also in Lua.
 
 Support Miney
 ---------------------

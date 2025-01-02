@@ -22,7 +22,7 @@ class ToolIterable:
                     self.__setattr__(ttype, ttype)  # for 'air' and 'ignore'
 
     def __iter__(self):
-        # todo: list(mt.node.tool.default) should return only default group
+        # todo: list(lt.node.tool.default) should return only default group
         return iter(self.__parent._tools_cache)
 
     def __getitem__(self, item_key):

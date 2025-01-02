@@ -14,4 +14,4 @@ class Node(Point):
         self.param2 = param2
 
     def __repr__(self):
-        return f"<minetest Node(x={self.x}, y={self.y}, z={self.z}, name={self.name})>"
+        return f"<Luanti Node(x={self.x}, y={self.y}, z={self.z}, name={self.name})>"

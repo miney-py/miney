@@ -4,20 +4,20 @@ import miney
 
 class Player:
     """
-    A player of the minetest server.
+    A player of the Luanti server.
     """
-    def __init__(self, minetest: miney.Minetest, name):
+    def __init__(self, luanti: miney.Luanti, name):
         """
         Initialize the player object.
 
-        :param minetest: Parent minetest object
+        :param luanti: Parent Luanti object
         :param name: Player name
         """
-        self.mt = minetest
+        self.lt = luanti
         self.name = name
         
         # get user data: password hash, last login, privileges
-        data = self.mt.lua.run("return minetest.get_auth_handler().get_auth('{}')".format(self.name))
+        data = self.lt.lua.run("return minetest.get_auth_handler().get_auth('{}')".format(self.name))
         if data and all(k in data for k in ("password", "last_login", "privileges")):  # if we have all keys
             self.password = data["password"]
             self.last_login = data["last_login"]
@@ -25,28 +25,28 @@ class Player:
         else:
             raise miney.PlayerInvalid("There is no player with that name")
 
-        self.inventory: miney.Inventory = miney.Inventory(minetest, self)
+        self.inventory: miney.Inventory = miney.Inventory(luanti, self)
         """Manipulate player's inventory.
         
         :Example to add 99 dirt to player "IloveDirt"'s inventory:
         
         >>> import miney
-        >>> mt = miney.Minetest()
-        >>> mt.player.IloveDirt.inventory.add(mt.node.type.default.dirt, 99)      
+        >>> lt = miney.Luanti()
+        >>> lt.player.IloveDirt.inventory.add(lt.node.type.default.dirt, 99)      
             
         :Example to remove 99 dirt from player "IhateDirt"'s inventory:
         
         >>> import miney
-        >>> mt = miney.Minetest()
-        >>> mt.player.IhateDirt.inventory.remove(mt.node.type.default.dirt, 99)
+        >>> lt = miney.Luanti()
+        >>> lt.player.IhateDirt.inventory.remove(lt.node.type.default.dirt, 99)
             
         """
 
     def __repr__(self):
-        return '<minetest Player "{}">'.format(self.name)
+        return '<Luanti Player "{}">'.format(self.name)
 
     @property
-    def is_online(self) -> bool:
+    def is_online(self) -> bool | None:
         """
         Returns the online status of this player.
 
@@ -54,7 +54,7 @@ class Player:
         """
         # TODO: Better check without provoke a lua error
         try:
-            if self.name == self.mt.lua.run(
+            if self.name == self.lt.lua.run(
                     "return minetest.get_player_by_name('{}'):get_player_name()".format(self.name)):
                 return True
         except miney.LuaError:
@@ -72,7 +72,7 @@ class Player:
         """
         try:
             return miney.Point(
-                **self.mt.lua.run("return minetest.get_player_by_name('{}'):get_pos()".format(self.name))
+                **self.lt.lua.run("return minetest.get_player_by_name('{}'):get_pos()".format(self.name))
             )
         except miney.LuaError:
             raise miney.PlayerOffline("The player has no position, he could be offline")
@@ -84,7 +84,7 @@ class Player:
         :param values:
         :return: None
         """
-        self.mt.lua.run(
+        self.lt.lua.run(
             "return minetest.get_player_by_name('{}'):set_pos({{x = {}, y = {}, z = {}}})".format(
                 self.name,
                 values.x,
@@ -100,12 +100,12 @@ class Player:
 
         :return: Float
         """
-        return self.mt.lua.run(
+        return self.lt.lua.run(
             "return minetest.get_player_by_name('{}'):get_physics_override()".format(self.name))["speed"]
 
     @speed.setter
     def speed(self, value: int):
-        self.mt.lua.run(
+        self.lt.lua.run(
             "return minetest.get_player_by_name('{}'):set_physics_override({{speed = {}}})".format(self.name, value))
 
     @property
@@ -115,12 +115,12 @@ class Player:
 
         :return: Float
         """
-        return self.mt.lua.run(
+        return self.lt.lua.run(
             "return minetest.get_player_by_name('{}'):get_physics_override()".format(self.name))["jump"]
 
     @jump.setter
     def jump(self, value):
-        self.mt.lua.run(
+        self.lt.lua.run(
             "return minetest.get_player_by_name('{}'):set_physics_override({{jump = {}}})".format(self.name, value))
 
     @property
@@ -130,12 +130,12 @@ class Player:
 
         :return: Float
         """
-        return self.mt.lua.run(
+        return self.lt.lua.run(
             "return minetest.get_player_by_name('{}'):get_physics_override()".format(self.name))["gravity"]
 
     @gravity.setter
     def gravity(self, value):
-        self.mt.lua.run(
+        self.lt.lua.run(
             "return minetest.get_player_by_name('{}'):set_physics_override({{gravity = {}}})".format(self.name, value))
 
     @property
@@ -147,7 +147,7 @@ class Player:
         :return: A dict like {'v': 0.34, 'h': 2.50} where h is horizontal and v = vertical
         """
 
-        return self.mt.lua.run(
+        return self.lt.lua.run(
             f"return {{"
             f"h=minetest.get_player_by_name('{self.name}'):get_look_horizontal(), "
             f"v=minetest.get_player_by_name('{self.name}'):get_look_vertical()"
@@ -159,7 +159,7 @@ class Player:
         if type(value) is dict:
             if "v" in value and "h" in value:
                 if type(value["v"]) in [int, float] and type(value["h"]) in [int, float]:
-                    self.mt.lua.run(
+                    self.lt.lua.run(
                         f"""
                         local player = minetest.get_player_by_name('{self.name}')
                         player:set_look_horizontal({value["h"]})
@@ -182,11 +182,11 @@ class Player:
 
         :return: Pitch in radians
         """
-        return self.mt.lua.run("return minetest.get_player_by_name('{}'):get_look_vertical()".format(self.name))
+        return self.lt.lua.run("return minetest.get_player_by_name('{}'):get_look_vertical()".format(self.name))
 
     @look_vertical.setter
     def look_vertical(self, value):
-        self.mt.lua.run("return minetest.get_player_by_name('{}'):set_look_vertical({})".format(self.name, value))
+        self.lt.lua.run("return minetest.get_player_by_name('{}'):set_look_vertical({})".format(self.name, value))
 
     @property
     def look_horizontal(self):
@@ -195,11 +195,11 @@ class Player:
 
         :return: Pitch in radians
         """
-        return self.mt.lua.run("return minetest.get_player_by_name('{}'):get_look_horizontal()".format(self.name))
+        return self.lt.lua.run("return minetest.get_player_by_name('{}'):get_look_horizontal()".format(self.name))
 
     @look_horizontal.setter
     def look_horizontal(self, value):
-        self.mt.lua.run("return minetest.get_player_by_name('{}'):set_look_horizontal({})".format(self.name, value))
+        self.lt.lua.run("return minetest.get_player_by_name('{}'):set_look_horizontal({})".format(self.name, value))
 
     @property
     def hp(self):
@@ -209,24 +209,24 @@ class Player:
 
         :return:
         """
-        return self.mt.lua.run(f"return minetest.get_player_by_name('{self.name}'):get_hp()")
+        return self.lt.lua.run(f"return minetest.get_player_by_name('{self.name}'):get_hp()")
 
     @hp.setter
     def hp(self, value: int):
         if type(value) is int and value in range(0, 21):
-            self.mt.lua.run(
+            self.lt.lua.run(
                 f"return minetest.get_player_by_name('{self.name}'):set_hp({value}, {{type=\"set_hp\"}})")
         else:
             raise ValueError("HP has to be between 0 and 20.")
 
     @property
     def breath(self):
-        return self.mt.lua.run(f"return minetest.get_player_by_name('{self.name}'):get_breath()")
+        return self.lt.lua.run(f"return minetest.get_player_by_name('{self.name}'):get_breath()")
 
     @breath.setter
     def breath(self, value: int):
         if type(value) is int and value in range(0, 21):
-            self.mt.lua.run(
+            self.lt.lua.run(
                 f"return minetest.get_player_by_name('{self.name}'):set_breath({value}, {{type=\"set_hp\"}})")
         else:
             raise ValueError("HP has to be between 0 and 20.")
@@ -238,11 +238,11 @@ class Player:
 
         .. Example:
 
-            >>> mt.player.MineyPlayer.fly = True  # the can player fly
+            >>> lt.player.MineyPlayer.fly = True  # the can player fly
 
         :return:
         """
-        return self.mt.lua.run(
+        return self.lt.lua.run(
             f"""
             local privs = minetest.get_player_privs(\"{self.name}\")
             if privs["fly"] then
@@ -259,7 +259,7 @@ class Player:
             state = "true"
         else:
             state = "false"
-        self.mt.lua.run(
+        self.lt.lua.run(
             f"""
             local privs = minetest.get_player_privs(\"{self.name}\")
             privs["fly"] = {state}
@@ -274,11 +274,11 @@ class Player:
 
         .. Example:
 
-            >>> mt.player.MineyPlayer.fast = True  # the player is fast
+            >>> lt.player.MineyPlayer.fast = True  # the player is fast
 
         :return:
         """
-        return self.mt.lua.run(
+        return self.lt.lua.run(
             f"""
             local privs = minetest.get_player_privs(\"{self.name}\")
             if privs["fast"] then
@@ -295,7 +295,7 @@ class Player:
             state = "true"
         else:
             state = "false"
-        self.mt.lua.run(
+        self.lt.lua.run(
             f"""
             local privs = minetest.get_player_privs(\"{self.name}\")
             privs["fast"] = {state}
@@ -310,11 +310,11 @@ class Player:
 
         .. Example:
 
-            >>> mt.player.MineyPlayer.noclip = True  # the player can go through walls
+            >>> lt.player.MineyPlayer.noclip = True  # the player can go through walls
 
         :return:
         """
-        return self.mt.lua.run(
+        return self.lt.lua.run(
             f"""
                 local privs = minetest.get_player_privs(\"{self.name}\")
                 if privs["noclip"] then
@@ -331,7 +331,7 @@ class Player:
             state = "true"
         else:
             state = "false"
-        self.mt.lua.run(
+        self.lt.lua.run(
             f"""
                 local privs = minetest.get_player_privs(\"{self.name}\")
                 privs["noclip"] = {state}
@@ -340,8 +340,85 @@ class Player:
         )
 
     @property
+    def invisible(self) -> bool:
+        """
+        Get or set the player's visibility.
+
+        When set to ``True``, the player model, nametag, and minimap marker
+        are hidden. When ``False``, restores normal appearance.
+
+        .. note::
+            This feature works independently of any specific mod like 'invis'
+            by directly manipulating player properties. The default player
+            collision box is restored when made visible.
+
+        :return: ``True`` if the player is currently invisible, ``False`` otherwise.
+        """
+        return self.lt.lua.run(
+            f"""
+            local player = minetest.get_player_by_name('{self.name}')
+            if not player then
+                return false -- Player is not online, so not invisible
+            end
+            local props = player:get_properties()
+            -- 'pointable' is false when invisible. We return true if invisible.
+            return not props.pointable
+            """
+        )
+
+    @invisible.setter
+    def invisible(self, value: bool):
+        if not isinstance(value, bool):
+            raise TypeError("Value for invisible must be a boolean (True or False).")
+
+        if value:
+            # Make player invisible
+            self.lt.lua.run(
+                f"""
+                local player = minetest.get_player_by_name('{self.name}')
+                if not player then return end
+
+                player:set_properties({{
+                    visual = "sprite",
+                    visual_size = {{x = 0, y = 0}},
+                    pointable = false,
+                    makes_footstep_sound = false,
+                    collisionbox = {{0,0,0, 0,0,0}},
+                    selectionbox = {{0,0,0, 0,0,0}},
+                    show_on_minimap = false
+                }})
+
+                player:set_nametag_attributes({{
+                    color = {{a = 0, r = 255, g = 255, b = 255}}
+                }})
+                """
+            )
+        else:
+            # Make player visible
+            self.lt.lua.run(
+                f"""
+                local player = minetest.get_player_by_name('{self.name}')
+                if not player then return end
+
+                player:set_properties({{
+                    visual = "mesh",
+                    visual_size = {{x = 1, y = 1}},
+                    pointable = true,
+                    makes_footstep_sound = true,
+                    collisionbox = {{-0.3, -1.0, -0.3, 0.3, 1.0, 0.3}},
+                    selectionbox = {{-0.3, -1.0, -0.3, 0.3, 1.0, 0.3}},
+                    show_on_minimap = true
+                }})
+
+                player:set_nametag_attributes({{
+                    color = {{a = 255, r = 255, g = 255, b = 255}}
+                }})
+                """
+            )
+
+    @property
     def creative(self) -> bool:
-        return self.mt.lua.run(
+        return self.lt.lua.run(
             f"""
             local privs = minetest.get_player_privs(\"{self.name}\")
             if privs["creative"] then
@@ -366,21 +443,21 @@ class Player:
             privs["creative"] = {state}
             minetest.set_player_privs(\"{self.name}\", privs)
             """
-        self.mt.lua.run(
+        self.lt.lua.run(
             luastring
         )
 
 
 class PlayerIterable:
     """Player, implemented as iterable for easy autocomplete in the interactive shell"""
-    def __init__(self, minetest: miney.Minetest, online_players: list = None):
+    def __init__(self, luanti: miney.Luanti, online_players: list = None):
         if online_players:
             self.__online_players = online_players
-            self.__mt = minetest
+            self.__mt = luanti
 
             # update list
             for player in online_players:
-                self.__setattr__(player, miney.Player(minetest, player))
+                self.__setattr__(player, miney.Player(luanti, player))
 
     def __iter__(self):
         player_object = []

@@ -1,6 +1,6 @@
 import miney
 from miney import Node, Point
-from typing import Union, Iterable
+from typing import Union, Iterable, Any
 
 
 class Nodes:
@@ -10,10 +10,10 @@ class Nodes:
     **Nodes manipulation is currently tested for up to 25.000 node, more optimization will come later**
 
     """
-    def __init__(self, mt: miney.Minetest):
-        self.mt = mt
+    def __init__(self, luanti: miney.Luanti):
+        self.lt = luanti
 
-        self._names_cache = self.mt.lua.run(
+        self._names_cache = self.lt.lua.run(
             """
             local node = {}
             for name, def in pairs(minetest.registered_nodes) do
@@ -26,10 +26,10 @@ class Nodes:
     @property
     def name(self) -> 'NameIterable':
         """
-        In Minetest, the type of the node, something like "dirt", is the "name" of this node.
+        In Luanti, the type of the node, something like "dirt", is the "name" of this node.
 
         This property returns all available node names in the game, sorted by categories. In the end it just returns the
-        corresponding minetest name string, so `mt.node.types.default.dirt` returns the string 'default:dirt'.
+        corresponding Luanti name string, so `lt.node.types.default.dirt` returns the string 'default:dirt'.
         It's only a nice shortcut in REPL, cause with auto completion you have only pressed 2-4 keys to get to your
         type.
 
@@ -37,28 +37,28 @@ class Nodes:
 
             Directly access a type:
 
-            >>> mt.node.name.default.dirt
+            >>> lt.node.name.default.dirt
             'default:dirt'
 
             Iterate over all available types:
 
-            >>> for node_type in mt.node.name:
+            >>> for node_type in lt.node.name:
             >>>     print(node_type)
             default:pine_tree
             default:dry_grass_5
             farming:desert_sand_soil
             ... (there should be over 400 different types)
-            >>> print(len(mt.node.name))
+            >>> print(len(lt.node.name))
             421
 
             Get a list of all types:
 
-            >>> list(mt.node.name)
+            >>> list(lt.node.name)
             ['default:pine_tree', 'default:dry_grass_5', 'farming:desert_sand_soil', ...
 
             Add 99 dirt to player "IloveDirt"'s inventory:
 
-            >>> mt.player.IloveDirt.inventory.add(mt.node.name.default.dirt, 99)
+            >>> lt.player.IloveDirt.inventory.add(lt.node.name.default.dirt, 99)
 
         :rtype: :class:`NameIterable`
         :return: :class:`TypeIterable` object with categories. Look at the examples above for usage.
@@ -68,8 +68,8 @@ class Nodes:
     def set(self, node: Union[Node, list]) -> None:
         """
         Set a single or multiple nodes at given position to another node type
-        (something like mt.nodes.type.default.apple).
-        You can get a list of all available node types with :attr:`~miney.Minetest.node.type`
+        (something like lt.nodes.type.default.apple).
+        You can get a list of all available node types with :attr:`~miney.Luanti.node.type`
 
         **The nodes parameter can be a single Node object or a list of Node objects for bulk spawning.**
 
@@ -78,15 +78,15 @@ class Nodes:
             Replace the node under the first players feet with dirt:
 
             >>> from miney import Node
-            >>> pos = Node(mt.player[0].position.x, mt.player[0].position.y - 1, mt.player[0].position.z, "default:dirt")
-            >>> mt.nodes.set(mt.player[0].position)
+            >>> pos = Node(lt.player[0].position.x, lt.player[0].position.y - 1, lt.player[0].position.z, "default:dirt")
+            >>> lt.nodes.set(lt.player[0].position)
 
         :param node: A dict or a list of dicts with node definitions
         """
         # Set a single node
         if type(node) is Node:
-            self.mt.lua.run(
-                f"minetest.set_node({ self.mt.lua.dumps({'x': node.x, 'y': node.y, 'z': node.z}) }, "
+            self.lt.lua.run(
+                f"minetest.set_node({ self.lt.lua.dumps({'x': node.x, 'y': node.y, 'z': node.z}) }, "
                 f"{{name=\"{ node.name }\"}})"
             )
 
@@ -97,11 +97,11 @@ class Nodes:
             # Loop over node, modify name/type, position/offset and generate lua code
             for n in node:
                 lua = lua + f"minetest.set_node(" \
-                            f"{self.mt.lua.dumps({'x': n.x, 'y': n.y, 'z': n.z})}, " \
+                            f"{self.lt.lua.dumps({'x': n.x, 'y': n.y, 'z': n.z})}, " \
                             f"{{name=\"{n.name}\"}})\n"
-            self.mt.lua.run(lua)
+            self.lt.lua.run(lua)
 
-    def get(self, point: Union[Point, Node, Iterable]) -> Union[Node, list]:
+    def get(self, point: Union[Point, Node, Iterable]) -> Node | list[Any] | None:
         """
         Get the node at given position. It returns a node object.
         This contains the "x", "y", "z", "param1", "param2" and "name" attributes, where "name" is the node type like
@@ -110,20 +110,20 @@ class Nodes:
         If instead of a single point/node a list or tuple with 2 points/nodes is given, this function returns a list of
         nodes. This list contains a cuboid of nodes with the diagonal between the given points.
 
-        Tip: You can get a list of all available node types with :attr:`~miney.Minetest.node.type`.
+        Tip: You can get a list of all available node types with :attr:`~miney.Luanti.node.type`.
 
         :param point: A Point object
         :return: The node type on this position
         """
         if isinstance(point, Point):  # for a single node
-            node = Node(point.x, point.y, point.z, **self.mt.lua.run(
-                f"return minetest.get_node({self.mt.lua.dumps(point.__dict__)})"))
+            node = Node(point.x, point.y, point.z, **self.lt.lua.run(
+                f"return minetest.get_node({self.lt.lua.dumps(point.__dict__)})"))
             return node
         elif isinstance(point, (list, tuple)):  # Multiple nodes
-            lnodes = self.mt.lua.run(  # We sort them by the smallest coordinates and get them node per node
+            lnodes = self.lt.lua.run(  # We sort them by the smallest coordinates and get them node per node
                 f"""
-                pos1 = {self.mt.lua.dumps(dict(point[0]))}
-                pos2 = {self.mt.lua.dumps(dict(point[1]))}
+                pos1 = {self.lt.lua.dumps(dict(point[0]))}
+                pos2 = {self.lt.lua.dumps(dict(point[1]))}
                 minetest.load_area(pos1, pos2)
                 nodes = {{}}
                 if pos1.x <= pos2.x then start_x = pos1.x end_x = pos2.x else start_x = pos2.x end_x = pos1.x end
@@ -146,9 +146,10 @@ class Nodes:
                 nodes.append(Node(n["x"], n["y"], n["z"], n["name"], n["param1"], n["param2"]))
 
             return nodes
+        return None
 
     def __repr__(self):
-        return '<minetest node functions>'
+        return '<Luanti node functions>'
 
 
 class NameIterable:
@@ -175,7 +176,7 @@ class NameIterable:
                     self.__setattr__(ntype, ntype)  # for 'air' and 'ignore'
 
     def __iter__(self):
-        # todo: list(mt.node.type.default) should return only default group
+        # todo: list(lt.node.type.default) should return only default group
         return iter(self._parent._names_cache)
 
     def __getitem__(self, item_key):

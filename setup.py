@@ -22,7 +22,13 @@ setuptools.setup(
     project_urls={
         "Documentation": "https://miney.readthedocs.io"
     },
-    packages=["miney"],
+    # Todo: Add command line tools
+    # entry_points={
+    #     'console_scripts': [
+    #         'miney=miney.manage.commandline:main',
+    #     ]
+    # },
+    packages=["miney", "miney.manage"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",
