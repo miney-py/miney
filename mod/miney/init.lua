@@ -179,10 +179,19 @@ local function execute_lua_code(code, player_name)
         return {error = "Runtime error: " .. tostring(result)}
     end
 
-    -- Test serialization to catch errors early, but return a table with the raw result
-    local json_success, json_result_or_error = pcall(minetest.write_json, result)
-    if not json_success then
-        local error_msg = "Failed to serialize result to JSON: " .. tostring(json_result_or_error)
+    -- Test serialization to catch errors early.
+    local json_success, json_result = pcall(minetest.write_json, result)
+
+    -- The check must verify both pcall success and that write_json did not return nil.
+    if not json_success or json_result == nil then
+        local error_msg
+        if not json_success then
+            -- This case handles errors within the write_json C++ function itself.
+            error_msg = "Error during JSON serialization: " .. tostring(json_result)
+        else
+            -- This case handles valid Lua tables that contain non-serializable types.
+            error_msg = "Failed to serialize result: The result contains non-serializable values like functions or userdata."
+        end
         log("error", error_msg)
         return {error = error_msg}
     end
