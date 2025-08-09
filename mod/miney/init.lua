@@ -254,10 +254,10 @@ minetest.register_chatcommand("miney", {
         if command == "form" then
             log("action", "Player " .. name .. " requested code form via command.")
             show_code_form(name)
-            return true, "Code form opened."
+            return true
         elseif command == "help" then
             minetest.chat_send_player(name, "Available miney commands: /miney form, /miney help")
-            return true, "Help message sent."
+            return true
         end
         return false, "Unknown subcommand. Use /miney help."
     end,

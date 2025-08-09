@@ -225,6 +225,16 @@ class Luanti:
         return self.lua.run("return minetest.settings:to_table()")
 
     @property
+    def version(self) -> str:
+        """
+        Get the server version string.
+
+        :return: The server version string (e.g., "5.13.0").
+        """
+        version_info = self.lua.run("return minetest.get_version()")
+        return version_info.get("string", "N/A")
+
+    @property
     def tool(self) -> 'miney.ToolIterable':
         """
         All available tools in the game, sorted by categories. In the end it just returns the corresponding

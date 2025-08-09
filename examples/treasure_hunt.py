@@ -14,7 +14,8 @@ using the Miney library. It showcases several key features:
 - **World Cleanup:** Restores the original blocks when the script ends or is interrupted.
 
 How to Run:
-1. Make sure the `miney` mod is installed and enabled on your Minetest server.
+1. Make sure the `miney` mod is installed and enabled on your Luanti server. This game is optimized for the minetest
+   game, and there is a very high chance it will not work in other games.
 2. Run this script from your terminal, providing connection details if needed:
    python examples/treasure_hunt.py [server] [port] [playername] [password]
 3. The game will start immediately for all online players. The first to find the
