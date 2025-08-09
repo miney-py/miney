@@ -7,9 +7,9 @@ Technical Background
 
 This page provides an inside view of how Miney works.
 
-Miney's basic idea is, to use `Minetest <https://www.minetest.net/>`_ with `Python <https://www.python.org/>`_.
+Miney's basic idea is, to use `Luanti <https://www.minetest.net/>`_ (formerly Minetest) with `Python <https://www.python.org/>`_.
 
-Minetest's main programming language (besides C++) is `Lua <https://www.lua.org/>`_ and it provides an mighty Lua-API for mod programming.
+Luanti's main programming language (besides C++) is `Lua <https://www.lua.org/>`_ and it provides a mighty Lua-API for mod programming.
 But Lua isn't the ideal programming language to start programming and mod programming isn't fun,
 if you just want to play around with a sandbox.
 So we need something like an interface that is accessible by Python.
@@ -17,39 +17,26 @@ So we need something like an interface that is accessible by Python.
 The interface
 ------------------------------
 
-For this we've written the `Mineysocket <https://github.com/miney-py/mineysocket>`_ mod as a regular Lua mod.
-This mod opens a network port and receives JSON encoded commands.
-The most important command is the "lua" command, where it just executes the received Lua code and
-sends any return value back.
+Miney implements a native Luanti client in Python. This client connects to the Luanti server just like a regular player would.
+This approach allows Miney to interact with the game world directly.
 
-Miney is using this lua command to execute Lua code inside Minetest.
+To bridge the gap between Python and Lua, Miney relies on a companion mod, the `miney` mod, which must be installed on the Luanti server.
+This mod provides the necessary server-side functions to receive Lua code from the Miney client, execute it, and send back the results.
+The most important function is the one that executes arbitrary Lua code.
+
+Miney uses this capability to execute Lua code inside Luanti, effectively giving you control over the game via Python.
 
 .. note::
 
    **And you can use Miney without knowing any Lua or even seeing a single line of Lua code.**
 
-Mineysocket, Windows and the Miney distribution
+What you need to get started
 ----------------------------------------------------
 
-Python is the language with batteries included and it ships with a very complete library for nearly everything.
-In contrast Lua has the batteries explicitly excluded, so there are nearly no libraries and it misses also a
-network library.
+Getting started with Miney is straightforward. You only need two components:
 
-So we need a Lua extension for networking, thats `luasocket <https://github.com/diegonehab/luasocket>`_.
-And an extension for JSON, thats `lua-cjson <https://luarocks.org/modules/openresty/lua-cjson>`_
+1. The **Miney Python package**: Install it using pip: ``pip install miney``
+2. The **Miney mod**: This mod must be installed in your Luanti server's content database.
 
-Under Linux this should be no big deal, just install these packages (most distributions provide them) and you are ready to go.
-
-Windows
-^^^^^^^^^^^^
-
-It isn't that easy for Minetest on Windows. The Minetest binary's where compiled with Visual Studio and the extension
-has to be linked against minetest also with the same version of Visual Studio.
-So the best way under windows is, to compile Minetest and the Lua extensions by yourself with the same Visual Studio.
-
-And when we already do this, why not replace Lua with `lua-jit <https://luajit.org/>`_ for more speed?
-
-And when we've done all this, why not also bundle a actual python interpreter? And why not preinstall Miney in this
-interpreter? Now it would be nice to have a comfortable `launcher <https://github.com/miney-py/launcher>`_.
-
-We've done all this for windows and we call it `Miney Distibution <https://github.com/miney-py/miney_distribution/releases>`_.
+With this setup, you no longer need to worry about external dependencies or compiling anything yourself, regardless of your operating system.
+This simplifies the process significantly compared to the old architecture.
