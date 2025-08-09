@@ -14,16 +14,20 @@ https://miney.readthedocs.io/en/latest/
 
 ## Status
 
-Beta, the current todo list is in the [here](https://github.com/orgs/miney-py/projects/1).
+**With version 0.5 we removed mineysocket and talking now directly to the server over the Lunanti protocol!**
+
+This is a major change and will break existing code! But it's also very cool, because you now only need the miney mod 
+in the server and the "miney" python module. No special compiled server version and no mineysocket mod anymore! 
+That makes it straightforward to install. Fast and easy, just like Python!
 
 ## Requirement
 
-* Python 3.6+ (tested on 3.8)
-* A minetest-server with [mineysocket](https://github.com/miney-py/mineysocket) mod
+* Python 3.6+ (tested on 3.12)
+* Installed "miney" mod in the server.
 
 # Development
 
-Clone the repo with submodules:
+Clone the repo:
 ```
 git clone https://github.com/miney-py/miney.git
 ```

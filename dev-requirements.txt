@@ -2,4 +2,4 @@ Sphinx
 sphinx_rtd_theme
 wheel
 twine
-pytest
+setuptools
