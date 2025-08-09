@@ -67,21 +67,33 @@ class Nodes:
 
     def set(self, node: Union[Node, list]) -> None:
         """
-        Set a single or multiple nodes at given position to another node type
-        (something like lt.nodes.type.default.apple).
-        You can get a list of all available node types with :attr:`~miney.Luanti.node.type`
+        Set a single or multiple nodes at a given position.
 
-        **The nodes parameter can be a single Node object or a list of Node objects for bulk spawning.**
+        You can get a list of all available node names with :attr:`~miney.nodes.Nodes.name`.
+
+        **The `node` parameter can be a single Node object or a list of Node objects for bulk setting.**
 
         :Examples:
 
-            Replace the node under the first players feet with dirt:
+            Replace the node under the first player's feet with dirt:
+
+            >>> from miney import Node, Point
+            >>> player_pos = lt.player[0].position
+            >>> pos_under_player = player_pos - Point(0, 1, 0)
+            >>> dirt_node = Node(pos_under_player.x, pos_under_player.y, pos_under_player.z, name="default:dirt")
+            >>> lt.nodes.set(dirt_node)
+
+            Set multiple nodes to create a 2x1 stone platform:
 
             >>> from miney import Node
-            >>> pos = Node(lt.player[0].position.x, lt.player[0].position.y - 1, lt.player[0].position.z, "default:dirt")
-            >>> lt.nodes.set(lt.player[0].position)
+            >>> player_pos = lt.player[0].position
+            >>> nodes_to_set = [
+            ...     Node(player_pos.x + 2, player_pos.y -1, player_pos.z, name="default:stone"),
+            ...     Node(player_pos.x + 3, player_pos.y -1, player_pos.z, name="default:stone")
+            ... ]
+            >>> lt.nodes.set(nodes_to_set)
 
-        :param node: A dict or a list of dicts with node definitions
+        :param node: A single :class:`~miney.Node` object or a list of :class:`~miney.Node` objects.
         """
         # Set a single node
         if type(node) is Node:
@@ -103,7 +115,7 @@ class Nodes:
 
     def get(self, point: Union[Point, Node, Iterable]) -> Node | list[Any] | None:
         """
-        Get the node at given position. It returns a node object.
+        Get the node at the given position. It returns a node object.
         This contains the "x", "y", "z", "param1", "param2" and "name" attributes, where "name" is the node type like
         "default:dirt".
 
@@ -116,14 +128,18 @@ class Nodes:
         :return: The node type on this position
         """
         if isinstance(point, Point):  # for a single node
-            node = Node(point.x, point.y, point.z, **self.lt.lua.run(
-                f"return minetest.get_node({self.lt.lua.dumps(point.__dict__)})"))
+            pos_dict = {'x': point.x, 'y': point.y, 'z': point.z}
+            node_data = self.lt.lua.run(
+                f"return minetest.get_node({self.lt.lua.dumps(pos_dict)})")
+            node = Node(point.x, point.y, point.z, **node_data, luanti=self.lt)
             return node
-        elif isinstance(point, (list, tuple)):  # Multiple nodes
+        elif isinstance(point, (list, tuple)) and len(point) == 2:  # Multiple nodes
+            pos1_dict = {'x': point[0].x, 'y': point[0].y, 'z': point[0].z}
+            pos2_dict = {'x': point[1].x, 'y': point[1].y, 'z': point[1].z}
             lnodes = self.lt.lua.run(  # We sort them by the smallest coordinates and get them node per node
                 f"""
-                pos1 = {self.lt.lua.dumps(dict(point[0]))}
-                pos2 = {self.lt.lua.dumps(dict(point[1]))}
+                pos1 = {self.lt.lua.dumps(pos1_dict)}
+                pos2 = {self.lt.lua.dumps(pos2_dict)}
                 minetest.load_area(pos1, pos2)
                 nodes = {{}}
                 if pos1.x <= pos2.x then start_x = pos1.x end_x = pos2.x else start_x = pos2.x end_x = pos1.x end
@@ -143,7 +159,7 @@ class Nodes:
                 return nodes""", timeout=60)
             nodes = []
             for n in lnodes:
-                nodes.append(Node(n["x"], n["y"], n["z"], n["name"], n["param1"], n["param2"]))
+                nodes.append(Node(n["x"], n["y"], n["z"], n["name"], n["param1"], n["param2"], luanti=self.lt))
 
             return nodes
         return None

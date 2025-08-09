@@ -39,7 +39,6 @@ class Player:
         >>> import miney
         >>> lt = miney.Luanti()
         >>> lt.player.IhateDirt.inventory.remove(lt.node.type.default.dirt, 99)
-            
         """
 
     def __repr__(self):
@@ -379,7 +378,8 @@ class Player:
                 if not player then return end
 
                 player:set_properties({{
-                    visual = "sprite",
+                    visual = "cube",
+                    textures = {{"blank.png"}},
                     visual_size = {{x = 0, y = 0}},
                     pointable = false,
                     makes_footstep_sound = false,

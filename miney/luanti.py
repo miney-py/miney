@@ -82,20 +82,6 @@ class Luanti:
         self._chat: miney.chat.Chat = miney.Chat(self)
         self._nodes: miney.nodes.Nodes = miney.Nodes(self)
 
-        player = self.lua.run(
-            """
-            local players = {}
-            for _,player in ipairs(minetest.get_connected_players()) do
-                table.insert(players,player:get_player_name())
-            end
-            return players
-            """
-        )
-        if not player:
-            player = []
-
-        self._player = miney.PlayerIterable(self, player)
-
         self._tools_cache = self.lua.run(
             """
             local node = {}
@@ -164,9 +150,13 @@ class Luanti:
         return self.lua.run('minetest.log("action", "{}")'.format(line))
 
     @property
-    def player(self):
+    def player(self) -> 'miney.player.PlayerIterable':
         """
-        Get a single players object.
+        Provides access to online players.
+
+        This property is dynamic and fetches the current list of online players
+        each time it is accessed. It returns an iterable object that allows
+        access to individual players by name or index.
 
         :Examples:
 
@@ -179,14 +169,26 @@ class Luanti:
             >>> player = "MyPlayername"
             >>> lt.player[player].speed = 5
 
-        Get a list of all players
+        Get a list of all players:
 
             >>> list(lt.player)
-            [<Luanti player "MineyPlayer">, <Luanti player "SecondPlayer">, ...]
+            [<Luanti Player "MineyPlayer">, <Luanti Player "SecondPlayer">, ...]
 
-        :return: :class:`miney.Player`: Player related functions
+        :return: :class:`miney.PlayerIterable`: An iterable object for players.
         """
-        return self._player
+        player_names = self.lua.run(
+            """
+            local players = {}
+            for _,player in ipairs(minetest.get_connected_players()) do
+                table.insert(players,player:get_player_name())
+            end
+            return players
+            """
+        )
+        if not player_names:
+            player_names = []
+
+        return miney.PlayerIterable(self, player_names)
 
     @property
     def lua(self):
@@ -260,6 +262,17 @@ class Luanti:
         :return: :class:`ToolIterable` object with categories. Look at the examples above for usage.
         """
         return self._tool
+
+    def disconnect(self):
+        """
+        Disconnect from the Luanti server.
+
+        This method is called automatically when the object is deleted or when exiting a 'with' block.
+        It ensures that the connection is properly closed.
+        """
+        if self.luanti:
+            self.luanti.disconnect()
+            self.luanti = None
 
     def __del__(self) -> None:
         """

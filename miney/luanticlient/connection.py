@@ -238,7 +238,7 @@ class Connection:
             return False
 
         split_seqnum = self._get_next_split_seqnum()
-        logger.info(f"Splitting packet of {len(data)} bytes into {total_chunks} chunks")
+        logger.debug(f"Splitting packet of {len(data)} bytes into {total_chunks} chunks")
 
         for i in range(total_chunks):
             offset = i * MAX_CHUNK_SIZE
