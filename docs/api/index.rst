@@ -1,37 +1,22 @@
 API
-=================================
+===
 
-Miney provides many shortcuts inside it's api.
+This section provides the complete API reference for all Miney classes and functions.
 
-You can access the node manipulation on two different ways:
-
-:Example:
-
-    >>> import miney
-
-    >>> lt = miney.Luanti()
-    >>> lt.node.get(0, 0, 0)
-    >>> lt.node.set(miney.Node(0, 0, 0, "default:dirt"))
-
-thats a shortcut for
-
-:Example:
-
-    >>> import miney
-
-    >>> lt = miney.Luanti()
-    >>> nf = miney.NodeFunctions(lt)
-    >>> nf.get(miney.Point(0, 0, 0))
-
-
-.. rubric:: Objects
+.. rubric:: Core Object
 
 .. toctree::
+   :maxdepth: 2
 
    Luanti
-   point
-   helpers
+
+.. rubric:: Standalone Modules
+
+.. toctree::
+   :maxdepth: 1
+
    exceptions
+   helpers
 
 .. rubric:: Indices and tables
 

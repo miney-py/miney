@@ -22,18 +22,16 @@ There is also some properties inside, to get other objects like players or nodes
 .. autoclass:: miney.Luanti
    :members:
 
-.. rubric:: Objects
+.. rubric:: Component Classes
+
+The following classes are accessed through properties of the main ``Luanti`` object.
 
 .. toctree::
+   :maxdepth: 1
 
-   player
-   nodes
-   lua
    chat
    inventory
-
-.. rubric:: Indices and tables
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+   lua
+   nodes
+   player
+   point

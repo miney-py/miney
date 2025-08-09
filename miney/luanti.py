@@ -81,6 +81,7 @@ class Luanti:
         self._lua: miney.lua.Lua = miney.Lua(self.luanti)
         self._chat: miney.chat.Chat = miney.Chat(self)
         self._nodes: miney.nodes.Nodes = miney.Nodes(self)
+        self._inventory: miney.inventory.Inventory = miney.Inventory(self, None)
 
         self._tools_cache = self.lua.run(
             """
@@ -121,22 +122,47 @@ class Luanti:
     @property
     def chat(self):
         """
-        Object with chat functions.
+        Provides access to chat functions.
+
+        See :class:`~miney.chat.Chat` for a full list of methods.
 
         :Example:
 
             >>> lt.chat.send_to_all("My chat message")
 
-        :return: :class:`miney.Chat`: chat object
+        :return: :class:`~miney.chat.Chat`
         """
         return self._chat
 
     @property
+    def inventory(self):
+        """
+        Provides access to inventory functions.
+
+        .. note::
+           This property is a bit different. To access a specific inventory, you must
+           first get a player or node object.
+
+           >>> player_inventory = lt.player.MyPlayer.inventory
+           >>> chest_inventory = lt.nodes.get(Point(0, 0, 0)).inventory
+
+        See :class:`~miney.inventory.Inventory` for a full list of methods.
+
+        :return: :class:`~miney.inventory.Inventory`
+        """
+        # The parent is set to None here because the actual parent (player/node)
+        # is determined when the inventory is accessed from that object.
+        self._inventory.parent = None
+        return self._inventory
+
+    @property
     def nodes(self):
         """
-        Manipulate and get information's about node.
+        Provides access to node manipulation functions.
 
-        :return: :class:`miney.Nodes`: Nodes manipulation functions
+        See :class:`~miney.nodes.Nodes` for a full list of methods.
+
+        :return: :class:`~miney.nodes.Nodes`
         """
         return self._nodes
 
@@ -154,9 +180,8 @@ class Luanti:
         """
         Provides access to online players.
 
-        This property is dynamic and fetches the current list of online players
-        each time it is accessed. It returns an iterable object that allows
-        access to individual players by name or index.
+        This property returns an iterable object that allows access to individual
+        :class:`~miney.player.Player` instances.
 
         :Examples:
 
@@ -164,17 +189,12 @@ class Luanti:
 
             >>> lt.player.MyPlayername.speed = 5
 
-        Use a playername from a variable:
-
-            >>> player = "MyPlayername"
-            >>> lt.player[player].speed = 5
-
         Get a list of all players:
 
             >>> list(lt.player)
             [<Luanti Player "MineyPlayer">, <Luanti Player "SecondPlayer">, ...]
 
-        :return: :class:`miney.PlayerIterable`: An iterable object for players.
+        :return: An iterable object for players.
         """
         player_names = self.lua.run(
             """
@@ -193,9 +213,11 @@ class Luanti:
     @property
     def lua(self):
         """
-        Functions to run Lua inside Luanti.
+        Provides access to functions for running raw Lua code on the server.
 
-        :return: :class:`miney.Lua`: Lua related functions
+        See :class:`~miney.lua.Lua` for a full list of methods.
+
+        :return: :class:`~miney.lua.Lua`
         """
         return self._lua
 
@@ -237,39 +259,19 @@ class Luanti:
     @property
     def tool(self) -> 'miney.ToolIterable':
         """
-        All available tools in the game, sorted by categories. In the end it just returns the corresponding
-        Luanti tool string, so `lt.tool.default.axe_stone` returns the string 'default:axe_stone'.
-        It's a nice shortcut in REPL, cause with auto completion you have only pressed 2-4 keys to get to your type.
+        Provides an iterable helper for accessing all available tool types.
+
+        This is a shortcut for getting tool item strings with IDE auto-completion.
+        See :class:`~miney.tool.ToolIterable` for more details.
 
         :Examples:
-
-            Directly access a tool:
 
             >>> lt.tool.default.pick_mese
             'default:pick_mese'
 
-            Iterate over all available types:
-
-            >>> for tool_type in lt.tool:
-            >>>     print(tool_type)
-            default:shovel_diamond
-            default:sword_wood
-            default:shovel_wood
-            ... (there should be around 34 different tools)
-            >>> print(len(lt.tool))
-            34
-
-            Get a list of all types:
-
-            >>> list(lt.tool)
-            ['default:pine_tree', 'default:dry_grass_5', 'farming:desert_sand_soil', ...
-
-            Add a diamond pick axe to the first player's inventory:
-
             >>> lt.player[0].inventory.add(lt.tool.default.pick_diamond, 1)
 
-        :rtype: :class:`ToolIterable`
-        :return: :class:`ToolIterable` object with categories. Look at the examples above for usage.
+        :return: An iterable object for tool types.
         """
         return self._tool
 

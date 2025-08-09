@@ -11,3 +11,4 @@ The keys "param1" and "param2" are optional storage variables.
 
 .. autoclass:: miney.Nodes
    :members:
+

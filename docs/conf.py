@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.abspath(".."))
 
 # -- Project information -----------------------------------------------------
 
-project = 'Luanti'
+project = 'Miney'
 copyright = '2020, Robert Lieback'
 author = 'Robert Lieback'
 
@@ -39,7 +39,7 @@ release = __version__
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    "sphinx.ext.autodoc", "sphinx.ext.viewcode", "sphinx.ext.intersphinx"
+    "sphinx.ext.autodoc", "sphinx.ext.viewcode", "sphinx.ext.intersphinx", "sphinx_design"
 ]
 autodoc_default_options = {
     'members':         True,

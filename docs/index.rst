@@ -16,10 +16,17 @@ First goal is to have fun with a 3D sandbox for Python.
 * Play and fiddle around while learning python
 * Visualize data in unusual ways
 * Automate things with bots
-* Connect minetest to external services like discord, twitch or whatsoever
+* Connect Luanti to external services like discord, twitch or whatsoever
 * Do whatever you want!
 
-**Join the Miney community on Discord:** https://discord.gg/jCzZ7qs6ZT
+.. raw:: html
+
+   <a href="https://discord.gg/jCzZ7qs6ZT" class="sd-card sd-bg-primary sd-p-2 d-block" style="text-decoration: none; max-width: 500px; margin: 1em auto;">
+      <div style="display: flex; align-items: center; justify-content: center;">
+         <img src="_static/discord-logo.svg" alt="Discord Logo" width="30" style="margin-right: 10px;">
+         <strong style="color: white;">Join the Miney community on Discord</strong>
+      </div>
+   </a>
 
 .. important::
 
@@ -52,7 +59,7 @@ And it's popular! And cause of that it has a `giant package index <https://pypi.
 Why Luanti?
 ---------------
 .. image:: minetest-logo.png
-   :alt: Python logo
+   :alt: Luanti logo
    :align: left
 
 Why not Minecraft? Luanti is free. Not only you don't have to pay for Luanti (consider to `donate <https://www.luanti.org/get-involved/#donate>`_!), it's also open source!
@@ -79,6 +86,11 @@ Table of Contents
 
    getting_started/quickstart
    getting_started/basics
+
+.. toctree::
+   :caption: Examples
+
+   examples
 
 .. toctree::
    :caption: Reference

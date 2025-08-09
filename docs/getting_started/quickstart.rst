@@ -45,7 +45,7 @@ For all Plattforms
 First lines of code
 -------------------
 
-The first lines of code with Miney should be the import statement and the creation of the Miney object "mt". This will
+The first lines of code with Miney should be the import statement and the creation of the Miney object "lt". This will
 connect Miney to your already running Luanti.
 
 ::
@@ -57,3 +57,17 @@ connect Miney to your already running Luanti.
 .. Important::
 
     Whenever you see a object "lt" in the documentation, it was created with this line!
+
+Verify your setup
+-----------------
+
+After installing Miney and the Luanti mod, it's a good idea to verify that everything is working together.
+The `check_setup.py` script is designed for this purpose. It connects to your Luanti server, performs a few basic actions, and reports whether the connection was successful.
+
+This is the best way to confirm your setup before diving into more complex projects. You can find this and other examples in the :doc:`../examples` section.
+
+.. dropdown:: View Code (`check_setup.py`)
+
+   .. literalinclude:: ../../examples/check_setup.py
+      :language: python
+      :linenos:

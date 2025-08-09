@@ -11,7 +11,7 @@ This is the recommended first script to run after installing Miney to ensure
 your environment is ready.
 
 How to Run:
-1. Make sure the `miney` mod is installed and enabled on your Minetest server.
+1. Make sure the `miney` mod is installed and enabled on your Luanti server.
 2. Run this script from your terminal, providing connection details if needed:
    python examples/check_setup.py [server] [port] [playername] [password]
 """
@@ -41,14 +41,14 @@ if __name__ == "__main__":
 
     try:
         # Use a 'with' statement for automatic connection management
-        with Luanti(server, username, password, port) as lt:
+        with Luanti(server=server, playername=username, password=password, port=port) as lt:
             logger.info("Connection successful!")
             print("-" * 40)
             logger.info("--- Luanti & Miney Setup Check ---")
 
             # 1. Get Server Information
             server_version = lt.version
-            logger.info(f"Minetest Server Version: {server_version}")
+            logger.info(f"Luanti Server Version: {server_version}")
 
             # 2. Get Player Information
             players = list(lt.player)
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     except exceptions.LuantiConnectionError as e:
         logger.critical(f"❌ Connection Failed: {e}")
         logger.critical("Please check the following:")
-        logger.critical("  - Is the Minetest server running?")
+        logger.critical("  - Is the Luanti server running?")
         logger.critical("  - Are the server address and port correct?")
         logger.critical("  - Is the 'miney' mod installed and enabled on the server?")
         logger.critical("  - Is the password correct?")

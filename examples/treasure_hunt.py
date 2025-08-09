@@ -6,10 +6,10 @@ This script demonstrates a simple, interactive treasure hunt game within Luanti
 using the Miney library. It showcases several key features:
 
 - **Multiplayer Gameplay:** The game is announced to all players, and anyone can win.
-- **Efficient World Interaction:** Uses ranged `nodes.get` to quickly scan for the surface.
-- **World Modification:** Placing a node (`nodes.set`) to hide the treasure chest.
+- **Efficient World Interaction:** Uses ranged ``nodes.get`` to quickly scan for the surface.
+- **World Modification:** Placing a node (:meth:`~miney.Nodes.set`) to hide the treasure chest.
 - **Player Interaction:** Sending global chat messages to all players.
-- **Player State:** Reading player positions (`player.position`) to check for a winner.
+- **Player State:** Reading player positions (:attr:`~miney.Player.position`) to check for a winner.
 - **Linear Script Flow:** The script runs from start to finish without threads or callbacks.
 - **World Cleanup:** Restores the original blocks when the script ends or is interrupted.
 
