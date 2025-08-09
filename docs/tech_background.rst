@@ -7,7 +7,7 @@ Technical Background
 
 This page provides an inside view of how Miney works.
 
-Miney's basic idea is, to use `Luanti <https://www.minetest.net/>`_ (formerly Minetest) with `Python <https://www.python.org/>`_.
+Miney's basic idea is, to use `Luanti <https://www.luanti.org/>`_ (formerly Minetest) with `Python <https://www.python.org/>`_.
 
 Luanti's main programming language (besides C++) is `Lua <https://www.lua.org/>`_ and it provides a mighty Lua-API for mod programming.
 But Lua isn't the ideal programming language to start programming and mod programming isn't fun,
