@@ -20,17 +20,28 @@ Windows
  * Download the latest Luanti distribution from https://www.luanti.org/downloads/ and extract it to a folder.
  * Start Luanti by running the "luanti.exe" in the "bin" folder.
  * Download the latest Python Version from https://www.python.org/downloads/ and install it.
+ * Install miney by opening a command prompt (cmd) and typing:
+
+>>> pip install miney
 
 Linux
 ^^^^^
 
  * Download the latest Luanti by following instruction on https://www.luanti.org/downloads/
  * You should have Python 3 installed, if not, install it with your package manager.
+ * Install miney by opening a terminal and typing:
+
+>>> pip3 install miney
 
 MacOS
 ^^^^^
 
-Untested
+ * Download the latest Luanti by following instruction on https://www.luanti.org/downloads/
+ * You should have Python 3 installed, if not, install it with Homebrew or download it from https://www.python.org/downloads/.
+ * Install miney by opening a terminal and typing:
+
+>>> pip install miney
+
 
 For all Plattforms
 ^^^^^^^^^^^^^^^^^^
@@ -64,6 +75,10 @@ Interactive Exploration with the Python Shell
 
 Miney is designed to be highly interactive, making it perfect for use in a Python REPL (Read-Eval-Print Loop) or an IDE like IDLE. This allows you to explore the game world and the Miney API without needing to write and run a full script—an excellent way for beginners to learn and experiment.
 
+.. note::
+
+   IDLE is Python's Integrated Development and Learning Environment and is included with every Python installation.
+   You can start it from your command line by typing ``python -m idlelib.idle``.
 A key feature is dynamic auto-completion. Miney fetches information like node types and online player names from the server and makes them available for tab-completion in modern Python shells.
 
 **Example: Interacting with Players**
@@ -74,10 +89,9 @@ You can easily see and interact with online players. Type `lt.players.` in your 
    :caption: Example of player completion in a Python REPL
 
    >>> lt.players.  # Press Tab
-   lt.players.miney          lt.players.singleplayer
+   lt.players.miney          lt.players.Netzvamp          lt.players.Player3
    >>>
-   >>> player_object = lt.players.miney
-   >>> print(player_object.position)
+   >>> lt.players.Player3
    Point(x=-158, y=3, z=-16)
 
 **Example: Discovering Node Types**
@@ -88,8 +102,11 @@ Similarly, you can discover all available node types. Type `lt.nodes.names.` and
    :caption: Discovering and using a node name
 
    >>> from miney import Point
-   >>> # After discovering "default:stone" via tab-completion...
-   >>> lt.nodes.set(Point(10, 20, 30), "default:stone")
+   >>> lt.nodes.names.  # Press Tab
+   >>> lt.nodes.names.default.  # Press Tab
+   >>> lt.nodes.names.default.apple  # Press Enter
+   'default:apple'
+   >>> lt.nodes.set(Point(10, 20, 30), lt.nodes.names.default.apple)
 
 This powerful interactive discovery feature significantly lowers the barrier to entry, especially in educational settings, as you can learn and explore what's possible directly within the Python shell.
 

@@ -139,7 +139,7 @@ def hide_treasure(lt: Luanti, players: List[Player]) -> tuple[Optional[Point], l
                 if chest_node:
                     # Create a pool of items to choose from, excluding some non-stackable/undesirable ones
                     item_pool = [
-                        item for item in list(lt.nodes.name)
+                        item for item in list(lt.nodes.names)
                         if "air" not in item and "water" not in item and "lava" not in item and "ignore" not in item
                     ]
                     # Pick a random item from the pool
@@ -152,7 +152,7 @@ def hide_treasure(lt: Luanti, players: List[Player]) -> tuple[Optional[Point], l
 
                 return chest_pos, original_blocks, target_player.name
             except Exception as e:
-                logger.error(f"Failed to place chest at {chest_pos} or add item: {e}")
+                logger.error(f"Failed to place chest at {chest_pos} or add item: {e}", exc_info=True)
                 # If setting fails, nothing was placed, so no cleanup is needed.
                 return None, [], None
 

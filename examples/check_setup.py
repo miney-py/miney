@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
             # 3. Get World Content Information
             # This confirms that Miney can access the game's content database
-            node_count = len(list(lt.nodes.name))
+            node_count = len(list(lt.nodes.names))
             tool_count = len(list(lt.tool))
             logger.info(f"Registered Node Types: {node_count}")
             logger.info(f"Registered Tool Types: {tool_count}")

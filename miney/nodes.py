@@ -26,7 +26,7 @@ class Nodes:
         self._types = NameIterable(self, self._names_cache)
 
     @property
-    def name(self) -> 'NameIterable':
+    def names(self) -> 'NameIterable':
         """
         In Luanti, the type of the node, something like "dirt", is the "name" of this node.
 
@@ -39,28 +39,28 @@ class Nodes:
 
             Directly access a type:
 
-            >>> lt.node.name.default.dirt
+            >>> lt.node.names.default.dirt
             'default:dirt'
 
             Iterate over all available types:
 
-            >>> for node_type in lt.node.name:
+            >>> for node_type in lt.node.names:
             >>>     print(node_type)
             default:pine_tree
             default:dry_grass_5
             farming:desert_sand_soil
             ... (there should be over 400 different types)
-            >>> print(len(lt.node.name))
+            >>> print(len(lt.node.names))
             421
 
             Get a list of all types:
 
-            >>> list(lt.node.name)
+            >>> list(lt.node.names)
             ['default:pine_tree', 'default:dry_grass_5', 'farming:desert_sand_soil', ...
 
             Add 99 dirt to player "IloveDirt"'s inventory:
 
-            >>> lt.players.IloveDirt.inventory.add(lt.node.name.default.dirt, 99)
+            >>> lt.players.IloveDirt.inventory.add(lt.node.names.default.dirt, 99)
 
         :rtype: :class:`NameIterable`
         :return: :class:`TypeIterable` object with categories. Look at the examples above for usage.
@@ -194,7 +194,6 @@ class NameIterable:
                     self.__setattr__(ntype, ntype)  # for 'air' and 'ignore'
 
     def __iter__(self):
-        # todo: list(lt.node.type.default) should return only default group
         return iter(self._parent._names_cache)
 
     def __getitem__(self, item_key):
