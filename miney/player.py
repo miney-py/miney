@@ -1,5 +1,8 @@
-from typing import Union, Iterable, List
-import miney
+from typing import Union, Iterable, List, TYPE_CHECKING
+from .exceptions import PlayerNotFoundError, PlayerOffline, LuaError
+from .point import Point
+if TYPE_CHECKING:
+    from .luanti import Luanti
 
 
 class PrivilegeManager:
@@ -78,13 +81,14 @@ class Player:
     """
     A player of the Luanti server.
     """
-    def __init__(self, luanti: miney.Luanti, name):
+    def __init__(self, luanti: 'Luanti', name):
         """
         Initialize the player object.
 
         :param luanti: Parent Luanti object
         :param name: Player name
         """
+        from .inventory import Inventory
         self.lt = luanti
         self.name = name
         
@@ -95,9 +99,9 @@ class Player:
             self.last_login = data["last_login"]
             self.privileges = data["privileges"]
         else:
-            raise miney.PlayerNotFoundError("There is no player with that name")
+            raise PlayerNotFoundError("There is no player with that name")
 
-        self.inventory: miney.Inventory = miney.Inventory(luanti, self)
+        self.inventory: Inventory = Inventory(luanti, self)
         """Manipulate player's inventory.
         
         :Example to add 99 dirt to player "IloveDirt"'s inventory:
@@ -126,7 +130,7 @@ class Player:
         return self.name in self.lt.luanti.state._connected_players
 
     @property
-    def position(self) -> miney.Point:
+    def position(self) -> Point:
         """
         Get or set the players current position.
 
@@ -136,14 +140,14 @@ class Player:
         :return: :class:`miney.Point`
         """
         try:
-            return miney.Point(
+            return Point(
                 **self.lt.lua.run("return minetest.get_player_by_name('{}'):get_pos()".format(self.name))
             )
-        except miney.LuaError:
-            raise miney.PlayerOffline("The player has no position, he could be offline")
+        except LuaError:
+            raise PlayerOffline("The player has no position, he could be offline")
 
     @position.setter
-    def position(self, values: miney.Point) -> None:
+    def position(self, values: Point) -> None:
         """
         Set player position
         :param values:
@@ -516,19 +520,19 @@ class Player:
 
 class PlayerIterable:
     """Player, implemented as iterable for easy autocomplete in the interactive shell"""
-    def __init__(self, luanti: miney.Luanti, online_players: list = None):
+    def __init__(self, luanti: 'Luanti', online_players: list = None):
         if online_players:
             self.__online_players = online_players
             self.__mt = luanti
 
             # update list
             for player in online_players:
-                self.__setattr__(player, miney.Player(luanti, player))
+                self.__setattr__(player, Player(luanti, player))
 
     def __iter__(self):
         player_object = []
         for player in self.__online_players:
-            player_object.append(miney.Player(self.__mt, player))
+            player_object.append(Player(self.__mt, player))
 
         return iter(player_object)
 

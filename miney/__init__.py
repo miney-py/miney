@@ -2,11 +2,13 @@
 Miney is the python interface to Luanti
 """
 
+__version__ = "0.5.4"
+
 # base classes
 from .point import Point
 from .node import Node
 
-from .luanti import Luanti
+from .luanti import Luanti, default_playername
 from .player import Player, PlayerIterable
 from .chat import Chat
 from .nodes import Nodes
@@ -33,9 +35,6 @@ from .tool import ToolIterable
 from .helper import doc
 from .luanticlient import LuantiClient
 
-
-__version__ = "0.5.4"
-default_playername = "Luanti"
 
 __all__ = [
     "AuthenticationError",

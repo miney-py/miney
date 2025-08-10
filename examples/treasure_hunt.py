@@ -173,13 +173,13 @@ if __name__ == "__main__":
         with Luanti(server, username, password, port) as lt:
             logger.info("Connection successful. Starting treasure hunt loop.")
 
-            lt.player[lt.playername].invisible = True
+            lt.players[lt.playername].invisible = True
 
             while True:  # Main loop to run the game continuously
                 original_blocks = []
                 try:
                     # 1. Get all online players and filter out the script's own player
-                    game_players = [p for p in list(lt.player) if p.name != username]
+                    game_players = [p for p in list(lt.players) if p.name != username]
 
                     if not game_players:
                         logger.info("No players online. Waiting for players to join...")
@@ -215,7 +215,7 @@ if __name__ == "__main__":
                             lt.chat.send_to_all(f"The treasure was at {treasure_location}.")
                             break
 
-                        current_players = [p for p in list(lt.player) if p.name != username]
+                        current_players = [p for p in list(lt.players) if p.name != username]
                         if not current_players:
                             logger.warning("All players have logged out. Ending current round.")
                             break
@@ -250,7 +250,7 @@ if __name__ == "__main__":
 
                                 lt.chat.send_to_player(player.name, hint)
                             except Exception as e:
-                                logger.warning(f"Could not process player {player.name}: {e}")
+                                logger.warning(f"Could not process player {player.name}: {e}", exc_info=True)
 
                         if winner:
                             break

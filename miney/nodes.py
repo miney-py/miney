@@ -1,6 +1,8 @@
-import miney
-from miney import Node, Point
-from typing import Union, Iterable, Any
+from .node import Node
+from .point import Point
+from typing import Union, Iterable, Any, TYPE_CHECKING
+if TYPE_CHECKING:
+    from .luanti import Luanti
 
 
 class Nodes:
@@ -10,7 +12,7 @@ class Nodes:
     **Nodes manipulation is currently tested for up to 25.000 node, more optimization will come later**
 
     """
-    def __init__(self, luanti: miney.Luanti):
+    def __init__(self, luanti: 'Luanti'):
         self.lt = luanti
 
         self._names_cache = self.lt.lua.run(
@@ -58,7 +60,7 @@ class Nodes:
 
             Add 99 dirt to player "IloveDirt"'s inventory:
 
-            >>> lt.player.IloveDirt.inventory.add(lt.node.name.default.dirt, 99)
+            >>> lt.players.IloveDirt.inventory.add(lt.node.name.default.dirt, 99)
 
         :rtype: :class:`NameIterable`
         :return: :class:`TypeIterable` object with categories. Look at the examples above for usage.
@@ -78,7 +80,7 @@ class Nodes:
             Replace the node under the first player's feet with dirt:
 
             >>> from miney import Node, Point
-            >>> player_pos = lt.player[0].position
+            >>> player_pos = lt.players[0].position
             >>> pos_under_player = player_pos - Point(0, 1, 0)
             >>> dirt_node = Node(pos_under_player.x, pos_under_player.y, pos_under_player.z, name="default:dirt")
             >>> lt.nodes.set(dirt_node)
@@ -86,7 +88,7 @@ class Nodes:
             Set multiple nodes to create a 2x1 stone platform:
 
             >>> from miney import Node
-            >>> player_pos = lt.player[0].position
+            >>> player_pos = lt.players[0].position
             >>> nodes_to_set = [
             ...     Node(player_pos.x + 2, player_pos.y -1, player_pos.z, name="default:stone"),
             ...     Node(player_pos.x + 3, player_pos.y -1, player_pos.z, name="default:stone")

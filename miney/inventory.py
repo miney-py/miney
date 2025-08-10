@@ -1,5 +1,7 @@
-import miney
-import miney.node
+from typing import TYPE_CHECKING
+from .player import Player
+if TYPE_CHECKING:
+    from .luanti import Luanti
 
 
 class Inventory:
@@ -7,7 +9,7 @@ class Inventory:
     Inventories are places to store items, like Chests or player inventories.
     """
 
-    def __init__(self, luanti: miney.Luanti, parent: object):
+    def __init__(self, luanti: 'Luanti', parent: object):
         self.lt = luanti
         self.parent = parent
 
@@ -19,13 +21,14 @@ class Inventory:
         :param amount: item amount
         :return: None
         """
-        if isinstance(self.parent, miney.Player):
+        from .node import Node
+        if isinstance(self.parent, Player):
             self.lt.lua.run(
                 f"minetest.get_inventory("
                 f"{{type = \"player\", name = \"{self.parent.name}\"}}"
                 f"):add_item(\"main\", ItemStack(\"{item} {amount}\"))"
             )
-        elif isinstance(self.parent, miney.node.Node):
+        elif isinstance(self.parent, Node):
             pos_str = f"{{x={self.parent.x}, y={self.parent.y}, z={self.parent.z}}}"
             self.lt.lua.run(
                 f'local pos = {pos_str}\n'
@@ -48,11 +51,12 @@ class Inventory:
         :param amount: item amount
         :return: None
         """
-        if isinstance(self.parent, miney.Player):
+        from .node import Node
+        if isinstance(self.parent, Player):
             self.lt.lua.run(
                 f"minetest.get_inventory({{type = \"player\", "
                 f"name = \"{self.parent.name}\"}}):remove_item(\"main\", ItemStack(\"{item} {amount}\"))")
-        elif isinstance(self.parent, miney.node.Node):
+        elif isinstance(self.parent, Node):
             pos_str = f"{{x={self.parent.x}, y={self.parent.y}, z={self.parent.z}}}"
             self.lt.lua.run(
                 f'local pos = {pos_str}\n'
@@ -79,11 +83,11 @@ class Inventory:
             end
             return names
         """
-
-        if isinstance(self.parent, miney.Player):
+        from .node import Node
+        if isinstance(self.parent, Player):
             getter = f'minetest.get_inventory({{type = "player", name = "{self.parent.name}"}})'
             return self.lt.lua.run(lua_code.format(getter=getter))
-        elif isinstance(self.parent, miney.node.Node):
+        elif isinstance(self.parent, Node):
             pos_str = f"{{x={self.parent.x}, y={self.parent.y}, z={self.parent.z}}}"
             getter = f'minetest.get_inventory({{type = "node", pos = {pos_str}}})'
             return self.lt.lua.run(lua_code.format(getter=getter))
@@ -111,11 +115,11 @@ class Inventory:
             end
             return out
         """
-
-        if isinstance(self.parent, miney.Player):
+        from .node import Node
+        if isinstance(self.parent, Player):
             getter = f'minetest.get_inventory({{type = "player", name = "{self.parent.name}"}})'
             return self.lt.lua.run(lua_code.format(getter=getter, list_name=name))
-        elif isinstance(self.parent, miney.node.Node):
+        elif isinstance(self.parent, Node):
             pos_str = f"{{x={self.parent.x}, y={self.parent.y}, z={self.parent.z}}}"
             getter = f'minetest.get_inventory({{type = "node", pos = {pos_str}}})'
             return self.lt.lua.run(lua_code.format(getter=getter, list_name=name))

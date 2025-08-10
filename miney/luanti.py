@@ -1,9 +1,19 @@
 import logging
-import miney
-from miney.luanticlient.exceptions import LuantiConnectionError as LuantiConnectionError
+from typing import TYPE_CHECKING
+
+from .chat import Chat
+from .inventory import Inventory
+from .lua import Lua
+from .luanticlient import LuantiClient
+from .luanticlient.exceptions import LuantiConnectionError
+from .nodes import Nodes
+from .player import PlayerIterable
+from .tool import ToolIterable
 
 
 logger = logging.getLogger(__name__)
+
+default_playername = "miney"
 
 
 class Luanti:
@@ -34,7 +44,7 @@ class Luanti:
     :param int port: The apisocket port, defaults to 29999
     """
 
-    def __init__(self, server: str = "127.0.0.1", playername: str = "miney", password: str = "ChangeThePassword!", port: int = 30000):
+    def __init__(self, server: str = "127.0.0.1", playername: str = None, password: str = "ChangeThePassword!", port: int = 30000):
         """
         Connect to the Luanti server.
 
@@ -46,11 +56,11 @@ class Luanti:
         if playername:
             self.playername = playername
         else:
-            self.playername = miney.default_playername
+            self.playername = default_playername
         self.password = password
 
         # setup connection
-        self.luanti = miney.LuantiClient(playername=self.playername, password=self.password, host=self.server, port=self.port)
+        self.luanti = LuantiClient(playername=self.playername, password=self.password, host=self.server, port=self.port)
         try:
             self.luanti.connect()
         except LuantiConnectionError as e:
@@ -59,7 +69,7 @@ class Luanti:
                 self.luanti.disconnect()  # Ensure clean state
 
                 # Re-initialize and attempt to register
-                self.luanti = miney.LuantiClient(playername=self.playername, password=self.password, host=self.server,
+                self.luanti = LuantiClient(playername=self.playername, password=self.password, host=self.server,
                                                  port=self.port)
                 try:
                     self.luanti.connect(register=True)
@@ -78,10 +88,10 @@ class Luanti:
         self.callbacks = {}
 
         # objects representing local properties
-        self._lua: miney.lua.Lua = miney.Lua(self.luanti)
-        self._chat: miney.chat.Chat = miney.Chat(self)
-        self._nodes: miney.nodes.Nodes = miney.Nodes(self)
-        self._inventory: miney.inventory.Inventory = miney.Inventory(self, None)
+        self._lua: Lua = Lua(self.luanti)
+        self._chat: Chat = Chat(self)
+        self._nodes: Nodes = Nodes(self)
+        self._inventory: Inventory = Inventory(self, None)
 
         self._tools_cache = self.lua.run(
             """
@@ -91,7 +101,7 @@ class Luanti:
             end return node
             """
         )
-        self._tool = miney.ToolIterable(self, self._tools_cache)
+        self._tool = ToolIterable(self, self._tools_cache)
 
     def __enter__(self):
         """
@@ -176,7 +186,7 @@ class Luanti:
         return self.lua.run('minetest.log("action", "{}")'.format(line))
 
     @property
-    def players(self) -> 'miney.players.PlayerIterable':
+    def players(self) -> 'PlayerIterable':
         """
         Provides access to online players.
 
@@ -208,7 +218,7 @@ class Luanti:
         if not player_names:
             player_names = []
 
-        return miney.PlayerIterable(self, player_names)
+        return PlayerIterable(self, player_names)
 
     @property
     def lua(self):
@@ -257,7 +267,7 @@ class Luanti:
         return version_info.get("string", "N/A")
 
     @property
-    def tool(self) -> 'miney.ToolIterable':
+    def tool(self) -> 'ToolIterable':
         """
         Provides an iterable helper for accessing all available tool types.
 

@@ -1,7 +1,8 @@
-from typing import Dict, Union
-import re
+from typing import Dict, Union, TYPE_CHECKING
 import logging
-import miney
+from .player import Player
+if TYPE_CHECKING:
+    from .luanti import Luanti
 
 
 logger = logging.getLogger(__name__)
@@ -10,7 +11,7 @@ class Chat:
     """
     Chat functions.
     """
-    def __init__(self, luanti: miney.Luanti):
+    def __init__(self, luanti: 'Luanti'):
         self.lt = luanti
 
     def __repr__(self):
@@ -25,7 +26,7 @@ class Chat:
         """
         self.lt.lua.run(f"minetest.chat_send_all({self.lt.lua.dumps(message)})")
 
-    def send_to_player(self, player: Union[str, miney.Player], message: str) -> None:
+    def send_to_player(self, player: Union[str, Player], message: str) -> None:
         """
         Send a message to a player.
 
@@ -41,7 +42,7 @@ class Chat:
         :param message: The message
         :return: None
         """
-        if isinstance(player, miney.Player):
+        if isinstance(player, Player):
             player = player.name
         self.lt.lua.run(f"return minetest.chat_send_player({self.lt.lua.dumps(player)}, {self.lt.lua.dumps(message)})")
 

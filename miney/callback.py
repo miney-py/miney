@@ -1,13 +1,13 @@
-import string
-from random import choices
-import miney
 import logging
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .luanti import Luanti
 
 logger = logging.getLogger(__name__)
 
 class Callback:
     """Register callbacks inside Luanti, to receive events from Lua"""
-    def __init__(self, luanti: miney.Luanti):
+    def __init__(self, luanti: 'miney.Luanti'):
         self.lt = luanti
 
     def activate(self, event: str, callback: callable, parameters: dict = None):

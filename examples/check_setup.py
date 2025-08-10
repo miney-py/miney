@@ -51,7 +51,7 @@ if __name__ == "__main__":
             logger.info(f"Luanti Server Version: {server_version}")
 
             # 2. Get Player Information
-            players = list(lt.player)
+            players = list(lt.players)
             player_count = len(players)
             player_names = ", ".join([p.name for p in players]) if players else "None"
             logger.info(f"Players Online ({player_count}): {player_names}")
