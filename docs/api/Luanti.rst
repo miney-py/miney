@@ -30,7 +30,6 @@ The following classes are accessed through properties of the main ``Luanti`` obj
    :maxdepth: 1
 
    chat
-   inventory
    lua
    nodes
    player
