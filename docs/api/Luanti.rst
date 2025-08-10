@@ -35,3 +35,4 @@ The following classes are accessed through properties of the main ``Luanti`` obj
    nodes
    player
    point
+   node
