@@ -18,7 +18,7 @@ How to Run:
 import logging
 import sys
 
-from miney import Luanti, exceptions
+from miney import Luanti, LuantiConnectionError
 
 # --- Logger Setup ---
 # Configure a simple logger for clean and informative output
@@ -72,7 +72,7 @@ if __name__ == "__main__":
                 logger.warning("⚠️ Verification complete, but with warnings.")
                 logger.warning("Low node/tool count may indicate an issue with the server or mod.")
 
-    except exceptions.LuantiConnectionError as e:
+    except LuantiConnectionError as e:
         logger.critical(f"❌ Connection Failed: {e}")
         logger.critical("Please check the following:")
         logger.critical("  - Is the Luanti server running?")

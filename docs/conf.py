@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.abspath(".."))
 # -- Project information -----------------------------------------------------
 
 project = 'Miney'
-copyright = '2020, Robert Lieback'
+copyright = '2025, Robert Lieback'
 author = 'Robert Lieback'
 
 
@@ -65,8 +65,9 @@ html_theme = 'sphinx_rtd_theme'
 
 html_theme_options = {
     'logo_only': False,
+    'style_external_links': True,
     # 'collapse_navigation': False,
-    # 'titles_only': True
+    'titles_only': True
 }
 
 html_logo = "miney-logo.png"
@@ -79,3 +80,5 @@ html_static_path = ['_static']
 intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
 
 todo_include_todos = True
+
+html_favicon = "miney-logo.png"

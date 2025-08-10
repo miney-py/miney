@@ -43,6 +43,8 @@ class Connection:
         # For split packets
         self.split_packets = {}
         self.split_seqnum = 0
+        self.seqnum_lock = threading.Lock()
+        self.split_seqnum_lock = threading.Lock()
 
     def establish(self) -> bool:
         """
@@ -225,9 +227,10 @@ class Connection:
                 self.command_processor(command_id, data[2:])
 
     def _get_next_split_seqnum(self) -> int:
-        seqnum = self.split_seqnum
-        self.split_seqnum = (self.split_seqnum + 1) % 65536
-        return seqnum
+        with self.split_seqnum_lock:
+            seqnum = self.split_seqnum
+            self.split_seqnum = (self.split_seqnum + 1) % 65536
+            return seqnum
 
     def send_split_packet(self, data: bytes) -> bool:
         HEADER_SIZE = 17
@@ -243,11 +246,12 @@ class Connection:
         for i in range(total_chunks):
             offset = i * MAX_CHUNK_SIZE
             chunk_data = data[offset:offset + min(MAX_CHUNK_SIZE, len(data) - offset)]
-            packet = self.protocol.create_reliable_split_packet(
-                peer_id=self.state.peer_id, sequence_number=self.state.sequence_number,
-                split_seqnum=split_seqnum, total_chunks=total_chunks, chunk_num=i,
-                chunk_data=chunk_data)
-            self.state.sequence_number = (self.state.sequence_number + 1) % 65536
+            with self.seqnum_lock:
+                packet = self.protocol.create_reliable_split_packet(
+                    peer_id=self.state.peer_id, sequence_number=self.state.sequence_number,
+                    split_seqnum=split_seqnum, total_chunks=total_chunks, chunk_num=i,
+                    chunk_data=chunk_data)
+                self.state.sequence_number = (self.state.sequence_number + 1) % 65536
             try:
                 self.sock.sendto(packet, (self.host, self.port))
                 self.state.packets_sent += 1
@@ -267,11 +271,12 @@ class Connection:
         if len(data) > MAX_SINGLE_PACKET_SIZE:
             return self.send_split_packet(data)
 
-        packet = self.protocol.create_reliable_original_packet(
-            peer_id=self.state.peer_id,
-            sequence_number=self.state.sequence_number,
-            data=data)
-        self.state.sequence_number = (self.state.sequence_number + 1) % 65536
+        with self.seqnum_lock:
+            packet = self.protocol.create_reliable_original_packet(
+                peer_id=self.state.peer_id,
+                sequence_number=self.state.sequence_number,
+                data=data)
+            self.state.sequence_number = (self.state.sequence_number + 1) % 65536
         try:
             self.sock.sendto(packet, (self.host, self.port))
             self.state.packets_sent += 1

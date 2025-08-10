@@ -23,7 +23,7 @@ class Chat:
         :param message: The chat message
         :return: None
         """
-        self.lt.lua.run("minetest.chat_send_all('{}')".format(message.replace("\'", "\\'")))
+        self.lt.lua.run(f"minetest.chat_send_all({self.lt.lua.dumps(message)})")
 
     def send_to_player(self, player: Union[str, miney.Player], message: str) -> None:
         """
@@ -31,7 +31,7 @@ class Chat:
 
         :Send "Hello" to the first player on the server:
 
-        >>> lt.chat.send_to_player(lt.player[0], "Hello")
+        >>> lt.chat.send_to_player(lt.players[0], "Hello")
 
         :Send "Hello" to the player "Luanti" on the server:
 
@@ -43,9 +43,7 @@ class Chat:
         """
         if isinstance(player, miney.Player):
             player = player.name
-        message = message.replace("\"", "'")  # replace " with '
-        # todo: Find a solution to support " again without breaking security.
-        self.lt.lua.run("return minetest.chat_send_player(\"{}\", \"{}\")".format(player, message))
+        self.lt.lua.run(f"return minetest.chat_send_player({self.lt.lua.dumps(player)}, {self.lt.lua.dumps(message)})")
 
     def format_message(self, playername: str, message: str):
         return self.lt.lua.run("return minetest.format_chat_message({}, {})".format(playername, message))

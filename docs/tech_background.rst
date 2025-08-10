@@ -30,6 +30,23 @@ Miney uses this capability to execute Lua code inside Luanti, effectively giving
 
    **And you can use Miney without knowing any Lua or even seeing a single line of Lua code.**
 
+.. dropdown:: Data Transfer via Formspecs
+
+   The communication between the Python client and the Lua mod is built upon Luanti's formspec system. Formspecs are typically used to create graphical user interface (GUI) forms for players, such as inventory screens or dialog boxes. Miney repurposes this system for programmatic data exchange.
+
+   Here's how it works:
+
+   #. **Sending Code to the Server**: When you execute a command in Python that requires interaction with the game world, the Miney client constructs a Lua code snippet. It then sends this code to the server by programmatically "submitting" a form with the form name ``miney:code_form``. The Lua code is embedded within one of the form's fields.
+
+   #. **Execution on the Server**: The ``miney`` mod on the server has a listener registered for this specific form. When it receives the submission, it extracts the Lua code from the form fields and executes it within a sandboxed environment.
+
+   #. **Returning Results to the Client**: After execution, the Lua script gathers the results (e.g., a node's properties, a list of players). The ``miney`` mod then sends a *new* formspec back to the client. This new formspec contains the execution results, typically serialized as a JSON string, in a result field.
+
+   #. **Receiving Results in Python**: The Miney client, which is listening for incoming formspecs, receives this new form. It parses the fields, extracts the JSON result string, deserializes it back into a Python object, and returns it to the calling function.
+
+   This clever use of the formspec system allows for a robust, bidirectional communication channel without requiring any changes to the core Luanti engine. It effectively turns a GUI mechanism into a remote procedure call (RPC) system.
+
+
 What you need to get started
 ----------------------------------------------------
 

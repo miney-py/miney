@@ -1,4 +1,4 @@
-.. image:: miney-slogan.png
+.. image:: miney-logo.png
    :alt: Miney logo
    :align: center
    :class: miney-logo-mainpage

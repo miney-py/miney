@@ -19,6 +19,8 @@ if typing.TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+LUA_IDENTIFIER_REGEX = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
 
 class Lua:
     """
@@ -237,7 +239,7 @@ class Lua:
         
         return self.run(lua_code)
 
-    def dumps(self, data) -> str:
+    def dumps(self, data: Any) -> str:
         """
         Convert Python data type to a string with Lua data type.
 
@@ -245,30 +247,31 @@ class Lua:
         :return: Lua formatted string representation of the data.
         :raises ValueError: If the data type is not supported.
         """
-        # credits:
-        # https://stackoverflow.com/questions/54392760/serialize-a-dict-as-lua-table/54392761#54392761
-        if type(data) is str:
-            return '"{}"'.format(re.escape(data))
-        if type(data) in (int, float):
-            return '{}'.format(data)
-        if type(data) is bool:
-            return data and "true" or "false"
-        if type(data) is list:
-            l = "{"
-            l += ", ".join([self.dumps(item) for item in data])
-            l += "}"
-            return l
-        if type(data) is dict:
-            t = "{"
-            t += ", ".join(
-                [
-                    '{}={}'.format(re.escape(k), self.dumps(v)) for k, v in data.items()
-                ]
-            )
-            t += "}"
-            return t
         if data is None:
             return "nil"
+        if isinstance(data, bool):
+            return "true" if data else "false"
+        if isinstance(data, (int, float)):
+            return str(data)
+        if isinstance(data, str):
+            # json.dumps is a safe way to create a quoted and escaped string
+            # that is compatible with Lua's string literal format.
+            return json.dumps(data, ensure_ascii=False)
+        if isinstance(data, list):
+            return "{" + ", ".join(self.dumps(item) for item in data) + "}"
+        if isinstance(data, dict):
+            items = []
+            for k, v in data.items():
+                key_str = ""
+                # Check if key is a valid Lua identifier
+                if isinstance(k, str) and LUA_IDENTIFIER_REGEX.match(k):
+                    key_str = k
+                else:
+                    # If not, use ["key"] notation
+                    key_str = f"[{self.dumps(k)}]"
 
-        raise ValueError("Unknown type {}".format(type(data)))
+                items.append(f"{key_str}={self.dumps(v)}")
+            return "{" + ", ".join(items) + "}"
+
+        raise ValueError(f"Unknown type {type(data)}")
         

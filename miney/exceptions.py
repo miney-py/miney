@@ -49,7 +49,7 @@ class SessionReconnected(Exception):
 
 
 # Player exceptions
-class PlayerInvalid(Exception):
+class PlayerNotFoundError(Exception):
     pass
 
 

@@ -1,5 +1,77 @@
-from typing import Union
+from typing import Union, Iterable, List
 import miney
+
+
+class PrivilegeManager:
+    """
+    Manages player privileges by providing a list-like interface.
+
+    This object is returned by the :attr:`~miney.player.Player.privileges`
+    property and is not meant to be instantiated directly.
+    """
+    def __init__(self, player: 'Player'):
+        self._player = player
+
+    def _get_all(self) -> dict:
+        """Fetches all privileges from the server."""
+        return self._player.lt.lua.run(f'return minetest.get_player_privs("{self._player.name}")') or {}
+
+    def list(self) -> List[str]:
+        """
+        Return a list of all active privileges for the player.
+
+        :return: A list of privilege strings.
+        """
+        return [priv for priv, active in self._get_all().items() if active]
+
+    def __repr__(self) -> str:
+        return f"<PrivilegeManager for '{self._player.name}': {self.list()}>"
+
+    def __iter__(self) -> Iterable[str]:
+        return iter(self.list())
+
+    def __contains__(self, privilege: str) -> bool:
+        return self._get_all().get(privilege, False)
+
+    def __len__(self) -> int:
+        return len(self.list())
+
+    def append(self, privilege: str):
+        """
+        Grant a new privilege to the player.
+
+        :param privilege: The name of the privilege to grant.
+        """
+        if not isinstance(privilege, str):
+            raise TypeError("Privilege must be a string.")
+
+        self._player.lt.lua.run(
+            f"""
+            local privs = minetest.get_player_privs("{self._player.name}") or {{}}
+            privs["{privilege}"] = true
+            minetest.set_player_privs("{self._player.name}", privs)
+            """
+        )
+
+    def remove(self, privilege: str):
+        """
+        Revoke a privilege from the player.
+
+        :param privilege: The name of the privilege to revoke.
+        :raises ValueError: if the privilege is not in the list.
+        """
+        if not isinstance(privilege, str):
+            raise TypeError("Privilege must be a string.")
+        if privilege not in self:
+            raise ValueError(f"Privilege '{privilege}' not found.")
+
+        self._player.lt.lua.run(
+            f"""
+            local privs = minetest.get_player_privs("{self._player.name}") or {{}}
+            privs["{privilege}"] = nil
+            minetest.set_player_privs("{self._player.name}", privs)
+            """
+        )
 
 
 class Player:
@@ -23,7 +95,7 @@ class Player:
             self.last_login = data["last_login"]
             self.privileges = data["privileges"]
         else:
-            raise miney.PlayerInvalid("There is no player with that name")
+            raise miney.PlayerNotFoundError("There is no player with that name")
 
         self.inventory: miney.Inventory = miney.Inventory(luanti, self)
         """Manipulate player's inventory.
@@ -51,13 +123,7 @@ class Player:
 
         :return: True or False
         """
-        # TODO: Better check without provoke a lua error
-        try:
-            if self.name == self.lt.lua.run(
-                    "return minetest.get_player_by_name('{}'):get_player_name()".format(self.name)):
-                return True
-        except miney.LuaError:
-            return False
+        return self.name in self.lt.luanti.state._connected_players
 
     @property
     def position(self) -> miney.Point:
@@ -219,6 +285,73 @@ class Player:
             raise ValueError("HP has to be between 0 and 20.")
 
     @property
+    def privileges(self) -> 'PrivilegeManager':
+        """
+        Get, set, or modify player privileges using a Pythonic list-like interface.
+
+        This property provides an educational and intuitive way to manage permissions
+        on the server. It returns a special ``PrivilegeManager`` object that
+        behaves like a list of strings.
+
+        **Examples:**
+
+        .. code-block:: python
+
+            # Get a player object
+            player = lt.player["some_player"]
+
+            # 1. List all privileges
+            # Returns a list of strings, e.g., ['interact', 'shout']
+            current_privs = player.privileges.list()
+            print(f"Current privileges: {current_privs}")
+
+            # You can also iterate over it directly
+            for priv in player.privileges:
+                print(f"Player has privilege: {priv}")
+
+            # 2. Check for a specific privilege
+            if "fly" in player.privileges:
+                print("Player can fly!")
+            else:
+                print("Player cannot fly.")
+
+            # 3. Grant (append) a new privilege
+            # This sends a command to the server to add 'fly'.
+            player.privileges.append("fly")
+            assert "fly" in player.privileges
+
+            # 4. Revoke (remove) a privilege
+            # This sends a command to the server to remove 'fly'.
+            player.privileges.remove("fly")
+            assert "fly" not in player.privileges
+
+            # 5. Overwrite all privileges
+            # This replaces all existing privileges with the new list.
+            player.privileges = ["interact", "fast", "noclip"]
+            assert player.privileges.list() == ["interact", "fast", "noclip"]
+
+        :return: A :class:`~miney.player.PrivilegeManager` instance.
+        """
+        return PrivilegeManager(self)
+
+    @privileges.setter
+    def privileges(self, privileges: Iterable[str]):
+        """
+        Set all privileges for the player, overwriting any existing ones.
+
+        :param privileges: An iterable of strings representing the desired privileges.
+        """
+        if not isinstance(privileges, Iterable) or isinstance(privileges, str):
+            raise TypeError("Privileges must be an iterable of strings (e.g., a list or tuple).")
+
+        priv_table = {priv: True for priv in privileges}
+        self.lt.lua.run(
+            f"""
+            minetest.set_player_privs("{self.name}", {self.lt.lua.dumps(priv_table)})
+            """
+        )
+
+    @property
     def breath(self):
         return self.lt.lua.run(f"return minetest.get_player_by_name('{self.name}'):get_breath()")
 
@@ -233,110 +366,56 @@ class Player:
     @property
     def fly(self) -> bool:
         """
-        Get and set the privilege to fly to this player. Press K to enable and disable fly mode.
-
-        .. Example:
-
-            >>> lt.player.MineyPlayer.fly = True  # the can player fly
-
-        :return:
+        Get and set the 'fly' privilege.
         """
-        return self.lt.lua.run(
-            f"""
-            local privs = minetest.get_player_privs(\"{self.name}\")
-            if privs["fly"] then
-                return true
-            else
-                return false
-            end
-            """
-        )
+        return "fly" in self.privileges
 
     @fly.setter
     def fly(self, value: bool):
+        if not isinstance(value, bool):
+            raise TypeError("Value for 'fly' must be a boolean.")
         if value:
-            state = "true"
+            if "fly" not in self.privileges:
+                self.privileges.append("fly")
         else:
-            state = "false"
-        self.lt.lua.run(
-            f"""
-            local privs = minetest.get_player_privs(\"{self.name}\")
-            privs["fly"] = {state}
-            minetest.set_player_privs(\"{self.name}\", privs)
-            """
-        )
+            if "fly" in self.privileges:
+                self.privileges.remove("fly")
 
     @property
     def fast(self) -> bool:
         """
-        Get and set the privilege for fast mode to this player. Press J to enable and disable fast mode.
-
-        .. Example:
-
-            >>> lt.player.MineyPlayer.fast = True  # the player is fast
-
-        :return:
+        Get and set the 'fast' privilege.
         """
-        return self.lt.lua.run(
-            f"""
-            local privs = minetest.get_player_privs(\"{self.name}\")
-            if privs["fast"] then
-                return true
-            else
-                return false
-            end
-            """
-        )
+        return "fast" in self.privileges
 
     @fast.setter
     def fast(self, value: bool):
+        if not isinstance(value, bool):
+            raise TypeError("Value for 'fast' must be a boolean.")
         if value:
-            state = "true"
+            if "fast" not in self.privileges:
+                self.privileges.append("fast")
         else:
-            state = "false"
-        self.lt.lua.run(
-            f"""
-            local privs = minetest.get_player_privs(\"{self.name}\")
-            privs["fast"] = {state}
-            minetest.set_player_privs(\"{self.name}\", privs)
-            """
-        )
+            if "fast" in self.privileges:
+                self.privileges.remove("fast")
 
     @property
     def noclip(self) -> bool:
         """
-        Get and set the privilege for noclip mode to this player. Press H to enable and disable noclip mode.
-
-        .. Example:
-
-            >>> lt.player.MineyPlayer.noclip = True  # the player can go through walls
-
-        :return:
+        Get and set the 'noclip' privilege.
         """
-        return self.lt.lua.run(
-            f"""
-                local privs = minetest.get_player_privs(\"{self.name}\")
-                if privs["noclip"] then
-                    return true
-                else
-                    return false
-                end
-                """
-        )
+        return "noclip" in self.privileges
 
     @noclip.setter
     def noclip(self, value: bool):
+        if not isinstance(value, bool):
+            raise TypeError("Value for 'noclip' must be a boolean.")
         if value:
-            state = "true"
+            if "noclip" not in self.privileges:
+                self.privileges.append("noclip")
         else:
-            state = "false"
-        self.lt.lua.run(
-            f"""
-                local privs = minetest.get_player_privs(\"{self.name}\")
-                privs["noclip"] = {state}
-                minetest.set_player_privs(\"{self.name}\", privs)
-                """
-        )
+            if "noclip" in self.privileges:
+                self.privileges.remove("noclip")
 
     @property
     def invisible(self) -> bool:
@@ -418,34 +497,21 @@ class Player:
 
     @property
     def creative(self) -> bool:
-        return self.lt.lua.run(
-            f"""
-            local privs = minetest.get_player_privs(\"{self.name}\")
-            if privs["creative"] then
-                return true
-            else
-                return false
-            end
-            """
-        )
+        """
+        Get and set the 'creative' privilege.
+        """
+        return "creative" in self.privileges
 
     @creative.setter
     def creative(self, value: bool):
-        if type(value) is not bool:
-            raise ValueError("creative needs to be true or false")
-        if value is True:
-            state = "true"
+        if not isinstance(value, bool):
+            raise TypeError("Value for 'creative' must be a boolean.")
+        if value:
+            if "creative" not in self.privileges:
+                self.privileges.append("creative")
         else:
-            state = "false"
-
-        luastring = f"""
-            local privs = minetest.get_player_privs(\"{self.name}\")
-            privs["creative"] = {state}
-            minetest.set_player_privs(\"{self.name}\", privs)
-            """
-        self.lt.lua.run(
-            luastring
-        )
+            if "creative" in self.privileges:
+                self.privileges.remove("creative")
 
 
 class PlayerIterable:

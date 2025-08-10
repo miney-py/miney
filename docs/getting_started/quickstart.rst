@@ -45,7 +45,7 @@ For all Plattforms
 First lines of code
 -------------------
 
-The first lines of code with Miney should be the import statement and the creation of the Miney object "lt". This will
+The first lines of code with Miney should be the import statement and the creation of the Miney object "lt" (short for Luanti). This will
 connect Miney to your already running Luanti.
 
 ::
@@ -57,6 +57,42 @@ connect Miney to your already running Luanti.
 .. Important::
 
     Whenever you see a object "lt" in the documentation, it was created with this line!
+
+
+Interactive Exploration with the Python Shell
+---------------------------------------------
+
+Miney is designed to be highly interactive, making it perfect for use in a Python REPL (Read-Eval-Print Loop) or an IDE like IDLE. This allows you to explore the game world and the Miney API without needing to write and run a full script—an excellent way for beginners to learn and experiment.
+
+A key feature is dynamic auto-completion. Miney fetches information like node types and online player names from the server and makes them available for tab-completion in modern Python shells.
+
+**Example: Interacting with Players**
+
+You can easily see and interact with online players. Type `lt.players.` in your Python shell and press the `Tab` key. You will see a list of all online players. You can then access a player object directly by their name to get their properties.
+
+.. code-block:: python
+   :caption: Example of player completion in a Python REPL
+
+   >>> lt.players.  # Press Tab
+   lt.players.miney          lt.players.singleplayer
+   >>>
+   >>> player_object = lt.players.miney
+   >>> print(player_object.position)
+   Point(x=-158, y=3, z=-16)
+
+**Example: Discovering Node Types**
+
+Similarly, you can discover all available node types. Type `lt.nodes.names.` and press `Tab`. You'll see a list of all registered node names (e.g., `default:stone`, `flowers:rose`). You can then use these names as strings in functions that manipulate the world.
+
+.. code-block:: python
+   :caption: Discovering and using a node name
+
+   >>> from miney import Point
+   >>> # After discovering "default:stone" via tab-completion...
+   >>> lt.nodes.set(Point(10, 20, 30), "default:stone")
+
+This powerful interactive discovery feature significantly lowers the barrier to entry, especially in educational settings, as you can learn and explore what's possible directly within the Python shell.
+
 
 Verify your setup
 -----------------

@@ -143,7 +143,7 @@ class Luanti:
            This property is a bit different. To access a specific inventory, you must
            first get a player or node object.
 
-           >>> player_inventory = lt.player.MyPlayer.inventory
+           >>> player_inventory = lt.players.MyPlayer.inventory
            >>> chest_inventory = lt.nodes.get(Point(0, 0, 0)).inventory
 
         See :class:`~miney.inventory.Inventory` for a full list of methods.
@@ -176,7 +176,7 @@ class Luanti:
         return self.lua.run('minetest.log("action", "{}")'.format(line))
 
     @property
-    def player(self) -> 'miney.player.PlayerIterable':
+    def players(self) -> 'miney.players.PlayerIterable':
         """
         Provides access to online players.
 
@@ -187,11 +187,11 @@ class Luanti:
 
         Make a player 5 times faster:
 
-            >>> lt.player.MyPlayername.speed = 5
+            >>> lt.players.MyPlayername.speed = 5
 
         Get a list of all players:
 
-            >>> list(lt.player)
+            >>> list(lt.players)
             [<Luanti Player "MineyPlayer">, <Luanti Player "SecondPlayer">, ...]
 
         :return: An iterable object for players.
@@ -269,7 +269,7 @@ class Luanti:
             >>> lt.tool.default.pick_mese
             'default:pick_mese'
 
-            >>> lt.player[0].inventory.add(lt.tool.default.pick_diamond, 1)
+            >>> lt.players[0].inventory.add(lt.tool.default.pick_diamond, 1)
 
         :return: An iterable object for tool types.
         """

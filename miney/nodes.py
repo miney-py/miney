@@ -99,7 +99,7 @@ class Nodes:
         if type(node) is Node:
             self.lt.lua.run(
                 f"minetest.set_node({ self.lt.lua.dumps({'x': node.x, 'y': node.y, 'z': node.z}) }, "
-                f"{{name=\"{ node.name }\"}})"
+                f"{self.lt.lua.dumps({'name': node.name})})"
             )
 
         # Set many nodes
@@ -108,9 +108,9 @@ class Nodes:
             lua = ""
             # Loop over node, modify name/type, position/offset and generate lua code
             for n in node:
-                lua = lua + f"minetest.set_node(" \
-                            f"{self.lt.lua.dumps({'x': n.x, 'y': n.y, 'z': n.z})}, " \
-                            f"{{name=\"{n.name}\"}})\n"
+                lua += (f"minetest.set_node("
+                        f"{self.lt.lua.dumps({'x': n.x, 'y': n.y, 'z': n.z})}, "
+                        f"{self.lt.lua.dumps({'name': n.name})})\n")
             self.lt.lua.run(lua)
 
     def get(self, point: Union[Point, Node, Iterable]) -> Node | list[Any] | None:
