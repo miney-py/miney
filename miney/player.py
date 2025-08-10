@@ -291,9 +291,9 @@ class Player:
     @property
     def privileges(self) -> 'PrivilegeManager':
         """
-        Get, set, or modify player privileges using a Pythonic list-like interface.
+        Get, set, or modify player privileges using a list-like interface.
 
-        This property provides an educational and intuitive way to manage permissions
+        This property provides an intuitive way to manage permissions
         on the server. It returns a special ``PrivilegeManager`` object that
         behaves like a list of strings.
 

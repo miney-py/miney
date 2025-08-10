@@ -57,10 +57,34 @@ How to start a game
 -------------------
 
 * Start Luanti and create a new world.
-* Activate the "Host Server" option, so that the miney client can connect to your game.
 * Press the "Select Mods" Button, then select "miney" and enable it. Close this screen by pressing "Save".
+* Activate the "Host Server" option, so that the miney client (and others) can connect to your game.
 * Press "Host Game" to start.
 * Run your favorite Python IDE or editor and start coding!
+
+
+Verify your setup
+-----------------
+
+After installing Miney and the Luanti mod, it's a good idea to verify that everything is working together.
+The `check_setup.py` script is designed for this purpose. It connects to your Luanti server, performs a few basic actions, and reports whether the connection was successful.
+
+.. dropdown:: View Code (`check_setup.py`)
+
+   .. literalinclude:: ../../examples/check_setup.py
+      :language: python
+      :linenos:
+
+Just copy the code in a file named `check_setup.py` and open a terminal in the same folder and type this into it:
+
+>>> python check_setup.py
+...
+2025-08-11 01:03:43 | INFO     | ✅ Verification successful. Miney appears to be correctly set up!
+2025-08-11 01:03:44 | INFO     | Disconnecting from server
+2025-08-11 01:03:44 | INFO     | Script finished.
+
+This is the best way to confirm your setup before diving into more complex projects. You can find this and other examples in the :doc:`../examples` section.
+
 
 First lines of code
 -------------------
@@ -88,6 +112,7 @@ Miney is designed to be highly interactive, making it perfect for use in a Pytho
 
    IDLE is Python's Integrated Development and Learning Environment and is included with every Python installation.
    You can start it from your command line by typing ``python -m idlelib.idle``.
+
 A key feature is dynamic auto-completion. Miney fetches information like node types and online player names from the server and makes them available for tab-completion in modern Python shells.
 
 **Example: Interacting with Players**
@@ -118,18 +143,3 @@ Similarly, you can discover all available node types. Type `lt.nodes.names.` and
    >>> lt.nodes.set(Point(10, 20, 30), lt.nodes.names.default.apple)
 
 This powerful interactive discovery feature significantly lowers the barrier to entry, especially in educational settings, as you can learn and explore what's possible directly within the Python shell.
-
-
-Verify your setup
------------------
-
-After installing Miney and the Luanti mod, it's a good idea to verify that everything is working together.
-The `check_setup.py` script is designed for this purpose. It connects to your Luanti server, performs a few basic actions, and reports whether the connection was successful.
-
-This is the best way to confirm your setup before diving into more complex projects. You can find this and other examples in the :doc:`../examples` section.
-
-.. dropdown:: View Code (`check_setup.py`)
-
-   .. literalinclude:: ../../examples/check_setup.py
-      :language: python
-      :linenos:
