@@ -45,7 +45,7 @@ class Inventory:
 
     def remove(self, item: str, amount: int = 1) -> None:
         """
-        Remove an item from an inventory. Possible items can be obtained from lt.node.type.
+        Remove an item from an inventory. Possible items can be obtained from lt.nodes.names.
 
         :param item: item type
         :param amount: item amount

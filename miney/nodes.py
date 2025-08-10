@@ -31,36 +31,36 @@ class Nodes:
         In Luanti, the type of the node, something like "dirt", is the "name" of this node.
 
         This property returns all available node names in the game, sorted by categories. In the end it just returns the
-        corresponding Luanti name string, so `lt.node.types.default.dirt` returns the string 'default:dirt'.
-        It's only a nice shortcut in REPL, cause with auto completion you have only pressed 2-4 keys to get to your
+        corresponding Luanti name string, so `lt.nodes.names.default.dirt` returns the string 'default:dirt'.
+        It's a nice shortcut in REPL, cause with auto completion you have only pressed 2-4 keys to get to your
         type.
 
         :Examples:
 
             Directly access a type:
 
-            >>> lt.node.names.default.dirt
+            >>> lt.nodes.names.default.dirt
             'default:dirt'
 
             Iterate over all available types:
 
-            >>> for node_type in lt.node.names:
+            >>> for node_type in lt.nodes.names:
             >>>     print(node_type)
             default:pine_tree
             default:dry_grass_5
             farming:desert_sand_soil
             ... (there should be over 400 different types)
-            >>> print(len(lt.node.names))
+            >>> print(len(lt.nodes.names))
             421
 
             Get a list of all types:
 
-            >>> list(lt.node.names)
+            >>> list(lt.nodes.names)
             ['default:pine_tree', 'default:dry_grass_5', 'farming:desert_sand_soil', ...
 
             Add 99 dirt to player "IloveDirt"'s inventory:
 
-            >>> lt.players.IloveDirt.inventory.add(lt.node.names.default.dirt, 99)
+            >>> lt.players.IloveDirt.inventory.add(lt.nodes.names.default.dirt, 99)
 
         :rtype: :class:`NameIterable`
         :return: :class:`TypeIterable` object with categories. Look at the examples above for usage.
