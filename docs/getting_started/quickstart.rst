@@ -53,6 +53,15 @@ For all Plattforms
     * Suggestion: Make yourself familiar with venv's, so you can isolate different development environments.
       A good starting point is https://docs.python.org/3/tutorial/venv.html
 
+How to start a game
+-------------------
+
+* Start Luanti and create a new world.
+* Activate the "Host Server" option, so that the miney client can connect to your game.
+* Press the "Select Mods" Button, then select "miney" and enable it. Close this screen by pressing "Save".
+* Press "Host Game" to start.
+* Run your favorite Python IDE or editor and start coding!
+
 First lines of code
 -------------------
 
