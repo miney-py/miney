@@ -10,6 +10,15 @@ This section provides the complete API reference for all Miney classes and funct
 
    Luanti
 
+.. rubric:: Component Classes
+
+These classes are not instantiated directly but are accessed through other objects like ``Player`` or ``Node``.
+
+.. toctree::
+   :maxdepth: 1
+
+   inventory
+
 .. rubric:: Standalone Modules
 
 .. toctree::
