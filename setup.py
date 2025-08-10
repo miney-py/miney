@@ -15,25 +15,18 @@ setuptools.setup(
     version=__version__,
     author="Robert Lieback",
     author_email="robertlieback@zetabyte.de",
-    description="The python interface to minetest",
+    description="The python interface to Luanti",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/miney-py/miney",
     project_urls={
         "Documentation": "https://miney.readthedocs.io"
     },
-    # Todo: Add command line tools
-    # entry_points={
-    #     'console_scripts': [
-    #         'miney=miney.manage.commandline:main',
-    #     ]
-    # },
-    packages=["miney", "miney.manage"],
+    packages=setuptools.find_packages(),
     classifiers=[
-        "Programming Language :: Python :: 3",
-        "Operating System :: OS Independent",
         "Development Status :: 4 - Beta",
         "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+        "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",
         "Topic :: Games/Entertainment"
     ],

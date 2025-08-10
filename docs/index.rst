@@ -21,9 +21,9 @@ First goal is to have fun with a 3D sandbox for Python.
 
 .. raw:: html
 
-   <a href="https://discord.gg/jCzZ7qs6ZT" class="sd-card sd-bg-primary sd-p-2 d-block" style="text-decoration: none; max-width: 500px; margin: 1em auto;">
-      <div style="display: flex; align-items: center; justify-content: center;">
-         <img src="_static/discord-logo.svg" alt="Discord Logo" width="30" style="margin-right: 10px;">
+   <a href="https://discord.gg/jCzZ7qs6ZT" class="sd-card sd-bg-primary sd-p-2 d-block" style="text-decoration: none; max-width: 250px; margin: 1em auto;">
+      <div style="display: flex; align-items: center; justify-content: center; text-align: center;">
+         <img src="_static/discord-logo.svg" alt="Discord Logo" width="40" style="margin: 10px;">
          <strong style="color: white;">Join the Miney community on Discord</strong>
       </div>
    </a>

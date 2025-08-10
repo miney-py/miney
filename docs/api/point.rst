@@ -1,5 +1,5 @@
-Player
-======
+Point
+=====
 
 Representation of a point in a three dimensional space.
 

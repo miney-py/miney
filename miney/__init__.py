@@ -19,5 +19,5 @@ from .helper import *
 from .luanticlient import LuantiClient
 
 
-__version__ = "0.5.0"
+__version__ = "0.5.3"
 default_playername = "Luanti"
