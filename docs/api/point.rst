@@ -1,7 +1,7 @@
 Point
 =====
 
-Representation of a point in a three dimensional space.
+Represents a point in a three-dimensional space.
 
 .. autoclass:: miney.Point
    :members:

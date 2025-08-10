@@ -1,7 +1,7 @@
 Lua
 ===
 
-Lua related functions
+Provides an interface for executing Lua code on the server.
 
 .. autoclass:: miney.Lua
    :members:

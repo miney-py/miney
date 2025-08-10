@@ -22,9 +22,9 @@ There is also some properties inside, to get other objects like players or nodes
 .. autoclass:: miney.Luanti
    :members:
 
-.. rubric:: Component Classes
+.. rubric:: API Components
 
-The following classes are accessed through properties of the main ``Luanti`` object.
+All interaction with the game world starts with the ``Luanti`` object. The following pages document the major classes and components that are accessed through the ``Luanti`` object and its properties.
 
 .. toctree::
    :maxdepth: 1
@@ -33,5 +33,6 @@ The following classes are accessed through properties of the main ``Luanti`` obj
    lua
    nodes
    player
-   point
    node
+   inventory
+   point
