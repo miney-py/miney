@@ -1,4 +1,6 @@
 import logging
+from dataclasses import dataclass
+from functools import cached_property
 from typing import TYPE_CHECKING
 
 from .chat import Chat
@@ -14,6 +16,29 @@ from .tool import ToolIterable
 logger = logging.getLogger(__name__)
 
 default_playername = "miney"
+
+
+@dataclass
+class GameInfo:
+    """
+    Holds information about the current game.
+
+    This dataclass provides both attribute-style and dictionary-style access
+    to the game's properties.
+    """
+    id: str
+    title: str
+    author: str
+    path: str
+
+    def __getitem__(self, key: str):
+        """
+        Allows dictionary-style access to attributes.
+
+        :param key: The attribute name.
+        :return: The value of the attribute.
+        """
+        return getattr(self, key)
 
 
 class Luanti:
@@ -243,6 +268,26 @@ class Luanti:
         """
         version_info = self.lua.run("return minetest.get_version()")
         return version_info.get("string", "N/A")
+
+    @cached_property
+    def game_info(self) -> 'GameInfo':
+        """
+        Get information about the current game.
+
+        This property returns an object providing details about the game running on the server.
+
+        :Example:
+
+            >>> game = lt.game_info
+            >>> print(game.title)
+            'VoxeLibre'
+            >>> print(game['author'])
+            'Wuzzy'
+
+        :return: A :class:`~miney.luanti.GameInfo` object.
+        """
+        info_dict = self.lua.run("return minetest.get_game_info()")
+        return GameInfo(**info_dict)
 
     @property
     def tool(self) -> 'ToolIterable':
