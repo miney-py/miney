@@ -9,3 +9,8 @@ If a node is a container (like a chest), it provides access to its :class:`~mine
 
 .. autoclass:: miney.node.Node
    :members:
+
+.. toctree::
+   :maxdepth: 1
+
+   inventory

@@ -71,7 +71,8 @@ html_theme_options = {
     'logo_only': False,
     'style_external_links': True,
     # 'collapse_navigation': False,
-    'titles_only': True
+    'titles_only': True,
+    'navigation_depth': 5
 }
 
 html_logo = "miney-logo.png"

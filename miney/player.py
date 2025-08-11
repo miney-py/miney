@@ -108,13 +108,13 @@ class Player:
         
         >>> import miney
         >>> lt = miney.Luanti()
-        >>> lt.player.IloveDirt.inventory.add(lt.nodes.names.default.dirt, 99)      
+        >>> lt.players.IloveDirt.inventory.add(lt.nodes.names.default.dirt, 99)      
             
         :Example to remove 99 dirt from player "IhateDirt"'s inventory:
         
         >>> import miney
         >>> lt = miney.Luanti()
-        >>> lt.player.IhateDirt.inventory.remove(lt.nodes.names.default.dirt, 99)
+        >>> lt.players.IhateDirt.inventory.remove(lt.nodes.names.default.dirt, 99)
         """
 
     def __repr__(self):

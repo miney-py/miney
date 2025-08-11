@@ -91,7 +91,6 @@ class Luanti:
         self._lua: Lua = Lua(self.luanti)
         self._chat: Chat = Chat(self)
         self._nodes: Nodes = Nodes(self)
-        self._inventory: Inventory = Inventory(self, None)
 
         self._tools_cache = self.lua.run(
             """
@@ -143,27 +142,6 @@ class Luanti:
         :return: :class:`~miney.chat.Chat`
         """
         return self._chat
-
-    @property
-    def inventory(self):
-        """
-        Provides access to inventory functions.
-
-        .. note::
-           This property is a bit different. To access a specific inventory, you must
-           first get a player or node object.
-
-           >>> player_inventory = lt.players.MyPlayer.inventory
-           >>> chest_inventory = lt.nodes.get(Point(0, 0, 0)).inventory
-
-        See :class:`~miney.inventory.Inventory` for a full list of methods.
-
-        :return: :class:`~miney.inventory.Inventory`
-        """
-        # The parent is set to None here because the actual parent (player/node)
-        # is determined when the inventory is accessed from that object.
-        self._inventory.parent = None
-        return self._inventory
 
     @property
     def nodes(self):

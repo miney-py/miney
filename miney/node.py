@@ -22,6 +22,8 @@ class Node(Point):
         """
         Get the inventory of this node, if it has one.
 
+        >>> chest_inventory = lt.nodes.get(Point(0, 0, 0)).inventory.add(lt.tool.default.dirt, 100)
+
         :return: The inventory object for this node.
         :raises: AttributeError if the node is not bound to a Luanti instance.
         """
