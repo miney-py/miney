@@ -7,3 +7,8 @@ When you retrieve a node, it is returned as a :class:`~miney.node.Node` object, 
 .. autoclass:: miney.Nodes
    :members:
 
+.. toctree::
+   :maxdepth: 1
+
+   node
+

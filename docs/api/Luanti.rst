@@ -27,12 +27,10 @@ There is also some properties inside, to get other objects like players or nodes
 All interaction with the game world starts with the ``Luanti`` object. The following pages document the major classes and components that are accessed through the ``Luanti`` object and its properties.
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
 
    chat
    lua
    nodes
-   player
-   node
-   inventory
+   players
    point

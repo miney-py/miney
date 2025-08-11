@@ -6,3 +6,8 @@ Each player has an :class:`~miney.inventory.Inventory` which can be accessed via
 
 .. autoclass:: miney.Player
    :members:
+
+.. toctree::
+   :maxdepth: 1
+
+   inventory
