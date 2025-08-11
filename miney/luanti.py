@@ -1,8 +1,8 @@
 import logging
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from functools import cached_property
 
 from .chat import Chat
-from .inventory import Inventory
 from .lua import Lua
 from .luanticlient import LuantiClient
 from .luanticlient.exceptions import LuantiConnectionError
@@ -14,6 +14,29 @@ from .tool import ToolIterable
 logger = logging.getLogger(__name__)
 
 default_playername = "miney"
+
+
+@dataclass
+class GameInfo:
+    """
+    Holds information about the current game.
+
+    This dataclass provides both attribute-style and dictionary-style access
+    to the game's properties.
+    """
+    id: str
+    title: str
+    author: str
+    path: str
+
+    def __getitem__(self, key: str):
+        """
+        Allows dictionary-style access to attributes.
+
+        :param key: The attribute name.
+        :return: The value of the attribute.
+        """
+        return getattr(self, key)
 
 
 class Luanti:
@@ -44,12 +67,13 @@ class Luanti:
     :param int port: The apisocket port, defaults to 29999
     """
 
-    def __init__(self, server: str = "127.0.0.1", playername: str = None, password: str = "ChangeThePassword!", port: int = 30000):
+    def __init__(self, server: str = "127.0.0.1", playername: str = None, password: str = "ChangeThePassword!", port: int = 30000, invisible: bool = False):
         """
         Connect to the Luanti server.
 
         :param server: IP or DNS name of an Luanti server with installed miney mod
         :param port: The apisocket port, defaults to 29999
+        :param invisible: If True, makes the Miney player invisible and grants creative privilege to be safe from mobs.
         """
         self.server = server
         self.port = port
@@ -101,6 +125,15 @@ class Luanti:
             """
         )
         self._tool = ToolIterable(self, self._tools_cache)
+
+        # Optionally make player invisible and grant creative privilege
+        if invisible:
+            try:
+                player_obj = self.players[self.playername]
+                player_obj.invisible = True
+                player_obj.creative = True
+            except Exception as e:
+                logger.error(f"Failed to set invisible/creative for player '{self.playername}': {e}")
 
     def __enter__(self):
         """
@@ -243,6 +276,28 @@ class Luanti:
         """
         version_info = self.lua.run("return minetest.get_version()")
         return version_info.get("string", "N/A")
+
+    @cached_property
+    def game_info(self) -> 'GameInfo':
+        """
+        Get information about the current game.
+
+        This property returns an object providing details about the game running on the server.
+
+        :Example:
+
+            >>> game = lt.game_info
+            >>> print(game.id)
+            'mineclone2'
+            >>> print(game.title)
+            'VoxeLibre'
+            >>> print(game['author'])
+            'Wuzzy'
+
+        :return: A :class:`~miney.luanti.GameInfo` object.
+        """
+        info_dict = self.lua.run("return minetest.get_game_info()")
+        return GameInfo(**info_dict)
 
     @property
     def tool(self) -> 'ToolIterable':

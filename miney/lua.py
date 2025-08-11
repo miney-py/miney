@@ -8,6 +8,7 @@ import typing
 import uuid
 import time
 import json
+import textwrap
 from typing import Any
 
 from .exceptions import LuaResultTimeout, LuaError
@@ -107,6 +108,13 @@ class Lua:
         :raises LuantiPermissionError: When the user lacks the required 'miney' privilege on the server.
         :raises LuaError: When the Lua code execution results in an error on the server.
         """
+        if not lua_code or lua_code.isspace() or lua_code.strip() == "":
+            logger.warning("No Lua code provided to execute.")
+            return None
+
+        # Dedent to allow for nicely formatted multiline strings
+        lua_code = textwrap.dedent(lua_code)
+
         if not self.luanti.state.connected or self.luanti.state.state < ClientState.JOINED:
             logger.warning(f"Cannot execute Lua code: not fully connected (state: {self.luanti.state.state})")
             raise LuantiConnectionError("Not fully connected to the server")

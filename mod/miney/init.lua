@@ -11,6 +11,8 @@ local function log(level, message)
     minetest.log(level, "[" .. modname .. "] " .. message)
 end
 
+local cached_env = nil
+
 -- Register the 'miney' privilege
 minetest.register_privilege("miney", {
     description = "Allows execution of Lua code via the miney mod",
@@ -116,64 +118,82 @@ local function show_code_form(player_name, result_table, execution_id)
 end
 
 -- Function to safely execute Lua code
-local function execute_lua_code(code, player_name)
-    -- Create a safe environment for execution
-    local env = {
-        minetest = minetest,
-        dump = dump,
-        dump2 = dump2,
-        print = function(...)
-            local args = {...}
-            local result = ""
-            for i, v in ipairs(args) do
-                if i > 1 then result = result .. "\t" end
-                result = result .. tostring(v)
-            end
-            return result
-        end,
-        tostring = tostring,
-        tonumber = tonumber,
-        type = type,
-        math = math,
-        string = string,
-        table = table,
-        os = {
-            time = os.time,
-            difftime = os.difftime,
-            date = os.date,
-            clock = os.clock,
-        },
-        pairs = pairs,
-        ipairs = ipairs,
-        next = next,
-        select = select,
-        unpack = unpack,
-        player_name = player_name,
-        vector = vector,
-        ItemStack = ItemStack,
-        VoxelArea = VoxelArea,
-        VoxelManip = VoxelManip,
-        PseudoRandom = PseudoRandom,
-        PcgRandom = PcgRandom,
-        PerlinNoise = PerlinNoise,
-        PerlinNoiseMap = PerlinNoiseMap,
-        SecureRandom = SecureRandom,
-    }
+local function execute_lua_code(code)
+    -- On the first run, build and cache the secure base environment.
+    if not cached_env then
+        log("action", "First run: Initializing and caching the secure Lua environment.")
+        cached_env = {
+            minetest = minetest,
+            dump = dump,
+            dump2 = dump2,
+            getfenv = getfenv,
+            print = function(...)
+                local args = {...}
+                local result = ""
+                for i, v in ipairs(args) do
+                    if i > 1 then result = result .. "\t" end
+                    result = result .. tostring(v)
+                end
+                return result
+            end,
+            tostring = tostring,
+            tonumber = tonumber,
+            type = type,
+            math = math,
+            string = string,
+            table = table,
+            os = {
+                time = os.time,
+                difftime = os.difftime,
+                date = os.date,
+                clock = os.clock,
+            },
+            pairs = pairs,
+            ipairs = ipairs,
+            next = next,
+            select = select,
+            unpack = unpack,
+            vector = vector,
+            ItemStack = ItemStack,
+            VoxelArea = VoxelArea,
+            VoxelManip = VoxelManip,
+            PseudoRandom = PseudoRandom,
+            PcgRandom = PcgRandom,
+            PerlinNoise = PerlinNoise,
+            PerlinNoiseMap = PerlinNoiseMap,
+            SecureRandom = SecureRandom,
+        }
 
-    -- Create a function with the safe environment
-    local func, err = loadstring("return function() " .. code .. " end")
-    if not func then
+        -- A list of approved prefixes for global variables from other mods.
+        local allowed_prefixes = {"mcl_"}
+
+        -- Populate the cached environment with globals that match the allowed prefixes.
+        for k, v in pairs(_G) do
+            if cached_env[k] == nil then
+                for _, prefix in ipairs(allowed_prefixes) do
+                    if string.sub(k, 1, #prefix) == prefix then
+                        cached_env[k] = v
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    -- Create a function that returns our sandboxed code as a closure.
+    local factory_func, err = loadstring("return function() " .. code .. " end")
+    if not factory_func then
         return {error = "Syntax error: " .. tostring(err)}
     end
 
-    -- Set the environment for the function
-    setfenv(func, env)
+    -- Create the actual closure. It will initially inherit the global environment.
+    local exec_func = factory_func()
 
-    -- Execute the code and catch errors
-    local success, result
-    local exec_func = func()
+    -- Now, directly set the environment of the final closure to our secure sandbox.
+    setfenv(exec_func, cached_env)
 
-    success, result = pcall(exec_func)
+    -- Execute the code and catch errors.
+    local success, result = pcall(exec_func)
 
     if not success then
         return {error = "Runtime error: " .. tostring(result)}
@@ -196,7 +216,7 @@ local function execute_lua_code(code, player_name)
         return {error = error_msg}
     end
 
-    -- Wrap the successful result in the standard response format
+    -- Wrap the successful result in the standard response format.
     return {result = result}
 end
 
@@ -228,7 +248,7 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
         --    (execution_id and " with ID " .. execution_id or ""))
         
         -- Execute the Lua code
-        local result_table = execute_lua_code(fields.lua, player_name)
+        local result_table = execute_lua_code(fields.lua)
         
         -- Add execution_id to the response table
         if execution_id then

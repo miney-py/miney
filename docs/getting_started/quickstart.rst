@@ -1,18 +1,27 @@
 Quickstart
 ==========
 
+* `PyPI <https://pypi.org/project/miney/>`_
+
+* `Luanti ContentDB <https://content.luanti.org/packages/Miney/miney/>`_
+
 Welcome in the sandbox!
 -----------------------
 
-Blockgames like Minecraft or Luanti give you the ideal playground for creative playing and building just like a real sandbox.
+Blockgames like Luanti or Minecraft give you the ideal playground for creative playing and building just like a real sandbox.
 But other than real sandboxes, you can work on very large worlds together with your friends over the internet.
 And you can use (very simplified) physics, save the progress and more.
 
 But what about learning programming while expressing your creativity? Why not automate things? Or build even greater things?
 
-
 Installation
 ------------
+
+Miney consists of two parts: the Luanti mod and the Python library. The Luanti mod is required to connect to the game, while the Python library provides the API for interacting with the game.
+
+* `Miney in the Luanti ContentDB <https://content.luanti.org/packages/Miney/miney/>`_
+* `Miney im Python Package Index (PyPI) <https://pypi.org/project/miney/>`_
+
 
 Windows
 ^^^^^^^
@@ -123,10 +132,12 @@ You can easily see and interact with online players. Type `lt.players.` in your 
    :caption: Example of player completion in a Python REPL
 
    >>> lt.players.  # Press Tab
-   lt.players.miney          lt.players.Netzvamp          lt.players.Player3
+   lt.players.miney          lt.players.HumanPlayer          lt.players.Player3
    >>>
-   >>> lt.players.Player3
-   Point(x=-158, y=3, z=-16)
+   >>> lt.players.HumanPlayer
+   <miney.player.PlayerIterable object at 0x000001AD4F56F4D0>
+   >>> lt.players.HumanPlayer.position
+   <Luanti Point(x=-145.0, y=6.0, z=-243.0)>
 
 **Example: Discovering Node Types**
 

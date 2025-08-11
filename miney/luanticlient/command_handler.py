@@ -103,7 +103,7 @@ class CommandHandler:
             self.client.start_srp_auth()
 
     def _handle_auth_accept(self, data: bytes):
-        logger.info("Authentication successful.")
+        logger.debug("Authentication successful.")
         self.client.state.authenticated = True
         self.client.state.state = ClientState.AUTHENTICATED
         # Player position is sent in this packet
@@ -151,7 +151,7 @@ class CommandHandler:
 
     def _handle_nodedef(self, data: bytes):
         if self.client.state.state < ClientState.JOINED:
-            logger.info("Node definitions received, client is now fully joined.")
+            logger.debug("Node definitions received, client is now fully joined.")
             self.client.state.state = ClientState.JOINED
 
         data_len = struct.unpack(">I", data[0:4])[0]

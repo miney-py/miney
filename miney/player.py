@@ -370,7 +370,7 @@ class Player:
     @property
     def fly(self) -> bool:
         """
-        Get and set the 'fly' privilege.
+        Get and set the 'fly' privilege. The player can fly by pressing the K key.
         """
         return "fly" in self.privileges
 
@@ -430,9 +430,8 @@ class Player:
         are hidden. When ``False``, restores normal appearance.
 
         .. note::
-            This feature works independently of any specific mod like 'invis'
-            by directly manipulating player properties. The default player
-            collision box is restored when made visible.
+            This feature may not work for mobs in some games, so they may still attack the player. Maybe it's better to
+            move the player to a safe spot.
 
         :return: ``True`` if the player is currently invisible, ``False`` otherwise.
         """
@@ -502,20 +501,55 @@ class Player:
     @property
     def creative(self) -> bool:
         """
-        Get and set the 'creative' privilege.
+        Get and set the player's creative mode.
+
+        .. note::
+            The implementation of this property is game-dependent. For games
+            like **MineClone2**, it uses the native ``mcl_gamemode`` system.
+            For other games, it falls back to granting or revoking the
+            ``creative`` privilege.
+
+        :return: ``True`` if the player is in creative mode, ``False`` otherwise.
         """
-        return "creative" in self.privileges
+        if self.lt.game_info.id in ['mineclone2']:
+            gamemode = self.lt.lua.run(
+                f"""
+                local player = minetest.get_player_by_name('{self.name}')
+                if player then
+                    return player:get_meta():get_string("gamemode")
+                end
+                return "survival"
+                """
+            )
+            return gamemode == 'creative'
+        else:
+            return "creative" in self.privileges
 
     @creative.setter
     def creative(self, value: bool):
         if not isinstance(value, bool):
             raise TypeError("Value for 'creative' must be a boolean.")
-        if value:
-            if "creative" not in self.privileges:
-                self.privileges.append("creative")
+
+        if self.lt.game_info.id in ['mineclone2']:
+            gamemode = "creative" if value else "survival"
+            self.lt.lua.run(
+                f"""
+                if mcl_gamemode and mcl_gamemode.set_gamemode then
+                    local player = minetest.get_player_by_name('{self.name}')
+                    if player then
+                        mcl_gamemode.set_gamemode(player, '{gamemode}')
+                    end
+                end
+                """
+            )
         else:
-            if "creative" in self.privileges:
-                self.privileges.remove("creative")
+            # Fallback for other games: use the 'creative' privilege
+            if value:
+                if "creative" not in self.privileges:
+                    self.privileges.append("creative")
+            else:
+                if "creative" in self.privileges:
+                    self.privileges.remove("creative")
 
 
 class PlayerIterable:
@@ -546,3 +580,6 @@ class PlayerIterable:
 
     def __len__(self):
         return len(self.__online_players)
+
+    def __repr__(self):
+        return f"<Players: {self.__online_players}>"

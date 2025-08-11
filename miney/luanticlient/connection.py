@@ -52,7 +52,7 @@ class Connection:
 
         :return: True if the handshake was successful, False otherwise.
         """
-        logger.info(f"Establishing connection to {self.host}:{self.port}")
+        logger.debug(f"Establishing connection to {self.host}:{self.port}")
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(5.0)
 
@@ -94,7 +94,7 @@ class Connection:
         self.stop_receiver()
 
         if self.state.connected and self.state.peer_id is not None and self.sock and not self.state.access_denied_reason:
-            logger.info("Disconnecting from server")
+            logger.debug("Disconnecting from server")
             try:
                 packet = self.protocol.create_disconnect_packet(self.state.peer_id)
                 self.sock.sendto(packet, (self.host, self.port))

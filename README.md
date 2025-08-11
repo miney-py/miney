@@ -8,6 +8,10 @@ Miney is the Python API to Luanti/Minetest.
 
 Miney connects locally, over network or internet with the Luanti protocol and provides a pythonic interface to the server, players, blocks and more.
 
+* `PyPI <https://pypi.org/project/miney/>`_
+
+* `Luanti ContentDB <https://content.luanti.org/packages/Miney/miney/>`_
+
 ## Documentation
 
 https://miney.readthedocs.io/en/latest/
