@@ -65,13 +65,35 @@ class Point:
         m = self.x * b.x + self.y * b.y + self.z * b.z
         return degrees(acos(m / (self.length() * b.length())))
 
-    def __iter__(self):
-        vals = []
-        for key in self.__dict__:
-            vals.append((key, self.__dict__[key]))
-        return iter(vals)
+    def __len__(self) -> int:
+        """
+        Return the number of coordinates, which is always 3.
+        Allows conversion to list or tuple.
+        """
+        return 3
 
-    def __getitem__(self, item_key):
+    def __iter__(self):
+        """
+        Allow the point to be converted to a dict.
+        """
+        yield 'x', self.x
+        yield 'y', self.y
+        yield 'z', self.z
+
+    def __getitem__(self, item_key: Union[int, str]):
+        """
+        Allow accessing coordinates by index (0=x, 1=y, 2=z) or attribute name.
+        """
+        if isinstance(item_key, int):
+            if item_key == 0:
+                return self.x
+            elif item_key == 1:
+                return self.y
+            elif item_key == 2:
+                return self.z
+            else:
+                raise IndexError("Point index out of range")
+        # Fallback to original behavior for string keys
         return self.__getattribute__(item_key)
 
     def __repr__(self):

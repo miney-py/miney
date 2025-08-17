@@ -22,6 +22,12 @@ There is also some properties inside, to get other objects like players or nodes
 .. autoclass:: miney.Luanti
    :members:
 
+.. rubric:: Related Data Structures
+
+.. autoclass:: miney.luanti.GameInfo
+   :members:
+   :undoc-members:
+
 .. rubric:: API Components
 
 All interaction with the game world starts with the ``Luanti`` object. The following pages document the major classes and components that are accessed through the ``Luanti`` object and its properties.

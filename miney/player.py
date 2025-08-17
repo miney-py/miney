@@ -1,6 +1,7 @@
-from typing import Union, Iterable, List, TYPE_CHECKING
+from typing import Union, Iterable, List, TYPE_CHECKING, Optional
 from .exceptions import PlayerNotFoundError, PlayerOffline, LuaError
 from .point import Point
+from .vector import Vector
 if TYPE_CHECKING:
     from .luanti import Luanti
 
@@ -162,6 +163,132 @@ class Player:
             )
         )
 
+    def move(
+        self,
+        destination: Optional[Point] = None,
+        distance: Optional[float] = None,
+        look_at: Optional[Point] = None,
+        yaw: Optional[float] = None,
+        pitch: Optional[float] = None,
+        smooth: bool = False,
+        duration: float = 1.0,
+        step_interval: float = 0.05,
+    ):
+        """
+        Moves the player and/or changes their look direction, with an option for smooth animation.
+
+        This versatile function can perform several actions:
+        1.  Instantly teleport the player (`smooth=False`).
+        2.  Instantly change the player's look direction (`smooth=False`).
+        3.  Animate the player's movement to a new location (`smooth=True`).
+        4.  Animate the player's view to a new orientation (`smooth=True`).
+        5.  Combine movement and look changes, either instantly or animated.
+
+        **Examples:**
+
+        .. code-block:: python
+
+            import miney
+            from miney.point import Point
+            import math
+
+            lt = miney.Luanti()
+            player = lt.players["some_player"]
+
+            # 1. Instant teleport to a specific coordinate
+            player.move(destination=Point(10, 20, 30))
+
+            # 2. Smoothly fly the player to a destination over 3 seconds
+            player.move(destination=Point(50, 40, 50), smooth=True, duration=3)
+
+            # 3. Instantly make the player look at a point
+            player.move(look_at=Point(0, 20, 0))
+
+            # 4. Smoothly turn the player to face North (yaw=PI) over 2 seconds
+            player.move(yaw=math.pi, smooth=True, duration=2)
+
+            # 5. Move 10 nodes forward smoothly
+            player.move(distance=10, smooth=True)
+
+            # 6. Smoothly move to a destination while turning to look at another point
+            player.move(
+                destination=Point(100, 25, 100),
+                look_at=Point(0, 20, 0),
+                smooth=True,
+                duration=5
+            )
+
+        :param destination: The target position as a :class:`~miney.point.Point`.
+        :param distance: The distance to move forward (alternative to `destination`).
+        :param look_at: A :class:`~miney.point.Point` to look at (alternative to `yaw`/`pitch`).
+        :param yaw: The final horizontal look angle (yaw) in radians. The angle is measured
+                    counter-clockwise from the positive Z-axis (South). Common values are:
+                    - ``0``: South (+Z)
+                    - ``math.pi / 2``: East (+X)
+                    - ``math.pi``: North (-Z)
+                    - ``3 * math.pi / 2``: West (-X)
+        :param pitch: The final vertical look angle (pitch) in radians. It ranges from
+                      ``-math.pi / 2`` (looking straight up) to ``math.pi / 2``
+                      (looking straight down). ``0`` is looking horizontally forward.
+        :param smooth: If ``True``, the action is animated over `duration`. If ``False``, it's instant.
+        :param duration: The total time for the animation in seconds (if `smooth=True`).
+        :param step_interval: The time between each animation step (if `smooth=True`).
+        :raises ValueError: If conflicting or no parameters are provided.
+        """
+        if all(p is None for p in [destination, distance, look_at, yaw, pitch]):
+            raise ValueError("At least one action (destination, distance, look_at, yaw, pitch) must be provided.")
+        if destination is not None and distance is not None:
+            raise ValueError("Provide either 'destination' or 'distance', but not both.")
+        if look_at is not None and (yaw is not None or pitch is not None):
+            raise ValueError("Provide either 'look_at' or 'yaw'/'pitch', but not both.")
+
+        params = {}
+        if destination:
+            params["destination"] = destination
+        if distance is not None:
+            params["distance"] = distance
+        if look_at:
+            params["look_at"] = look_at
+        if yaw is not None:
+            params["yaw"] = yaw
+        if pitch is not None:
+            params["pitch"] = pitch
+
+        if smooth:
+            params["duration"] = duration
+            params["step_interval"] = step_interval
+            params_lua = self.lt.lua.dumps(params)
+            lua_code = f"""
+            local player = minetest.get_player_by_name('{self.name}')
+            if player then
+                smooth_move(player, {params_lua})
+            end
+            """
+            self.lt.lua.run(lua_code)
+        else:
+            # Instantaneous action
+            lua_parts = []
+            if "destination" in params:
+                lua_parts.append(f"player:set_pos({self.lt.lua.dumps(params['destination'])})")
+            elif "distance" in params:
+                # Calculate target position instantly
+                start_pos = self.position
+                look_dir = self.look_dir
+                target_pos = start_pos + (look_dir * params['distance'])
+                lua_parts.append(f"player:set_pos({self.lt.lua.dumps(target_pos)})")
+
+            if "look_at" in params:
+                direction = params['look_at'] - self.position
+                lua_parts.append(f"player:set_look_dir({self.lt.lua.dumps(direction)})")
+            else:
+                if "yaw" in params:
+                    lua_parts.append(f"player:set_look_horizontal({params['yaw']})")
+                if "pitch" in params:
+                    lua_parts.append(f"player:set_look_vertical({params['pitch']})")
+
+            if lua_parts:
+                self.lt.lua.run(f"local player = minetest.get_player_by_name('{self.name}'); if player then {' '.join(lua_parts)} end")
+
     @property
     def speed(self) -> int:
         """
@@ -242,6 +369,23 @@ class Player:
                 raise TypeError("There isn't the required v or h key in the dict")
         else:
             raise TypeError("The value isn't a dict, as required. Use a dict in the form: {\"h\": 1.1, \"v\": 1.1}")
+
+    @property
+    def look_dir(self) -> Vector:
+        """
+        Get or set the player's look direction as a normalized vector.
+
+        :return: A :class:`~miney.vector.Vector` representing the look direction.
+        """
+        res = self.lt.lua.run(f"return minetest.get_player_by_name('{self.name}'):get_look_dir()")
+        return Vector(**res)
+
+    @look_dir.setter
+    def look_dir(self, value: Vector):
+        """
+        Sets the player's look direction using a vector.
+        """
+        self.lt.lua.run(f"minetest.get_player_by_name('{self.name}'):set_look_dir({self.lt.lua.dumps(value)})")
 
     @property
     def look_vertical(self):

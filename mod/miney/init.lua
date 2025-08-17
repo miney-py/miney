@@ -11,6 +11,8 @@ local function log(level, message)
     minetest.log(level, "[" .. modname .. "] " .. message)
 end
 
+dofile(minetest.get_modpath(modname) .. "/player.lua")
+
 local cached_env = nil
 
 -- Register the 'miney' privilege
@@ -162,6 +164,7 @@ local function execute_lua_code(code)
             PerlinNoise = PerlinNoise,
             PerlinNoiseMap = PerlinNoiseMap,
             SecureRandom = SecureRandom,
+            smooth_move = smooth_move,
         }
 
         -- A list of approved prefixes for global variables from other mods.
@@ -219,6 +222,7 @@ local function execute_lua_code(code)
     -- Wrap the successful result in the standard response format.
     return {result = result}
 end
+
 
 -- Register handler for form submissions
 minetest.register_on_player_receive_fields(function(player, formname, fields)

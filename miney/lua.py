@@ -255,6 +255,15 @@ class Lua:
         :return: Lua formatted string representation of the data.
         :raises ValueError: If the data type is not supported.
         """
+        # Try to convert objects that are not base types into dicts.
+        # This relies on the object implementing an iterable protocol that yields (key, value) pairs.
+        if not isinstance(data, (dict, list, str, int, float, bool)) and data is not None:
+            try:
+                data = dict(data)
+            except (TypeError, ValueError):
+                # Not convertible, proceed with original data object
+                pass
+
         if data is None:
             return "nil"
         if isinstance(data, bool):
