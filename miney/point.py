@@ -27,13 +27,26 @@ class Point:
         :param b: Another Point
         :return: The center point
         """
-        return Point((b.x - self.x) / 2, (b.y - self.y) / 2, (b.z - self.z) / 2)
+        return (self + b) / 2
 
     def __add__(self, other: "Point") -> "Point":
         return Point(self.x + other.x, self.y + other.y, self.z + other.z)
 
     def __sub__(self, other: "Point") -> "Point":
         return Point(self.x - other.x, self.y - other.y, self.z - other.z)
+
+    def __mul__(self, scalar: Union[int, float]) -> "Point":
+        if not isinstance(scalar, (int, float)):
+            return NotImplemented
+        return Point(self.x * scalar, self.y * scalar, self.z * scalar)
+
+    def __rmul__(self, scalar: Union[int, float]) -> "Point":
+        return self.__mul__(scalar)
+
+    def __truediv__(self, scalar: Union[int, float]) -> "Point":
+        if not isinstance(scalar, (int, float)):
+            return NotImplemented
+        return Point(self.x / scalar, self.y / scalar, self.z / scalar)
 
     def __iadd__(self, o):
         self.x += o.x

@@ -1,3 +1,12 @@
+-- Standard animation frames for the default player model.
+-- These can be adjusted if a custom player model is used.
+local default_player_animations = {
+    stand = {x = 0, y = 79},   -- Animation frames for standing
+    walk = {x = 168, y = 187}, -- Animation frames for walking
+    speed = 30,                -- Default animation speed
+    blend = 0                  -- Animation blending (usually 0)
+}
+
 ---
 -- Moves a player smoothly to a new position and/or changes their look direction.
 -- This function can animate movement, look direction, or both simultaneously.
@@ -17,6 +26,7 @@
 --      Animation settings:
 --      - duration (number): The total time the animation should take in seconds. (Default: 1.0)
 --      - step_interval (number): The time between each animation step. (Default: 0.05)
+--      - animation (boolean): Whether to play walk/stand animations. (Default: true)
 --
 function smooth_move(player, params)
     -- Validate that there is something to do
@@ -31,6 +41,10 @@ function smooth_move(player, params)
     local step_interval = params.step_interval or 0.05
     local num_steps = math.max(1, math.floor(duration / step_interval))
     local current_step = 0
+    local use_player_animation = params.animation
+    if use_player_animation == nil then
+        use_player_animation = true
+    end
 
     -- Initial state
     local start_pos = player:get_pos()
@@ -66,6 +80,11 @@ function smooth_move(player, params)
         end
     end
 
+    -- Set walk animation if moving
+    if do_move and use_player_animation then
+        player:set_animation(default_player_animations.walk, default_player_animations.speed, default_player_animations.blend, true)
+    end
+
     -- Pre-calculate step vectors
     local step_vector
     if do_move then
@@ -89,6 +108,10 @@ function smooth_move(player, params)
             if do_look then
                 player:set_look_horizontal(target_yaw)
                 player:set_look_vertical(target_pitch)
+            end
+            -- Set animation back to stand
+            if do_move and use_player_animation then
+                player:set_animation(default_player_animations.stand, default_player_animations.speed, default_player_animations.blend, true)
             end
             return -- End animation
         end
