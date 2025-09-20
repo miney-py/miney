@@ -11,6 +11,45 @@ local function log(level, message)
     minetest.log(level, "[" .. modname .. "] " .. message)
 end
 
+local function enforce_min_engine_version(required)
+    -- Ensure engine version is at least required (e.g., {5,7,0})
+    local v = minetest.get_version and minetest.get_version() or {}
+    local major, minor, patch
+    if type(v.string) == "string" then
+        local mj, mi, pa = string.match(v.string, "(%d+)%.(%d+)%.(%d+)")
+        if mj then
+            major, minor, patch = tonumber(mj), tonumber(mi), tonumber(pa)
+        end
+    end
+    if not major then
+        major = tonumber(v.major) or 0
+        minor = tonumber(v.minor) or 0
+        patch = tonumber(v.patch) or 0
+    end
+    local req_major, req_minor, req_patch = required[1], required[2], required[3]
+
+    local too_old =
+        (major < req_major) or
+        (major == req_major and minor < req_minor) or
+        (major == req_major and minor == req_minor and patch < req_patch)
+
+    if too_old then
+        local detected = v.string or (tostring(major) .. "." .. tostring(minor) .. "." .. tostring(patch))
+        local msg = string.format(
+            "Miney requires Luanti/Minetest >= %d.%d.%d, detected %s. Please upgrade the server.",
+            req_major, req_minor, req_patch, detected
+        )
+        minetest.log("error", "[" .. modname .. "] " .. msg)
+        error("[miney] " .. msg)
+    end
+end
+
+enforce_min_engine_version({5, 7, 0})
+
+local function is_local_address(addr)
+    return addr == "::ffff:127.0.0.1" or addr == "127.0.0.1"
+end
+
 dofile(minetest.get_modpath(modname) .. "/player.lua")
 
 local cached_env = nil
@@ -33,12 +72,12 @@ end
 
 -- Function to show the code execution form to a player
 local function show_code_form(player_name, result_table, execution_id)
-    local client_info = minetest.get_player_information(player_name)
+    local client_info = minetest.get_player_information(player_name) or {}
     local client_ip = client_info.address
     local is_miney_client = client_info and client_info.version_string == "miney_v1.0"
 
     -- Handle unauthorized access first and exit early.
-    if client_ip ~= "::ffff:127.0.0.1" and not minetest.check_player_privs(player_name, {miney = true}) then
+    if not is_local_address(client_ip) and not minetest.check_player_privs(player_name, {miney = true}) then
         log("warning", "Unauthorized player " .. player_name .. " tried to access the form.")
 
         -- Find admins who can help.
@@ -77,15 +116,15 @@ local function show_code_form(player_name, result_table, execution_id)
         return true
     end
 
+    local response_data = result_table or {}
+    -- The execution_id is now expected to be in result_table from the caller.
+    if execution_id and not response_data.execution_id then
+        response_data.execution_id = execution_id
+    end
+
     -- If we reach here, the player is authorized.
     if is_miney_client then
         --log("action", "Sending JSON response to LuantiClient " .. player_name)
-        
-        local response_data = result_table or {}
-        -- The execution_id is now expected to be in result_table from the caller.
-        if execution_id and not response_data.execution_id then
-            response_data.execution_id = execution_id
-        end
         
         local final_json_response = minetest.write_json(response_data)
         minetest.show_formspec(player_name, "miney:code_form", final_json_response)
@@ -93,24 +132,14 @@ local function show_code_form(player_name, result_table, execution_id)
         -- For regular clients, show the standard formspec.
         local formspec = "formspec_version[" .. form_version .. "]" ..
                         "size[10,12]" ..
-                        "label[0.5,0.5;Lua-Code ausführen:]" ..
+                        "label[0.5,0.5;Execute LUA Code:]" ..
                         "textarea[0.5,1;9,4;lua;;]" ..
-                        "button[0.5,5.5;4,0.8;execute;Ausführen]"
-        
-        if result_table then
-            local result_text
-            if result_table.result then
-                result_text = minetest.write_json(result_table.result, true) -- Pretty print
-            elseif result_table.error then
-                result_text = "Error: " .. tostring(result_table.error)
-            else
-                -- Fallback for unexpected table structure
-                result_text = minetest.write_json(result_table, true)
-            end
-            
-            formspec = formspec ..
-                      "textarea[0.5,7;9,4;result;Result:;" .. minetest.formspec_escape(result_text) .. "]"
-        end
+                        "button[0.5,5.5;4,0.8;execute;Execute]"
+
+        local result_text = minetest.write_json(response_data, true)
+        formspec = formspec ..
+                   "textarea[0.5,7;9,4;result;Result:;" ..
+                   minetest.formspec_escape(result_text) .. "]"
 
         minetest.show_formspec(player_name, "miney:code_form", formspec)
     end
@@ -231,12 +260,12 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
     end
     
     local player_name = player:get_player_name()
-    local client_info = minetest.get_player_information(player_name)
+    local client_info = minetest.get_player_information(player_name) or {}
     local client_ip = client_info.address
     --log("debug", "Received form input from " .. player_name)
     
     -- Check for 'miney' privilege before processing
-    if client_ip ~= "::ffff:127.0.0.1" and not minetest.check_player_privs(player_name, {miney = true}) then
+    if not is_local_address(client_ip) and not minetest.check_player_privs(player_name, {miney = true}) then
         log("warning", "Unauthorized player " .. player_name .. " tried to submit form data.")
         -- Show the form again; it will contain the permission error message.
         show_code_form(player_name, nil, fields.execution_id)

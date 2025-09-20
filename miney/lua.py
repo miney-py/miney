@@ -58,6 +58,11 @@ class Lua:
         self.form_ready = True
         logger.debug(f"Received miney_code_form response: {formspec}")
 
+        if formspec.startswith("formspec_version["):
+            formspec = self._parse_legacy_formspec_result(formspec)
+            if not formspec:
+                logger.warning("Legacy formspec detected but no result JSON found; ignoring.")
+                return
         try:
             # The server sends a raw JSON string as the formspec content for our client.
             response_data = json.loads(formspec)
@@ -80,11 +85,66 @@ class Lua:
             else:
                 logger.warning(f"Received Lua result for unknown or already processed ID: '{execution_id}'.")
         except json.JSONDecodeError:
-            # This might happen if we connect to an old mod version that still sends a formspec string.
-            logger.warning(f"Failed to parse formspec as JSON. It might be a legacy format. Content: {formspec}")
+            logger.warning(f"Failed to parse formspec as JSON. Content: {formspec}")
         except Exception as e:
             logger.error(f"Error processing miney_code_form response: {e}", exc_info=True)
 
+
+    def _parse_legacy_formspec_result(self, formspec: str) -> str | None:
+        """
+        Extract JSON from the legacy formspec's 'textarea' named 'result'.
+        The server now embeds the full response_data JSON here.
+        Returns the result as string if found; otherwise None.
+        """
+        marker = ";result;"
+        idx = formspec.find(marker)
+        if idx == -1:
+            return None
+        try:
+            pos_after_marker = idx + len(marker)
+            # Skip the label (until next unescaped ';')
+            _, pos_semicolon = self._read_until_unescaped(formspec, pos_after_marker, ';')
+            # Default text starts after that semicolon, ends at next unescaped ']'
+            default_raw, _ = self._read_until_unescaped(formspec, pos_semicolon + 1, ']')
+            default_text = self._unescape_formspec(default_raw).strip()
+            if not default_text:
+                return None
+            else:
+                return default_text
+        except Exception as e:
+            logger.debug(f"Legacy formspec parse failed: {e}", exc_info=True)
+            return None
+
+    def _read_until_unescaped(self, text: str, start: int, end_char: str) -> tuple[str, int]:
+        """
+        Read from 'start' until the next unescaped 'end_char'.
+        Returns (substring, index_of_end_char).
+        """
+        i = start
+        buf: list[str] = []
+        while i < len(text):
+            ch = text[i]
+            if ch == end_char:
+                bs = 0
+                j = i - 1
+                while j >= 0 and text[j] == '\\':
+                    bs += 1
+                    j -= 1
+                if bs % 2 == 0:
+                    return "".join(buf), i
+            buf.append(ch)
+            i += 1
+        return "".join(buf), i
+
+    def _unescape_formspec(self, s: str) -> str:
+        """
+        Reverse formspec_escape:
+          '\\]' -> ']', '\\[' -> '[', '\\;' -> ';', '\\,' -> ',', '\\$' -> '$', '\\\\' -> '\\'
+        Order matters: unescape specific tokens first, then backslashes.
+        """
+        s = s.replace(r'\]', ']').replace(r'\[', '[').replace(r'\;', ';').replace(r'\,', ',').replace(r'\$', '$')
+        s = s.replace(r'\\', '\\')
+        return s
 
     def send_command(self, command: str) -> bool:
         """
