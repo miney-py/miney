@@ -36,3 +36,25 @@ A complete, multiplayer treasure hunt game that showcases many of Miney's featur
    .. literalinclude:: ../examples/treasure_hunt.py
       :language: python
       :linenos:
+
+Move Showcase (`move_showcase.py`)
+----------------------------------
+
+Demonstrates smooth, scripted player movements using the Player.move() API.
+
+.. dropdown:: View Code
+
+   .. literalinclude:: ../examples/move_showcase.py
+      :language: python
+      :linenos:
+
+Choreography Showcase (`choreography.py`)
+----------------------------------------
+
+Demonstrates a multi-client solar-system choreography using multiple Luanti clients with Player.move(). Ensure the server is running. Clients will connect as 'dancer_1' to 'dancer_<N>'. On first connection, you may need to grant them 'miney' and 'noclip' privileges.
+
+.. dropdown:: View Code
+
+   .. literalinclude:: ../examples/choreography.py
+      :language: python
+      :linenos:

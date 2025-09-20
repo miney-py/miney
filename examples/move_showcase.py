@@ -22,8 +22,7 @@ def print_welcome():
     print("Miney Move Showcase")
     print("=" * 50)
     print("This script demonstrates the player movement capabilities.")
-    print("Please make sure a player named 'miney' is online.")
-    print("You can watch this player in the game to see the movements.")
+    print("You can watch the miney player in the game to see the movements.")
     print("-" * 50)
 
 
@@ -122,17 +121,7 @@ def main():
     try:
         with Luanti() as lt:
             # For this example, we control the 'miney' player
-            player_name = "miney"
-            try:
-                player = lt.players[player_name]
-            except KeyError:
-                logger.error(f"Player '{player_name}' not found on the server.")
-                return
-
-            if not player.is_online:
-                logger.error(f"Player '{player_name}' is not online. Please log in and try again.")
-                return
-
+            player = lt.players["miney"]
             showcase_moves(player)
 
     except Exception as e:
