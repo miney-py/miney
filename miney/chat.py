@@ -21,30 +21,31 @@ class Chat:
         """
         Send a chat message to all connected players.
 
-        :param message: The chat message
-        :return: None
+        Ensures the message is a string so lua.dumps escapes correctly.
         """
+        if not isinstance(message, str):
+            logger.warning("Coercing chat message to string; received %s", type(message).__name__)
+            message = str(message)
         self.lt.lua.run(f"minetest.chat_send_all({self.lt.lua.dumps(message)})")
 
     def send_to_player(self, player: Union[str, Player], message: str) -> None:
         """
         Send a message to a player.
 
-        :Send "Hello" to the first player on the server:
-
-        >>> lt.chat.send_to_player(lt.players[0], "Hello")
-
-        :Send "Hello" to the player "Luanti" on the server:
-
-        >>> lt.chat.send_to_player("Luanti", "Hello")
-
-        :param player: A Player object or a string with the name.
-        :param message: The message
-        :return: None
+        Validates player parameter and ensures the message is a string so lua.dumps escapes correctly.
         """
         if isinstance(player, Player):
             player = player.name
-        self.lt.lua.run(f"return minetest.chat_send_player({self.lt.lua.dumps(player)}, {self.lt.lua.dumps(message)})")
+        elif not isinstance(player, str):
+            raise TypeError(f"Parameter 'player' must be str or Player, got {type(player).__name__}")
+
+        if not isinstance(message, str):
+            logger.warning("Coercing chat message to string; received %s", type(message).__name__)
+            message = str(message)
+
+        self.lt.lua.run(
+            f"return minetest.chat_send_player({self.lt.lua.dumps(player)}, {self.lt.lua.dumps(message)})"
+        )
 
     def format_message(self, playername: str, message: str):
         return self.lt.lua.run("return minetest.format_chat_message({}, {})".format(playername, message))
