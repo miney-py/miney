@@ -1,4 +1,4 @@
-from typing import Dict, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, Optional, Union, TYPE_CHECKING
 import logging
 from .player import Player
 if TYPE_CHECKING:
@@ -46,13 +46,51 @@ class Chat:
     def format_message(self, playername: str, message: str):
         return self.lt.lua.run("return minetest.format_chat_message({}, {})".format(playername, message))
 
-    def register_command(self, name, callback_function, parameter: str = "", description: str = "", privileges: Dict = None):
-        # TODO: Reimplement this function
-        logger.warning("Registering commands is not yet implemented")
-        pass
+    def register_command(
+        self,
+        name: str,
+        callback_function: callable,
+        parameter: str = "",
+        description: str = "",
+        privileges: Dict | None = None,
+    ):
+        """
+        Register a chat command handled by the Python client.
 
-    def override_command(self, definition):
-        pass
+        This is the primary entry point for chat commands in Miney. Prefer using this
+        method over low-level Callback.register_command().
+
+        Returns the command name (for convenience).
+        """
+        return self.lt.callbacks.register_command(
+            name=name,
+            callback=callback_function,
+            params=parameter,
+            description=description,
+            privileges=privileges or {},
+        )
+
+    def on_message(self, callback: Callable[[dict], None], filters: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Register a callback for incoming chat messages.
+
+        The callback receives the full event dictionary as produced by the Miney mod
+        (event='chat_message', payload contains 'name' and 'message').
+        """
+        if not callable(callback):
+            raise ValueError("callback must be callable")
+        self.lt.callbacks.activate("chat_message", callback, parameters=filters)
+        logger.info("Registered chat message callback")
+
+    def off_message(self, callback: Callable[[dict], None]) -> None:
+        """
+        Unregister a previously registered chat message callback by function reference.
+        """
+        self.lt.callbacks.deactivate("chat_message", callback)
+        logger.info("Unregistered chat message callback")
 
     def unregister_command(self, name: str):
-        return self.lt.lua.run("return minetest.register_chatcommand({})".format(name))
+        """
+        Unregister a chat command previously registered.
+        """
+        self.lt.callbacks.unregister_command(name)

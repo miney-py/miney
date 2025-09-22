@@ -102,4 +102,8 @@ __pycache__/
 # miney
 tmp
 Minetest
+
 .aider*
+.coverage
+coverage.xml
+htmlcov/

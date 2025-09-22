@@ -2,13 +2,22 @@
 -- Handles form communication and Lua code execution for authorized users.
 
 local modname = minetest.get_current_modname()
+local LOG_LEVELS = { error = 1, warning = 2, action = 3, info = 4, verbose = 5 }
+local LOG_LEVEL_DEFAULT = "info"
+local LOG_LEVEL = (function()
+    local val = (minetest.settings:get("miney_log_level") or LOG_LEVEL_DEFAULT):lower()
+    return LOG_LEVELS[val] or LOG_LEVELS.info
+end)()
 
 -- Formspec related variables
 local form_version = 4
 
 -- Logger function for consistent logging
 local function log(level, message)
-    minetest.log(level, "[" .. modname .. "] " .. message)
+    local lvl = LOG_LEVELS[(level or LOG_LEVEL_DEFAULT):lower()] or LOG_LEVELS.info
+    if lvl <= LOG_LEVEL then
+        minetest.log(level, "[" .. modname .. "] " .. message)
+    end
 end
 
 local function enforce_min_engine_version(required)
@@ -51,6 +60,7 @@ local function is_local_address(addr)
 end
 
 dofile(minetest.get_modpath(modname) .. "/player.lua")
+local callbacks = dofile(minetest.get_modpath(modname) .. "/callbacks.lua")
 
 local cached_env = nil
 
@@ -69,6 +79,7 @@ local function chat_send_to_priv(priv_name, message)
         end
     end
 end
+
 
 -- Function to show the code execution form to a player
 local function show_code_form(player_name, result_table, execution_id)
@@ -253,54 +264,42 @@ local function execute_lua_code(code)
 end
 
 
--- Register handler for form submissions
 minetest.register_on_player_receive_fields(function(player, formname, fields)
-    if formname ~= "miney:code_form" then
-        return false
-    end
-    
-    local player_name = player:get_player_name()
-    local client_info = minetest.get_player_information(player_name) or {}
-    local client_ip = client_info.address
-    --log("debug", "Received form input from " .. player_name)
-    
-    -- Check for 'miney' privilege before processing
-    if not is_local_address(client_ip) and not minetest.check_player_privs(player_name, {miney = true}) then
-        log("warning", "Unauthorized player " .. player_name .. " tried to submit form data.")
-        -- Show the form again; it will contain the permission error message.
-        show_code_form(player_name, nil, fields.execution_id)
-        return true -- Suppress further processing
-    end
-    
-    -- Extract the execution ID if present
-    local execution_id = fields.execution_id
-    
-    -- Process Lua code
-    if fields.execute and fields.lua and fields.lua ~= "" then
-        --log("action", "Player " .. player_name .. " executing Lua code" ..
-        --    (execution_id and " with ID " .. execution_id or ""))
-        
-        -- Execute the Lua code
-        local result_table = execute_lua_code(fields.lua)
-        
-        -- Add execution_id to the response table
-        if execution_id then
-            result_table.execution_id = execution_id
+    if formname == "miney:code_form" then
+        local player_name = player:get_player_name()
+        local client_info = minetest.get_player_information(player_name) or {}
+        local client_ip = client_info.address
+
+        -- Route callback requests sent via the code form
+        if fields and fields.payload then
+            return callbacks.handle_receive_fields(player, fields)
         end
-        
-        -- Show the form with the result again
-        show_code_form(player_name, result_table, nil)
-        
-        -- Log the result
-        --log("debug", "Lua execution result: " .. minetest.write_json(result_table))
+
+        if not is_local_address(client_ip) and not minetest.check_player_privs(player_name, { miney = true }) then
+            log("warning", "Unauthorized player " .. player_name .. " tried to submit form data.")
+            show_code_form(player_name, nil, fields.execution_id)
+            return true
+        end
+
+        local execution_id = fields.execution_id
+        if fields.execute and fields.lua and fields.lua ~= "" then
+            local result_table = execute_lua_code(fields.lua)
+            if execution_id then
+                result_table.execution_id = execution_id
+            end
+            show_code_form(player_name, result_table, nil)
+        end
+        return true
+
     end
-    
-    return true
+
+    return false
 end)
+
 
 -- Register chat command handler for /miney
 minetest.register_chatcommand("miney", {
-    params = "<form|help>",
+    params = "<form|callbacks|help>",
     description = "Shows the Lua execution form or help.",
     func = function(name, param)
         local command = param:lower()
@@ -308,19 +307,32 @@ minetest.register_chatcommand("miney", {
             log("action", "Player " .. name .. " requested code form via command.")
             show_code_form(name)
             return true
+        elseif command == "callbacks" then
+            local client_info = minetest.get_player_information(name) or {}
+            if client_info and client_info.version_string == "miney_v1.0" then
+                -- Warm-up uses the code form now to keep expected formname aligned
+                show_code_form(name)
+                return true
+            else
+                minetest.chat_send_player(name, "Callbacks warm-up is only available for the Miney client.")
+                return true
+            end
         elseif command == "help" then
-            minetest.chat_send_player(name, "Available miney commands: /miney form, /miney help")
+            minetest.chat_send_player(name, "Available miney commands: /miney form, /miney callbacks, /miney help")
             return true
         end
         return false, "Unknown subcommand. Use /miney help."
     end,
 })
 
+
+
 -- Initialize the mod
 minetest.register_on_mods_loaded(function()
     log("action", "Initializing miney mod...")
     log("action", "Players with the 'miney' privilege can execute code.")
 end)
+
 
 -- Log when the mod is loaded
 log("action", "miney mod loaded successfully")

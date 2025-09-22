@@ -1,9 +1,11 @@
 import logging
 from dataclasses import dataclass
 from functools import cached_property
+from typing import Any, Dict, Optional, Callable
 
 from .chat import Chat
 from .lua import Lua
+from .callback import Callback
 from .luanticlient import LuantiClient
 from .luanticlient.exceptions import LuantiConnectionError
 from .nodes import Nodes
@@ -109,7 +111,7 @@ class Luanti:
                 raise e
 
         self.result_queue = {}  # List for unprocessed results
-        self.callbacks = {}
+        self._callbacks: Callback = Callback(self)
 
         # objects representing local properties
         self._lua: Lua = Lua(self.luanti)
@@ -150,16 +152,24 @@ class Luanti:
         if self.luanti:
             self.luanti.disconnect()
 
-    def on_event(self, name: str, run: callable) -> None:
+    def on_event(self, name: str, run: Callable[[dict], None], parameters: Optional[Dict[str, Any]] = None) -> None:
         """
-        Sets a callback function for specific events.
+        Register a high-level event callback via the Callback manager.
 
-        :param name: The name of the event
-        :param run: A callback function
-        :return: None
+        This is a convenience wrapper over Callback.activate(). The callback receives
+        the full event dict. No return value.
         """
-        # TODO Implement Callbacks
-        logger.warning("Callbacks are not yet implemented.")
+        if not callable(run):
+            raise ValueError("run must be callable")
+        self._callbacks.activate(name, run, parameters=parameters)
+        logger.info("Registered event subscription for '%s'", name)
+
+    def off_event(self, name: str, run: Callable[[dict], None]) -> None:
+        """
+        Unregister a previously registered event callback by function reference.
+        """
+        self._callbacks.deactivate(name, run)
+        logger.info("Unregistered event subscription for '%s'", name)
 
     @property
     def chat(self):
@@ -186,6 +196,15 @@ class Luanti:
         :return: :class:`~miney.nodes.Nodes`
         """
         return self._nodes
+
+    @property
+    def callbacks(self) -> 'Callback':
+        """
+        Provides access to the callback manager.
+
+        See :class:`~miney.callback.Callback` for the available methods.
+        """
+        return self._callbacks
 
     def log(self, line: str):
         """
@@ -325,6 +344,13 @@ class Luanti:
         This method is called automatically when the object is deleted or when exiting a 'with' block.
         It ensures that the connection is properly closed.
         """
+        # Best-effort cleanup of registered callbacks before dropping the connection
+        if hasattr(self, "_callbacks") and self._callbacks:
+            try:
+                self._callbacks.shutdown()
+            except Exception as e:
+                logger.error(f"Error during callback shutdown: {e}")
+
         if self.luanti:
             self.luanti.disconnect()
             self.luanti = None

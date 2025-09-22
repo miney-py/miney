@@ -22,6 +22,8 @@ class ClientStateHolder:
         self.access_denied_reason: str | None = None
         self.access_denied_code: int | None = None
 
+        # Forms and UI state
+
         # SRP authentication object
         self.srp_user: Any | None = None
 

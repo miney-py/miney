@@ -6,3 +6,5 @@ wheel
 build
 twine
 setuptools
+pytest==8.*
+pytest-cov==7.*

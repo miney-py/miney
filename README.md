@@ -37,3 +37,24 @@ Clone the repo:
 ```
 git clone https://github.com/miney-py/miney.git
 ```
+
+# TODO
+
+A list of things i'm planning to do. There will be no fixed timeline. 
+
+Feel free to contribute!
+
+* [x] Callbacks
+* [ ] Mesecons: Add a python script processor that executes python code. 
+* Documentation:
+    * [ ] Better first steps guide
+    * [ ] Python learning lessons that build on each other
+    * [ ] Education material for beginners, teachers and students
+    * [ ] Multilanguage
+* Native client
+    * [ ] Get chunks, blocks and positions of surrounding entities like a normal client
+        * Could be interesting for machine learning and bots to make them aware of their surroundings
+    * [ ] Normal player movement without using lua
+    * [ ] Player interactions like punching and interacting with blocks and entities
+* [ ] Async
+* Python driven mobs? 

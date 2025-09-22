@@ -26,6 +26,18 @@ A powerful, interactive Read-Eval-Print Loop (REPL) for executing Lua code on th
       :language: python
       :linenos:
 
+Chat Callbacks (`chat.py`)
+--------------------------
+
+A compact example of non-blocking chat callbacks. It shows how to subscribe to chat messages
+and register a simple chat command that is processed by the Python client.
+
+.. dropdown:: View Code
+
+   .. literalinclude:: ../examples/chat.py
+      :language: python
+      :linenos:
+
 Treasure Hunt Game (`treasure_hunt.py`)
 ---------------------------------------
 

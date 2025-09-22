@@ -42,7 +42,7 @@ class CommandHandler:
             ToClientCommand.BLOCKDATA: self._handle_blockdata,
             ToClientCommand.PING: self._handle_ping,
         }
-        self.formspec_handlers: dict[str, Callable[[str], None]] = {}
+        self.formspec_handlers: dict[str, list[Callable[[str], None]]] = {}
         self.chat_message_handlers: list[Callable[[str], bool]] = []
 
     def process_command(self, command_id: int, data: bytes):
@@ -67,8 +67,9 @@ class CommandHandler:
         :param formname: The name of the formspec (e.g., "miney:code_form").
         :param handler: A callable that takes the formspec content (str) as an argument.
         """
-        self.formspec_handlers[formname] = handler
-        logger.debug(f"Registered formspec handler for '{formname}'.")
+        handlers = self.formspec_handlers.setdefault(formname, [])
+        handlers.append(handler)
+        logger.debug(f"Registered formspec handler for '{formname}' (total={len(handlers)}).")
 
     def register_chat_message_handler(self, handler: Callable[[str], bool]):
         """
@@ -177,8 +178,13 @@ class CommandHandler:
 
         logger.debug(f"Received formspec '{formname}'")
 
-        if formname in self.formspec_handlers:
-            self.formspec_handlers[formname](formspec)
+        handlers = self.formspec_handlers.get(formname)
+        if handlers:
+            for h in list(handlers):
+                try:
+                    h(formspec)
+                except Exception as e:
+                    logger.error(f"Error in formspec handler for '{formname}': {e}", exc_info=True)
             return
 
         if formname == "__builtin:death":

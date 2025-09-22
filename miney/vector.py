@@ -77,9 +77,22 @@ class Vector:
         return Vector((self.x / self.length()), (self.y / self.length()), (self.z / self.length()))
 
 
-def angle(a, b):
-    m = a.x * b.x + a.y * b.y + a.z * b.z
-    return degrees(acos(m / (a.length() * b.length())))
+def angle(a, b) -> float:
+    """
+    Compute the angle (in degrees) between vectors a and b.
+    Returns 0.0 if either vector has zero length.
+    Clamps cosine to [-1, 1] for numeric stability.
+    """
+    la = a.length()
+    lb = b.length()
+    if la == 0 or lb == 0:
+        return 0.0
+    cos_theta = (a.x * b.x + a.y * b.y + a.z * b.z) / (la * lb)
+    if cos_theta > 1.0:
+        cos_theta = 1.0
+    elif cos_theta < -1.0:
+        cos_theta = -1.0
+    return degrees(acos(cos_theta))
 
 
 def horizontal_angle(a, b):

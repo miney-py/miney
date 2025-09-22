@@ -309,7 +309,7 @@ class Lua:
 
     def dumps(self, data: Any) -> str:
         """
-        Convert Python data type to a string with Lua data type.
+        Convert a Python data type to a string with a Lua data type.
 
         :param data: Python data to convert to Lua format.
         :return: Lua formatted string representation of the data.
@@ -334,7 +334,8 @@ class Lua:
             # json.dumps is a safe way to create a quoted and escaped string
             # that is compatible with Lua's string literal format.
             return json.dumps(data, ensure_ascii=False)
-        if isinstance(data, list):
+        # Treat Python tuples like Lua arrays as well
+        if isinstance(data, (list, tuple)):
             return "{" + ", ".join(self.dumps(item) for item in data) + "}"
         if isinstance(data, dict):
             items = []
