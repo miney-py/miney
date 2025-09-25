@@ -66,9 +66,10 @@ class Protocol:
         """
         return struct.pack(">H", ToServerCommand.INIT2)
 
-    def create_client_ready_command(self) -> bytes:
+    def create_client_ready_command(self, lang_code: str = "en_US", formspec_version: int = 4) -> bytes:
         """
         Creates the data for a CLIENT_READY command.
+        Appends the client formspec version (u16) and language code (UTF-8) as 2-byte length + bytes.
 
         :return: The serialized command data.
         """
@@ -76,7 +77,10 @@ class Protocol:
         version = struct.pack(">BBBB", 5, 7, 0, 0)
         version_str = self.version_string.encode('utf-8')
         version_len = struct.pack(">H", len(version_str))
-        return command + version + version_len + version_str
+        fver = struct.pack(">H", formspec_version)
+        lang_bytes = (lang_code or "").encode("utf-8")
+        lang_len = struct.pack(">H", len(lang_bytes))
+        return command + version + version_len + version_str + fver + lang_len + lang_bytes
 
     def create_gotblocks_command(self, x: int, y: int, z: int) -> bytes:
         """

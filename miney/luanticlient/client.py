@@ -23,7 +23,8 @@ class LuantiClient:
     It orchestrates connection, state, and command processing.
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 30000, playername: str = "Luanti", password: str = "ChangeMe!"):
+    def __init__(self, host: str = "127.0.0.1", port: int = 30000, playername: str = "Luanti",
+                 password: str = "ChangeMe!", lang_code: str = "en", formspec_version: int = 4):
         """
         Initializes the Luanti client.
 
@@ -35,6 +36,8 @@ class LuantiClient:
         self.port = port
         self.playername = playername
         self.password: str = password
+        self.lang_code: str = lang_code
+        self.formspec_version: int = formspec_version
         self.register_mode: bool = False
 
         # Core components
@@ -121,8 +124,9 @@ class LuantiClient:
 
     def send_client_ready(self):
         """Sends the CLIENT_READY command."""
-        logger.debug("Sending CLIENT_READY packet...")
-        packet_data = self.protocol.create_client_ready_command()
+        logger.debug("Sending CLIENT_READY packet (lang='%s', formspec_version=%d)...",
+                     self.lang_code, self.formspec_version)
+        packet_data = self.protocol.create_client_ready_command(self.lang_code, self.formspec_version)
         self.send_packet(packet_data)
 
     def send_gotblocks(self):
