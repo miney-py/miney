@@ -26,6 +26,17 @@ A powerful, interactive Read-Eval-Print Loop (REPL) for executing Lua code on th
       :language: python
       :linenos:
 
+Treasure Hunt Game (`treasure_hunt.py`)
+---------------------------------------
+
+A complete, multiplayer treasure hunt game that showcases many of Miney's features in action, including world interaction and player management.
+
+.. dropdown:: View Code
+
+   .. literalinclude:: ../examples/treasure_hunt.py
+      :language: python
+      :linenos:
+
 Chat Callbacks (`chat.py`)
 --------------------------
 
@@ -35,17 +46,6 @@ and register a simple chat command that is processed by the Python client.
 .. dropdown:: View Code
 
    .. literalinclude:: ../examples/chat.py
-      :language: python
-      :linenos:
-
-Treasure Hunt Game (`treasure_hunt.py`)
----------------------------------------
-
-A complete, multiplayer treasure hunt game that showcases many of Miney's features in action, including world interaction, player management, and chat commands.
-
-.. dropdown:: View Code
-
-   .. literalinclude:: ../examples/treasure_hunt.py
       :language: python
       :linenos:
 

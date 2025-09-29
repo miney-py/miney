@@ -35,6 +35,7 @@ All interaction with the game world starts with the ``Luanti`` object. The follo
 .. toctree::
    :maxdepth: 3
 
+   callback
    chat
    lua
    nodes

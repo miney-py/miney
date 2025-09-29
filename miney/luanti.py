@@ -4,6 +4,7 @@ from functools import cached_property
 from typing import Any, Dict, Optional, Callable
 
 from .chat import Chat
+from .events import Event
 from .lua import Lua
 from .callback import Callback
 from .luanticlient import LuantiClient
@@ -69,7 +70,7 @@ class Luanti:
     :param int port: The apisocket port, defaults to 29999
     """
 
-    def __init__(self, server: str = "127.0.0.1", playername: str = None, password: str = "ChangeThePassword!", port: int = 30000, invisible: bool = False):
+    def __init__(self, server: str = "127.0.0.1", playername: str = None, password: str = "ChangeThePassword!", port: int = 30000, invisible: bool = True):
         """
         Connect to the Luanti server.
 
@@ -149,26 +150,31 @@ class Luanti:
         """
         Exit the runtime context and disconnect from the server.
         """
-        if self.luanti:
-            self.luanti.disconnect()
+        self.disconnect()
 
-    def on_event(self, name: str, run: Callable[[dict], None], parameters: Optional[Dict[str, Any]] = None) -> None:
+    def on_event(self, name: str, run: Callable[[Event], None], parameters: Optional[Dict[str, Any]] = None) -> None:
         """
-        Register a high-level event callback via the Callback manager.
+        Register an event callback without using a decorator.
 
-        This is a convenience wrapper over Callback.activate(). The callback receives
-        the full event dict. No return value.
+        This is a procedural alternative to the ``@lt.callbacks.on()`` decorator.
+
+        :param name: The name of the event to subscribe to (e.g., "chat_message").
+        :param run: The function to execute when the event occurs. It will receive an Event object.
+        :param parameters: Optional filters for the event subscription.
         """
         if not callable(run):
             raise ValueError("run must be callable")
-        self._callbacks.activate(name, run, parameters=parameters)
+        self._callbacks.register(name, run, parameters=parameters)
         logger.info("Registered event subscription for '%s'", name)
 
-    def off_event(self, name: str, run: Callable[[dict], None]) -> None:
+    def off_event(self, name: str, run: Callable[[Event], None]) -> None:
         """
-        Unregister a previously registered event callback by function reference.
+        Unregister a previously registered event callback.
+
+        :param name: The name of the event the callback is subscribed to.
+        :param run: The function reference of the callback to unregister.
         """
-        self._callbacks.deactivate(name, run)
+        self._callbacks.unregister(name, run)
         logger.info("Unregistered event subscription for '%s'", name)
 
     @property
@@ -339,10 +345,12 @@ class Luanti:
 
     def disconnect(self):
         """
-        Disconnect from the Luanti server.
+        Shuts down all services and disconnects from the Luanti server.
 
-        This method is called automatically when the object is deleted or when exiting a 'with' block.
-        It ensures that the connection is properly closed.
+        This method automatically unregisters all event callbacks and chat commands
+        before closing the network connection to ensure a clean shutdown. It is
+        called automatically when the object is deleted or when exiting a 'with'
+        block.
         """
         # Best-effort cleanup of registered callbacks before dropping the connection
         if hasattr(self, "_callbacks") and self._callbacks:

@@ -18,11 +18,9 @@ https://miney.readthedocs.io/en/latest/
 
 ## Status
 
-**With version 0.5 we removed mineysocket and talking now directly to the server over the Luanti protocol!**
+https://miney.readthedocs.io/en/latest/changelog.html
 
-This is a major change and will break existing code! But it's also very cool, because you now only need the miney mod 
-in the server and the "miney" python module. No special compiled server version and no mineysocket mod anymore! 
-That makes it straightforward to install. Fast and easy, just like Python!
+**With version 0.5 we removed mineysocket and talking now directly to the server over the Luanti protocol.**
 
 Miney is still in beta, so expect breaking changes.
 

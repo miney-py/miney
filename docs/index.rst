@@ -96,6 +96,7 @@ Table of Contents
    :caption: Reference
 
    api/index
+   changelog
    tech_background
 
 Miney version: |release|

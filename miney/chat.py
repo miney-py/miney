@@ -57,10 +57,16 @@ class Chat:
         """
         Register a chat command handled by the Python client.
 
-        This is the primary entry point for chat commands in Miney. Prefer using this
-        method over low-level Callback.register_command().
+        This is a non-decorator way to register commands. For a more modern and
+        readable approach, consider using the :func:`~miney.chat.Chat.command`
+        decorator instead.
 
-        Returns the command name (for convenience).
+        :param name: The name of the command.
+        :param callback_function: The function to call when the command is executed.
+        :param parameter: The command's parameter string (for /help).
+        :param description: The command's description (for /help).
+        :param privileges: Privileges required to execute the command.
+        :return: The command name.
         """
         return self.lt.callbacks.register_command(
             name=name,
@@ -70,24 +76,70 @@ class Chat:
             privileges=privileges or {},
         )
 
-    def on_message(self, callback: Callable[[dict], None], filters: Optional[Dict[str, Any]] = None) -> None:
+    def command(
+        self,
+        name: str,
+        parameter: str = "",
+        description: str = "",
+        privileges: Dict | None = None,
+    ) -> Callable:
         """
-        Register a callback for incoming chat messages.
+        Decorator to register a chat command.
 
-        The callback receives the full event dictionary as produced by the Miney mod
-        (event='chat_message', payload contains 'name' and 'message').
-        """
-        if not callable(callback):
-            raise ValueError("callback must be callable")
-        self.lt.callbacks.activate("chat_message", callback, parameters=filters)
-        logger.info("Registered chat message callback")
+        This is the recommended way to register chat commands.
 
-    def off_message(self, callback: Callable[[dict], None]) -> None:
+        .. code-block:: python
+
+            from miney.events import ChatCommandEvent
+
+            @lt.chat.command("hello", description="Greets the player")
+            def hello_command(event: ChatCommandEvent):
+                lt.chat.send_to_player(event.issuer, f"Hello, {event.issuer}!")
+
+        :param name: The name of the command.
+        :param parameter: The command's parameter string (for /help).
+        :param description: The command's description (for /help).
+        :param privileges: Privileges required to execute the command.
+        :return: The decorator function.
         """
-        Unregister a previously registered chat message callback by function reference.
+        return self.lt.callbacks.command(name, parameter, description, privileges)
+
+    def on(self, event: str = "chat_message", filters: Optional[Dict[str, Any]] = None) -> Callable:
         """
-        self.lt.callbacks.deactivate("chat_message", callback)
-        logger.info("Unregistered chat message callback")
+        Decorator to subscribe to chat-related events.
+
+        The default and most common event is 'chat_message'. The callback receives the
+        full event dictionary as produced by the Miney mod.
+
+        .. code-block:: python
+
+            from miney.events import ChatMessageEvent
+
+            @lt.chat.on()  # Defaults to "chat_message"
+            def on_chat(event: ChatMessageEvent):
+                print(f"{event.sender_name}: {event.message}")
+
+        :param event: The name of the event to subscribe to. Defaults to 'chat_message'.
+        :param filters: Optional filters for the event subscription.
+        :return: The decorator function.
+        """
+        if event != "chat_message":
+            logger.warning(
+                "Registering a handler for event '%s' via Chat.on(). "
+                "Consider using `Luanti.callbacks.on()` for non-chat events.",
+                event,
+            )
+        return self.lt.callbacks.on(event, filters)
+
+    def on_unregister(self, callback: Callable[[dict], None], event: str = "chat_message") -> None:
+        """
+        Unregister a previously registered event callback.
+
+        :param callback: The callback function to unregister.
+        :param event: The name of the event. Defaults to 'chat_message'.
+        """
+        self.lt.callbacks.unregister(event, callback)
+        logger.info("Unregistered callback for event '%s'", event)
 
     def unregister_command(self, name: str):
         """

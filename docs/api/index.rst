@@ -16,6 +16,7 @@ This section provides the complete API reference for all Miney classes and funct
 .. toctree::
    :maxdepth: 1
 
+   events
    exceptions
    helpers
 

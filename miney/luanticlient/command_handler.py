@@ -206,7 +206,7 @@ class CommandHandler:
         sender = stream.read(sender_len * 2).decode('utf-16be', 'replace')
         message_len = struct.unpack(">H", stream.read(2))[0]
         message = stream.read(message_len * 2).decode('utf-16be', 'replace')
-        logger.info(f"Chat from {sender}: {message}")
+        logger.debug(f"Received a chat over client protocol from {sender}: {message}")
 
         for handler in self.chat_message_handlers:
             if handler(message):

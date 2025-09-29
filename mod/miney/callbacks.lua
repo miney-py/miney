@@ -50,6 +50,13 @@ local function valid_chatcommand_name(name)
     return type(name) == "string" and name:match("^[a-z0-9_:+%-]+$") ~= nil
 end
 
+-- Supported events that clients can subscribe to
+local SUPPORTED_EVENTS = {
+    chat_message = true,
+    player_leaves = true,
+    player_joins = true,
+}
+
 -- [client_id] = { player = "<name>", subs = { chat_message = true }, cmds = { [name] = true } }
 local miney_cb = {
     clients = {},
@@ -135,8 +142,8 @@ local function handle_receive_fields(player, fields)
             return true
         end
         for _, ev in ipairs(events) do
-            if ev == "chat_message" then
-                rec.subs.chat_message = true
+            if SUPPORTED_EVENTS[ev] then
+                rec.subs[ev] = true
             end
         end
         log("action", ("register: client_id=%s, events_count=%d"):format(client_id, #(req.events or {})))
@@ -150,8 +157,8 @@ local function handle_receive_fields(player, fields)
             return true
         end
         for _, ev in ipairs(events) do
-            if ev == "chat_message" then
-                rec.subs.chat_message = nil
+            if SUPPORTED_EVENTS[ev] then
+                rec.subs[ev] = nil
             end
         end
         log("action", ("unregister: client_id=%s, events_count=%d"):format(client_id, #(req.events or {})))
@@ -241,10 +248,43 @@ minetest.register_on_chat_message(function(name, message)
     return false
 end)
 
--- Cleanup on player leave
-minetest.register_on_leaveplayer(function(player)
-    log("action", ("on_leaveplayer: player=%s"):format(player:get_player_name()))
-    cleanup_player_callbacks(player:get_player_name())
+-- Cleanup and event generation on player leave
+minetest.register_on_leaveplayer(function(player, timed_out)
+    local player_name = player:get_player_name()
+    log("action", ("on_leaveplayer: player=%s, timed_out=%s"):format(player_name, tostring(timed_out)))
+
+    -- Broadcast 'player_leaves' event to subscribed Miney clients
+    for client_id, rec in pairs(miney_cb.clients) do
+        if rec.subs and rec.subs.player_leaves then
+            local event = {
+                event = "player_leaves",
+                payload = { name = player_name, timed_out = timed_out },
+                ts = os.time(),
+                client_id = client_id,
+            }
+            send_callbacks_json(rec.player, event)
+        end
+    end
+
+    cleanup_player_callbacks(player_name)
+end)
+
+-- Broadcast an event when a new player joins
+minetest.register_on_joinplayer(function(player, last_login)
+    local player_name = player:get_player_name()
+    log("action", ("on_joinplayer: player=%s, last_login=%s"):format(player_name, tostring(last_login)))
+
+    for client_id, rec in pairs(miney_cb.clients) do
+        if rec.subs and rec.subs.player_joins then
+            local event = {
+                event = "player_joins",
+                payload = { name = player_name, last_login = last_login },
+                ts = os.time(),
+                client_id = client_id,
+            }
+            send_callbacks_json(rec.player, event)
+        end
+    end
 end)
 
 -- Cleanup on shutdown
