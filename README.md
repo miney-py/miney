@@ -42,7 +42,14 @@ A list of things i'm planning to do. There will be no fixed timeline.
 
 Feel free to contribute!
 
-* [x] Callbacks
+* [ ] Github-Actions
+  * [ ] run tests
+  * [ ] Tests for pull requests
+  * [ ] Build and push to pypi for tagged commits
+  * [ ] Build and push to Luanti ContentDB for tagged commits
+* [ ] Callbacks
+  * [x] Basic API and some callbacks implemented
+  * [ ] Implement more "register_on_..." functions
 * [ ] Mesecons: Add a python script processor that executes python code. 
 * Documentation:
     * [ ] Better first steps guide
@@ -54,5 +61,5 @@ Feel free to contribute!
         * Could be interesting for machine learning and bots to make them aware of their surroundings
     * [ ] Normal player movement without using lua
     * [ ] Player interactions like punching and interacting with blocks and entities
-* [ ] Async
+* [ ] Asyncio
 * Python driven mobs? 
