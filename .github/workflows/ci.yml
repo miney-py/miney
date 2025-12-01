@@ -1,0 +1,17 @@
+name: miney CI
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+jobs:
+  pytest:
+    name: 🧪 Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the codebase.
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: pip install -r dev-requirements.txt
+      - name: Execute tests
+        run: pytest
