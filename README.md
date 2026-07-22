@@ -43,8 +43,8 @@ A list of things i'm planning to do. There will be no fixed timeline.
 Feel free to contribute!
 
 * [ ] Github-Actions
-  * [ ] run tests
-  * [ ] Tests for pull requests
+  * [x] run tests
+  * [x] Tests for pull requests
   * [ ] Build and push to pypi for tagged commits
   * [ ] Build and push to Luanti ContentDB for tagged commits
 * [ ] Callbacks
