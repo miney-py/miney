@@ -61,7 +61,7 @@ Demonstrates smooth, scripted player movements using the Player.move() API.
       :linenos:
 
 Choreography Showcase (`choreography.py`)
-----------------------------------------
+-----------------------------------------
 
 Demonstrates a multi-client solar-system choreography using multiple Luanti clients with Player.move(). Ensure the server is running. Clients will connect as 'dancer_1' to 'dancer_<N>'. On first connection, you may need to grant them 'miney' and 'noclip' privileges.
 
