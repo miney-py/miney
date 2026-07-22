@@ -50,6 +50,7 @@ Feel free to contribute!
 * [ ] Callbacks
   * [x] Basic API and some callbacks implemented
   * [ ] Implement more "register_on_..." functions
+* [ ] Asyncio
 * [ ] Mesecons: Add a python script processor that executes python code. 
 * Documentation:
     * [ ] Better first steps guide
@@ -61,5 +62,6 @@ Feel free to contribute!
         * Could be interesting for machine learning and bots to make them aware of their surroundings
     * [ ] Normal player movement without using lua
     * [ ] Player interactions like punching and interacting with blocks and entities
-* [ ] Asyncio
+* [ ] Miney Proxy: 
+  * funnel all functions/commands through a single client connection
 * Python driven mobs? 
