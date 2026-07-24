@@ -12,11 +12,68 @@ from .luanticlient.exceptions import LuantiConnectionError
 from .nodes import Nodes
 from .player import PlayerIterable
 from .tool import ToolIterable
+from .env import manage
+from .env.paths import EnvPaths, find_env
+from .env.state import WorldState, list_states, load_state
+from .exceptions import MineyRunError
 
 
 logger = logging.getLogger(__name__)
 
 default_playername = "miney"
+
+
+def _log_progress(progress: manage.Progress) -> None:
+    """
+    Send one autostart progress message to the log instead of the terminal.
+
+    A library has no business printing, so everything the environment reports while
+    a world is being started goes to logging. The one thing a beginner really needs
+    to see - that Miney is starting a server and will be a moment - is printed by
+    :class:`Luanti` itself, once.
+
+    :param progress: What the environment reported.
+    """
+    if progress.warning:
+        logger.warning(progress.message)
+    else:
+        logger.info(progress.message)
+
+
+def _resolve_env_world(world: str | None) -> tuple[EnvPaths, WorldState] | None:
+    """
+    Find the environment and the world to use inside it.
+
+    :param world: Explicitly requested world name, or None.
+    :return: The environment and the world's state, or None if there is no environment.
+    :raises MineyRunError: If no world matches, or if several exist and none was named.
+    """
+    paths = find_env()
+    if paths is None:
+        return None
+
+    states = list_states(paths)
+    if world is not None:
+        state = load_state(paths.state_file(world))
+        if state is None:
+            known = ", ".join(s.name for s in states) or "none"
+            raise MineyRunError(
+                f"No world named '{world}' in {paths.root}. Known worlds: {known}.\n"
+                f"Create it with: uv run miney start --world {world}"
+            )
+        return paths, state
+
+    if not states:
+        raise MineyRunError(
+            f"{paths.root} has no world yet. Create one with: uv run miney start"
+        )
+    if len(states) > 1:
+        names = ", ".join(s.name for s in states)
+        raise MineyRunError(
+            f"Several worlds exist ({names}). Say which one to use:\n"
+            f"    miney.Luanti(world=\"{states[0].name}\")"
+        )
+    return paths, states[0]
 
 
 @dataclass
@@ -43,7 +100,7 @@ class GameInfo:
 
 
 class Luanti:
-    """__init__([server, playername, password, [port]])
+    """__init__([server, playername, password, port, invisible, world, autostart])
     The Miney server object. All other objects are accessable from here. By creating an object you connect to Luanti.
 
     **Parameters aren't required, if you run miney and Luanti on the same computer.**
@@ -67,17 +124,75 @@ class Luanti:
     :param str server: IP or DNS name of an Luanti server with installed miney mod
     :param str playername: A name to identify yourself to the server. Default is "Miney".
     :param str password: Your password
-    :param int port: The apisocket port, defaults to 29999
+    :param int port: The apisocket port, defaults to 30000
+    :param str world: Name of the world in the local ``.miney`` environment to connect to.
+        Only needed when several exist. Ignored when an explicit ``server`` is given.
+    :param bool autostart: Start the local Luanti server if it is not running, **and open a
+        Luanti game window** connected to it. Ignored when an explicit server is given.
     """
 
-    def __init__(self, server: str = "127.0.0.1", playername: str = None, password: str = "ChangeThePassword!", port: int = 30000, invisible: bool = True):
+    def __init__(self, server: str | None = None, playername: str | None = None,
+                 password: str = "ChangeThePassword!", port: int | None = None,
+                 invisible: bool = True, world: str | None = None, autostart: bool = True):
         """
         Connect to the Luanti server.
 
+        If no ``server`` is given and this project has a local ``.miney`` environment
+        (created by running ``uv run miney start`` once), Miney connects to that
+        environment's world instead of guessing a host. Give an explicit ``server`` to
+        bypass this entirely and connect to somebody else's server.
+
+        When that world's server is not up, ``autostart`` starts it and then waits
+        until it really accepts connections - a cold start generates the map and can
+        take a while, so this prints one line saying what it is waiting for.
+
+        **Autostart opens a Luanti window.** It does not only start a server process:
+        it also launches the game client and logs it in, so a window appears on screen
+        and stays there after your script has ended. That is the point - you watch your
+        code change a world you are standing in - but it is worth knowing before you
+        run a script from an editor, a notebook or a cron job. Pass ``autostart=False``
+        to connect to an already running world and never launch anything.
+
         :param server: IP or DNS name of an Luanti server with installed miney mod
-        :param port: The apisocket port, defaults to 29999
+        :param port: The apisocket port, defaults to 30000
         :param invisible: If True, makes the Miney player invisible and grants creative privilege to be safe from mobs.
+        :param world: Name of the world in the local ``.miney`` environment to connect to.
+            Only needed when several exist. Ignored when an explicit ``server`` is given.
+        :param autostart: Start the local Luanti server if it is not running, and open a
+            Luanti game window connected to it. Ignored when an explicit server is given.
+        :raises MineyRunError: If the environment has no matching world, several worlds
+            exist and none was named, or autostarting the world's server failed.
         """
+        env_selection = None
+        if server is None:
+            env_selection = _resolve_env_world(world)
+
+        if env_selection is not None:
+            paths, state = env_selection
+            if not manage.is_server_up(state):
+                if not autostart:
+                    raise MineyRunError(
+                        f"The Luanti server for world '{state.name}' is not running.\n"
+                        f"Start it first: uv run miney start --world {state.name}"
+                    )
+                # The only line Miney prints. Starting a world takes a while, and a
+                # minute of silence looks like a hang to somebody in the REPL.
+                print(
+                    f"Starting the Luanti server for world '{state.name}' and opening "
+                    "a Luanti window connected to it. The first start of a world "
+                    "generates the map and can take a while."
+                )
+                state = manage.start(
+                    paths, state.name, state.gameid, report=_log_progress
+                ).state
+            if port is None:
+                port = state.port
+
+        if server is None:
+            server = "127.0.0.1"
+        if port is None:
+            port = 30000
+
         self.server = server
         self.port = port
         if playername:
@@ -92,7 +207,10 @@ class Luanti:
             self.luanti.connect()
         except LuantiConnectionError as e:
             if e.reason_code == 1:
-                logger.warning(f"Login failed for user '{self.playername}'. The server suggests registration. Attempting to register as a new user.")
+                # Info, not warning: this is what every first connect looks like, and a
+                # script that never configured logging would otherwise have logging's
+                # last-resort handler print it to stderr as if something had gone wrong.
+                logger.info(f"No account for '{self.playername}' yet. Registering one.")
                 self.luanti.disconnect()  # Ensure clean state
 
                 # Re-initialize and attempt to register
@@ -100,9 +218,15 @@ class Luanti:
                                                  port=self.port)
                 try:
                     self.luanti.connect(register=True)
-                    logger.warning(f"Successfully registered and connected as new user '{self.playername}'.")
-                    logger.warning("This new user might not have the required 'miney' privilege.")
-                    logger.warning(f"To grant it, run this command on the server: /grant {self.playername} miney")
+                    logger.info(f"Successfully registered and connected as '{self.playername}'.")
+                    # Only true for a server reached over the network: the Miney mod
+                    # lets a client on a local address run code without the privilege,
+                    # which is every world "miney start" creates. "uv run miney check"
+                    # reports the real answer for the server actually in use.
+                    logger.info(
+                        f"On a remote server '{self.playername}' also needs the 'miney' "
+                        f"privilege: /grant {self.playername} miney"
+                    )
                 except LuantiConnectionError as e2:
                     logger.error(f"Automatic registration failed: {e2}")
                     logger.error("This probably means the user already exists and the initial password was incorrect, or the server does not allow registration.")
@@ -330,7 +454,7 @@ class Luanti:
         Provides an iterable helper for accessing all available tool types.
 
         This is a shortcut for getting tool item strings with IDE auto-completion.
-        See :class:`~miney.tool.ToolIterable` for more details.
+        See :class:`~miney.ToolIterable` for more details.
 
         :Examples:
 

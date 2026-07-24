@@ -26,7 +26,7 @@ Miney is still in beta, so expect breaking changes.
 
 ## Requirement
 
-* Python 3.6+ (tested on 3.12)
+* Python 3.10+ (tested on 3.13)
 * Installed "miney" mod in the server.
 
 # Development
@@ -38,28 +38,6 @@ git clone https://github.com/miney-py/miney.git
 
 # TODO
 
-A list of things i'm planning to do. There will be no fixed timeline. 
+A list of things i'm planning to do lives in [TODO.md](TODO.md). There will be no fixed timeline.
 
 Feel free to contribute!
-
-* [ ] Github-Actions
-  * [x] run tests
-  * [x] Tests for pull requests
-  * [ ] Build and push to pypi for tagged commits
-  * [ ] Build and push to Luanti ContentDB for tagged commits
-* [ ] Callbacks
-  * [x] Basic API and some callbacks implemented
-  * [ ] Implement more "register_on_..." functions
-* [ ] Mesecons: Add a python script processor that executes python code. 
-* Documentation:
-    * [ ] Better first steps guide
-    * [ ] Python learning lessons that build on each other
-    * [ ] Education material for beginners, teachers and students
-    * [ ] Multilanguage
-* Native client
-    * [ ] Get chunks, blocks and positions of surrounding entities like a normal client
-        * Could be interesting for machine learning and bots to make them aware of their surroundings
-    * [ ] Normal player movement without using lua
-    * [ ] Player interactions like punching and interacting with blocks and entities
-* [ ] Asyncio
-* Python driven mobs? 

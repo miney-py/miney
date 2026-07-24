@@ -10,7 +10,7 @@ class PrivilegeManager:
     """
     Manages player privileges by providing a list-like interface.
 
-    This object is returned by the :attr:`~miney.player.Player.privileges`
+    This object is returned by the :attr:`~miney.Player.privileges`
     property and is not meant to be instantiated directly.
     """
     def __init__(self, player: 'Player'):
@@ -649,8 +649,8 @@ class Player:
 
         .. note::
             The implementation of this property is game-dependent. For games
-            like **MineClone2**, it uses the native ``mcl_gamemode`` system.
-            For other games, it falls back to granting or revoking the
+            like **VoxeLibre (mineclone2)**, it uses the native ``mcl_gamemode``
+            system. For other games, it falls back to granting or revoking the
             ``creative`` privilege.
 
         :return: ``True`` if the player is in creative mode, ``False`` otherwise.

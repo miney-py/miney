@@ -1,7 +1,12 @@
 # Luanti exceptions
 class MineyRunError(Exception):
     """
-    Error: Luanti was not found.
+    The local ``.miney`` environment could not be used as asked.
+
+    Raised by :class:`~miney.luanti.Luanti` and the ``miney`` command when a world
+    cannot be selected unambiguously (none exists, several exist and none was named,
+    or a named one is missing) or when starting its server failed. The message always
+    names the problem and a command that fixes it.
     """
     pass
 

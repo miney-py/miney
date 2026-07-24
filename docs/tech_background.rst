@@ -14,7 +14,7 @@ But Lua isn't the ideal programming language to start programming and mod progra
 if you just want to play around with a sandbox.
 So we need something like an interface that is accessible by Python.
 
-The interface
+🔌 The interface
 ------------------------------
 
 Miney implements a native Luanti client in Python. This client connects to the Luanti server just like a regular player would.
@@ -47,13 +47,19 @@ Miney uses this capability to execute Lua code inside Luanti, effectively giving
    This clever use of the formspec system allows for a robust, bidirectional communication channel without requiring any changes to the core Luanti engine. It effectively turns a GUI mechanism into a remote procedure call (RPC) system.
 
 
-What you need to get started
+📦 What you need to get started
 ----------------------------------------------------
 
-Getting started with Miney is straightforward. You only need two components:
+Two pieces have to be in place, and you install exactly one of them:
 
-1. The **Miney Python package**: Install it using pip: ``pip install miney``
-2. The **Miney mod**: This mod must be installed in your Luanti server's content database.
+1. The **Miney Python package**, the client side. This is what you install.
+2. The **miney mod**, the server side. It ships inside the Python package, and
+   ``uv run miney start`` copies it into every world it creates.
 
-With this setup, you no longer need to worry about external dependencies or compiling anything yourself, regardless of your operating system.
-This simplifies the process significantly compared to the old architecture.
+So there is nothing to download by hand, nothing to compile and no external dependency on any operating
+system — Miney itself imports only the Python standard library. The :doc:`getting_started/quickstart` walks
+through it in four commands.
+
+If you run your own Luanti server rather than letting Miney manage one, you install the mod yourself from
+`ContentDB <https://content.luanti.org/packages/Miney/miney/>`_ — see
+:doc:`getting_started/installation`.

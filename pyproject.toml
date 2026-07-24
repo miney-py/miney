@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "miney"
+dynamic = ["version"]
+authors = [
+    {name = "Robert Lieback", email = "robertlieback@zetabyte.de"},
+]
+description = "The python interface to Luanti"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Games/Entertainment",
+]
+
+[dependency-groups]
+# Development tooling. Not part of the package - dependency groups (PEP 735)
+# stay out of the wheel and out of anything a Miney user installs.
+#
+#   uv sync                     the test tooling, ready for "uv run pytest"
+#   uv sync --group docs        adds Sphinx for "cd docs && make html"
+dev = [
+    "pytest==9.*",
+    "pytest-cov==7.*",
+]
+# Keep in sync with docs/requirements.txt - Read the Docs builds from that file
+# and cannot read dependency groups yet.
+docs = [
+    "Sphinx",
+    "sphinx_rtd_theme",
+    "sphinx_design",
+    "sphinx-copybutton",
+]
+release = [
+    "build",
+    "twine",
+    "wheel",
+    "setuptools",
+]
+
+[project.urls]
+Homepage = "https://github.com/miney-py/miney"
+Documentation = "https://miney.readthedocs.io"
+
+[project.scripts]
+miney = "miney.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "miney.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["miney*", "mod_data*"]
+
+[tool.setuptools.package-data]
+# The Lua mod lives at the repo root, not inside the miney/ Python package, but
+# still has to ride along in the wheel. It ships as its own top-level package.
+mod_data = ["miney/*", "miney/**/*"]

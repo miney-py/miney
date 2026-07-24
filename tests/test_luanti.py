@@ -1,3 +1,4 @@
+import logging
 
 from unittest.mock import MagicMock, patch
 
@@ -59,3 +60,39 @@ def test_luanti_init_raises_other_connection_errors(MockLuantiClient):
 
     # Ensure it doesn't try to re-connect/register
     mock_client.connect.assert_called_once_with()
+
+
+@patch("miney.luanti.LuantiClient")
+@patch("miney.luanti.Lua")
+@patch("miney.luanti.Chat")
+@patch("miney.luanti.Nodes")
+@patch("miney.luanti.ToolIterable")
+@patch("miney.luanti.Callback")
+def test_registering_a_new_player_is_not_a_warning(
+    MockCallback, MockToolIterable, MockNodes, MockChat, MockLua, MockLuantiClient, caplog
+):
+    """
+    Registering is what happens on every first connect, not something that went wrong.
+
+    At warning level these lines reach stderr through logging's last-resort handler in
+    any script that never configured logging - which is every beginner's script, and
+    every run of "miney check". They stay, at info, for anyone who turns logging up.
+    """
+    denied = MagicMock()
+    denied.connect.side_effect = LuantiConnectionError("Auth failed", reason_code=1)
+    registered = MagicMock()
+    registered.connect.return_value = True
+    MockLuantiClient.side_effect = [denied, registered]
+
+    with caplog.at_level(logging.DEBUG, logger="miney.luanti"):
+        luanti.Luanti(server="test.server", playername="new_user", password="pwd")
+
+    loud = [record for record in caplog.records if record.levelno >= logging.WARNING]
+    assert not any(
+        "regist" in record.message.lower() or "privilege" in record.message.lower()
+        for record in loud
+    )
+    assert any(
+        "registered" in record.message.lower() and record.levelno == logging.INFO
+        for record in caplog.records
+    )

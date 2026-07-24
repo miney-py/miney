@@ -1,22 +1,27 @@
 Luanti
 ======
 
-This is the starting point for this library. With creating a Luanti object you also connect to a Luanti server.
+This is the starting point for this library. Creating a ``Luanti`` object connects you to a Luanti server, and
+everything else in Miney hangs off it: the players, the nodes, the chat, the Lua interface. If no server is
+running, it starts one for you.
 
-In this object are all functions that targets Luanti itself.
-There is also some properties inside, to get other objects like players or nodes.
+It also carries the settings that belong to the world as a whole, like the time of day.
 
 :Example:
 
-    >>> from miney import Luanti
+    >>> import miney
     >>>
-    >>> lt = Luanti()
+    >>> lt = miney.Luanti()
     >>>
     >>> # We set the time to midday.
     >>> lt.time_of_day = 0.5
     >>>
     >>> # Write to the servers log
     >>> lt.log("Time is set to midday ...")
+
+.. seealso::
+
+   :doc:`../getting_started/basics` explains the ``lt`` object for readers who are new to Miney.
 
 
 .. autoclass:: miney.Luanti
@@ -41,3 +46,4 @@ All interaction with the game world starts with the ``Luanti`` object. The follo
    nodes
    players
    point
+   tool

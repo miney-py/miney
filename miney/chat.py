@@ -49,7 +49,7 @@ class Chat:
     def register_command(
         self,
         name: str,
-        callback_function: callable,
+        callback_function: Callable,
         parameter: str = "",
         description: str = "",
         privileges: Dict | None = None,
@@ -58,7 +58,7 @@ class Chat:
         Register a chat command handled by the Python client.
 
         This is a non-decorator way to register commands. For a more modern and
-        readable approach, consider using the :func:`~miney.chat.Chat.command`
+        readable approach, consider using the :meth:`~miney.Chat.command`
         decorator instead.
 
         :param name: The name of the command.

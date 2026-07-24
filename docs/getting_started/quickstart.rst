@@ -1,156 +1,183 @@
 Quickstart
 ==========
 
-* `PyPI <https://pypi.org/project/miney/>`_
+Four commands, and your Python is changing a 3D world.
 
-* `Luanti ContentDB <https://content.luanti.org/packages/Miney/miney/>`_
+You need two things: **Luanti**, the game Miney drives, and the **Python library** you write your code
+against. You install the library, and Miney brings Luanti along — you do not download or set up the game
+yourself.
 
-Welcome in the sandbox!
+.. tip::
+
+   Every step here is the short version. :doc:`installation` explains what each command does and covers the
+   cases this page walks past — an existing Python, a different game, your own server.
+
+
+🧰 Step 1: Install uv
+---------------------
+
+``uv`` is the tool we use to install Python and Miney. It is a single small program and needs no
+administrator rights.
+
+.. tab-set::
+
+   .. tab-item:: Windows
+
+      Open PowerShell (press the Windows key, type ``powershell``, press Enter) and paste this line:
+
+      .. code-block:: powershell
+
+         powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+   .. tab-item:: Linux & macOS
+
+      Open a terminal and paste this line:
+
+      .. code-block:: bash
+
+         curl -LsSf https://astral.sh/uv/install.sh | sh
+
+.. important::
+
+   **Close your terminal window and open a new one now.**
+
+   The installer adds ``uv`` to your search path, but a window that is already open does not notice the change.
+   In the new window, type ``uv --version``. If you see a version number, you are ready.
+
+Already have Python and know your way around it? Then use
+:ref:`pip instead <already-have-python>` and skip to step 3.
+
+
+📁 Step 2: Create a folder for your code
+----------------------------------------
+
+In your new terminal window:
+
+.. code-block:: text
+
+   mkdir miney-world
+   cd miney-world
+   uv venv
+   uv pip install miney
+
+``uv venv`` creates a folder named ``.venv`` next to your code. That is where Miney gets installed, so it stays
+separate from everything else on your computer. If you have no Python yet, ``uv`` downloads a current version at
+this point — this takes a moment and only happens once.
+
+
+🌍 Step 3: Start Luanti
 -----------------------
 
-Blockgames like Luanti or Minecraft give you the ideal playground for creative playing and building just like a real sandbox.
-But other than real sandboxes, you can work on very large worlds together with your friends over the internet.
-And you can use (very simplified) physics, save the progress and more.
+One command downloads Luanti, installs the Miney mod, creates a world and opens it on your screen:
 
-But what about learning programming while expressing your creativity? Why not automate things? Or build even greater things?
+.. code-block:: text
 
-Installation
-------------
+   uv run miney start
 
-Miney consists of two parts: the Luanti mod and the Python library. The Luanti mod is required to connect to the game, while the Python library provides the API for interacting with the game.
+The very first time, it asks which game your world should use. Press **1** (or just Enter) for
+**Minetest Game** — the calm building sandbox every example in these docs is written for. You only answer
+this once.
 
-* `Miney in the Luanti ContentDB <https://content.luanti.org/packages/Miney/miney/>`_
-* `Miney im Python Package Index (PyPI) <https://pypi.org/project/miney/>`_
+Then it downloads, sets up and opens your world, telling you about each step:
 
+.. code-block:: text
 
-Windows
-^^^^^^^
+   No Luanti found. Downloading v5.16.1 into ~/Luanti...
+   Luanti 5.16.1 is ready.
+   Downloading Minetest Game from ContentDB...
+   Environment ready in .miney.
+   Started Luanti server for 'minetest_game' on port 30000.
+   Opened your client as 'miney'.
+   Your world is open. The server keeps running in the background, so closing the game window does not stop it.
+   Stop it when you are done: uv run miney stop
 
- * Download the latest Luanti distribution from https://www.luanti.org/downloads/ and extract it to a folder.
- * Start Luanti by running the "luanti.exe" in the "bin" folder.
- * Download the latest Python Version from https://www.python.org/downloads/ and install it.
- * Install miney by opening a command prompt (cmd) and typing:
+Later runs skip the downloads and open the world straight away.
 
->>> pip install miney
+.. important::
 
-Linux
-^^^^^
+   The **server keeps running in the background** even after you close the game window — that is what lets your
+   Python scripts connect to it. When you are done, stop it with ``uv run miney stop``.
 
- * Download the latest Luanti by following instruction on https://www.luanti.org/downloads/
- * You should have Python 3 installed, if not, install it with your package manager.
- * Install miney by opening a terminal and typing:
-
->>> pip3 install miney
-
-MacOS
-^^^^^
-
- * Download the latest Luanti by following instruction on https://www.luanti.org/downloads/
- * You should have Python 3 installed, if not, install it with Homebrew or download it from https://www.python.org/downloads/.
- * Install miney by opening a terminal and typing:
-
->>> pip install miney
+Leave this world running. In the next step you write Python that connects to it and watches your changes
+appear.
 
 
-For all Plattforms
-^^^^^^^^^^^^^^^^^^
+▶️ Step 4: Run your code with ``uv run``
+----------------------------------------
 
- * **Luanti**:
-    * Install the Miney mod by starting Luanti and clicking to "Content", "Browse online content" and searching for miney.
- * **Python**:
-    * You can install Miney systemwide by typing this in a command prompt: "pip install miney"
-    * Suggestion: Make yourself familiar with venv's, so you can isolate different development environments.
-      A good starting point is https://docs.python.org/3/tutorial/venv.html
+Save your Python file in the ``miney-world`` folder and start it like this:
 
-How to start a game
--------------------
+.. code-block:: text
 
-* Start Luanti and create a new world.
-* Press the "Select Mods" Button, then select "miney" and enable it. Close this screen by pressing "Save".
-* Activate the "Host Server" option, so that the miney client (and others) can connect to your game.
-* Press "Host Game" to start.
-* Run your favorite Python IDE or editor and start coding!
+   uv run world.py
+
+.. warning::
+
+   Start your scripts with ``uv run world.py``, **not** with ``python world.py``.
+
+   Only ``uv run`` knows about the ``.venv`` folder from step 2. Plain ``python`` either does not exist yet or is
+   a different Python that has never heard of Miney, and you get ``ModuleNotFoundError: No module named 'miney'``.
 
 
-Verify your setup
------------------
+🐍 First lines of code
+----------------------
 
-After installing Miney and the Luanti mod, it's a good idea to verify that everything is working together.
-The `check_setup.py` script is designed for this purpose. It connects to your Luanti server, performs a few basic actions, and reports whether the connection was successful.
+Save this as ``world.py`` in your ``miney-world`` folder:
 
-.. dropdown:: View Code (`check_setup.py`)
-
-   .. literalinclude:: ../../examples/check_setup.py
-      :language: python
-      :linenos:
-
-Just copy the code in a file named `check_setup.py` and open a terminal in the same folder and type this into it:
-
->>> python check_setup.py
-...
-2025-08-11 01:03:43 | INFO     | ✅ Verification successful. Miney appears to be correctly set up!
-2025-08-11 01:03:44 | INFO     | Disconnecting from server
-2025-08-11 01:03:44 | INFO     | Script finished.
-
-This is the best way to confirm your setup before diving into more complex projects. You can find this and other examples in the :doc:`../examples` section.
-
-
-First lines of code
--------------------
-
-The first lines of code with Miney should be the import statement and the creation of the Miney object "lt" (short for Luanti). This will
-connect Miney to your already running Luanti.
-
-::
+.. code-block:: python
 
     import miney
 
     lt = miney.Luanti()
 
-.. Important::
+    lt.chat.send_to_all("Hello from Python!")
+    lt.time_of_day = 0.5
 
-    Whenever you see a object "lt" in the documentation, it was created with this line!
+Run it with ``uv run world.py``, then look at your Luanti window: your message is in the chat, and the sun
+jumped to midday. Those are the first three lines you will write in every Miney program — import Miney,
+connect, then tell the world what to do.
+
+.. important::
+
+    Whenever you see the object ``lt`` in this documentation, it was created with ``lt = miney.Luanti()``.
+    Examples leave those lines out to stay short; your own file always needs them at the top.
+
+If no world is running yet, ``miney.Luanti()`` starts one for you — the same as ``miney start`` — and then
+connects. So even the shortest script gets you a world; ``miney start`` just lets you open it first and watch
+what your code does to it.
 
 
-Interactive Exploration with the Python Shell
----------------------------------------------
+🗺️ Where to go next
+-------------------
 
-Miney is designed to be highly interactive, making it perfect for use in a Python REPL (Read-Eval-Print Loop) or an IDE like IDLE. This allows you to explore the game world and the Miney API without needing to write and run a full script—an excellent way for beginners to learn and experiment.
+.. grid:: 1 1 3 3
+   :gutter: 3
 
-.. note::
+   .. grid-item-card:: :octicon:`mortar-board;1.5em;sd-text-info` Basics
+      :link: basics
+      :link-type: doc
 
-   IDLE is Python's Integrated Development and Learning Environment and is included with every Python installation.
-   You can start it from your command line by typing ``python -m idlelib.idle``.
+      Coordinates, nodes, and the ``lt`` object explained properly.
 
-A key feature is dynamic auto-completion. Miney fetches information like node types and online player names from the server and makes them available for tab-completion in modern Python shells.
+   .. grid-item-card:: :octicon:`beaker;1.5em;sd-text-info` Examples
+      :link: ../examples
+      :link-type: doc
 
-**Example: Interacting with Players**
+      Working scripts to copy, run and take apart.
 
-You can easily see and interact with online players. Type `lt.players.` in your Python shell and press the `Tab` key. You will see a list of all online players. You can then access a player object directly by their name to get their properties.
+   .. grid-item-card:: :octicon:`tools;1.5em;sd-text-info` Installation in detail
+      :link: installation
+      :link-type: doc
 
-.. code-block:: python
-   :caption: Example of player completion in a Python REPL
+      What every command did, and what to do when something breaks.
 
-   >>> lt.players.  # Press Tab
-   lt.players.miney          lt.players.HumanPlayer          lt.players.Player3
-   >>>
-   >>> lt.players.HumanPlayer
-   <miney.player.PlayerIterable object at 0x000001AD4F56F4D0>
-   >>> lt.players.HumanPlayer.position
-   <Luanti Point(x=-145.0, y=6.0, z=-243.0)>
 
-**Example: Discovering Node Types**
+🔧 Something not working?
+-------------------------
 
-Similarly, you can discover all available node types. Type `lt.nodes.names.` and press `Tab`. You'll see a list of all registered node names (e.g., `default:stone`, `flowers:rose`). You can then use these names as strings in functions that manipulate the world.
+.. code-block:: text
 
-.. code-block:: python
-   :caption: Discovering and using a node name
+   uv run miney check
 
-   >>> from miney import Point
-   >>> lt.nodes.names.  # Press Tab
-   >>> lt.nodes.names.default.  # Press Tab
-   >>> lt.nodes.names.default.apple  # Press Enter
-   'default:apple'
-   >>> lt.nodes.set(Point(10, 20, 30), lt.nodes.names.default.apple)
-
-This powerful interactive discovery feature significantly lowers the barrier to entry, especially in educational settings, as you can learn and explore what's possible directly within the Python shell.
+It walks every layer between your Python and the running world, tells you which one broke, and offers to fix
+it. See :doc:`installation` for what it checks and what else the ``miney`` command can do.
