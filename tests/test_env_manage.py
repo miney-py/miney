@@ -546,7 +546,42 @@ def test_find_luanti_downloads_one_when_none_is_installed(tmp_path, monkeypatch)
     assert downloaded == ["5.16.1"]
 
 
-def test_find_luanti_reports_the_linux_instructions(tmp_path, monkeypatch):
+def test_find_luanti_does_not_name_a_version_it_may_not_be_installing(
+    tmp_path, monkeypatch
+):
+    # The notice used to name the upstream tag looked up a line earlier. On Linux the
+    # download comes from the AppImage repository instead and can be a build behind, so
+    # naming that tag would announce a version the user does not get. The version that
+    # did land is reported by the "is ready" line straight afterwards, which is the one
+    # place it can be stated truthfully.
+    paths = EnvPaths(root=tmp_path / ".miney")
+    said: list[str] = []
+
+    monkeypatch.setattr(manage, "discover", lambda p: None)
+    monkeypatch.setattr(manage.acquire, "can_acquire", lambda *a, **k: True)
+    monkeypatch.setattr(
+        manage.upstream,
+        "latest_release",
+        lambda p: manage.upstream.Release((5, 17, 0), "5.17.0", {}),
+    )
+    monkeypatch.setattr(manage, "_acquire_and_rediscover", lambda p, r: p.luanti_dir)
+    monkeypatch.setattr(
+        manage, "_discover_after_acquire",
+        lambda p: LuantiInstall(launch=["luanti"], version=(5, 16, 1), source="bundled"),
+    )
+
+    manage.find_luanti(paths, report=lambda progress: said.append(progress.message))
+
+    downloading = [message for message in said if "Downloading" in message]
+    assert downloading and all("5.17.0" not in message for message in downloading)
+    assert any("5.16.1 is ready" in message for message in said)
+
+
+def test_find_luanti_instructs_when_it_has_no_download_for_this_machine(
+    tmp_path, monkeypatch
+):
+    # A Linux architecture pkgforge does not build an AppImage for. Rare, but it must
+    # still get the user running rather than leaving them with a failed download.
     paths = EnvPaths(root=tmp_path / ".miney")
     monkeypatch.setattr(manage, "discover", lambda p: None)
     monkeypatch.setattr(manage, "outdated_version", lambda p: None)
@@ -558,9 +593,9 @@ def test_find_luanti_reports_the_linux_instructions(tmp_path, monkeypatch):
 
 
 def test_find_luanti_names_an_outdated_install_it_cannot_replace(tmp_path, monkeypatch):
-    # Linux with a Luanti older than the mod needs: discover() throws it away and returns
-    # None, but the user should be told the version they have and the one required, not
-    # told to install Luanti from scratch.
+    # A machine Miney has no download for, carrying a Luanti older than the mod needs:
+    # discover() throws it away and returns None, but the user should be told the
+    # version they have and the one required, not told to install Luanti from scratch.
     paths = EnvPaths(root=tmp_path / ".miney")
     monkeypatch.setattr(manage, "discover", lambda p: None)
     monkeypatch.setattr(manage, "outdated_version", lambda p: (5, 6, 0))
@@ -995,13 +1030,15 @@ def test_a_missing_mod_source_warns_when_one_is_already_installed(env, monkeypat
     assert any(progress.warning for progress in messages)
 
 
-def test_mod_source_lives_inside_the_installed_package():
-    # The mod ships as package data, so it is present in a wheel as well as in a
-    # checkout. A sibling directory of the package would only exist in a checkout.
+def test_mod_source_ships_beside_the_package():
+    # The mod ships as its own top-level 'mod_data' package, so it is present in a wheel
+    # as well as in a checkout - sitting next to the miney package, one directory up from
+    # it, in both.
     source = manage.mod_source()
     assert source is not None
     assert (source / "mod.conf").is_file()
-    assert source.is_relative_to(Path(manage.__file__).resolve().parent.parent)
+    package_root = Path(manage.__file__).resolve().parent.parent.parent
+    assert source == package_root / "mod_data" / "miney"
 
 
 def test_a_locked_mod_directory_becomes_a_clean_error(env, monkeypatch):

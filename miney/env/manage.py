@@ -462,10 +462,11 @@ def find_luanti(
     """
     The Luanti to use for this environment, downloading one if there is none.
 
-    On Windows and macOS a missing Luanti is fetched into ``paths.luanti_dir``. On
-    Linux there is no official release asset and installing Luanti is one
-    package-manager command, so the user is told which one - Miney never runs a
-    privileged command.
+    A missing Luanti is fetched into ``paths.luanti_dir`` on every desktop platform,
+    Linux included - see :mod:`~miney.env.acquire` for where each one comes from. The
+    exception is a machine with no download at all, today only a Linux architecture the
+    AppImage is not built for; that user is told which package-manager command installs
+    Luanti, because Miney never runs a privileged one itself.
 
     :param paths: The environment.
     :param report: Where to send progress.
@@ -502,8 +503,11 @@ def find_luanti(
             )
         raise MineyRunError(acquire.install_instructions(release))
 
-    tag = release.tag if release is not None else "the current version"
-    _say(report, f"No Luanti found. Downloading {tag} into {paths.luanti_dir}...")
+    # No version in this line. Which one lands is not knowable here: on Linux the
+    # download comes from the AppImage repository rather than from the release just
+    # looked up, and it can be a build behind it. The "is ready" line below states the
+    # version that actually arrived, which is the only place it can be said truthfully.
+    _say(report, f"No Luanti found. Downloading it into {paths.luanti_dir}...")
     _acquire_and_rediscover(paths, release)
 
     install = _discover_after_acquire(paths)
@@ -605,13 +609,15 @@ def mod_source() -> Path | None:
     """
     Where to copy the Miney mod from.
 
-    The mod ships as package data inside Miney rather than being downloaded, so that a
-    pip-installed Miney has it, no first start needs the network, and the Lua half can
-    never be a different version from the Python half that talks to it.
+    The mod ships as its own ``mod_data`` top-level package alongside Miney rather than
+    being downloaded, so that a pip-installed Miney has it, no first start needs the
+    network, and the Lua half can never be a different version from the Python half that
+    talks to it. It sits beside the ``miney`` package - in a wheel and in a checkout
+    alike - so it is one directory up from the package, not inside it.
 
     :return: The mod directory, or None if the package data is missing.
     """
-    candidate = Path(__file__).resolve().parent.parent / "mod_data" / "miney"
+    candidate = Path(__file__).resolve().parent.parent.parent / "mod_data" / "miney"
     return candidate if (candidate / "mod.conf").is_file() else None
 
 
@@ -651,7 +657,7 @@ def _refresh_mod(paths: EnvPaths, world: str, report: Reporter | None = None) ->
             "  uv pip install --force-reinstall miney\n"
             "Or fetch the mod yourself and copy it into the world by hand:\n"
             "  ContentDB: https://content.luanti.org/packages/Miney/miney/\n"
-            "  Source:    https://github.com/miney-py/miney (the 'miney/mod_data/miney' "
+            "  Source:    https://github.com/miney-py/miney (the 'mod_data/miney' "
             "directory)\n"
             f"and copy it into {target}."
         )

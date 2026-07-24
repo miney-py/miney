@@ -3,7 +3,7 @@
 Python interface to [Luanti](https://www.luanti.org/) (formerly Minetest). Two halves that must stay in sync:
 
 - `miney/luanticlient/` — a from-scratch implementation of the Luanti **client** network protocol (UDP, SRP auth, packet builders). Miney logs into the server as a real player account.
-- `miney/mod_data/miney/` — the server-side Lua mod that receives commands and fires callbacks, shipped inside the wheel so an installed Miney always carries a matching copy. Requires Luanti 5.7+.
+- `mod_data/miney/` — the server-side Lua mod that receives commands and fires callbacks. It lives at the repo root, not inside the `miney/` Python package, but ships in the wheel as its own top-level `mod_data` package so an installed Miney always carries a matching copy. Requires Luanti 5.7+.
 - `miney/` (rest) — the user-facing API: `Luanti`, `Player`, `Nodes`, `Chat`, `Lua`, `Callback`, `Point`/`Vector`.
 
 Changing a wire message, command name or callback payload usually means touching **both** the Python side and the Lua mod.

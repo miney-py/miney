@@ -4,6 +4,14 @@ A list of things i'm planning to do. There will be no fixed timeline.
 
 Feel free to contribute!
 
+## General
+
+* [ ] miney command line:
+  * [ ] show miney version
+  * [ ] Luanti upgrade
+  * [x] Use https://github.com/pkgforge-dev/Anylinux-AppImages for linux
+* [ ] automate pypi and contentdb release
+
 ## API
 
 * [ ] Convenience aliases for `Player.move()`: `teleport()`, `look_at()`, `fly_to()`, `turn()`

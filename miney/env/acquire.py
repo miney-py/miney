@@ -1,10 +1,27 @@
 """
 Getting a Luanti onto the machine.
 
-Official release assets exist for Windows and macOS but not for Linux, which is the
-opposite of a problem: on Linux, installing Luanti is one package-manager command that
-users type routinely, while on Windows they would have to pick the right file out of
-nine release assets. So Windows and macOS download; Linux gets the exact command.
+Every desktop platform downloads its own Luanti, so that ``miney init`` is the whole
+installation on all three and a beginner never picks a file out of a release page.
+Windows and macOS take the official release ZIPs. Luanti publishes no Linux build at
+all, so Linux takes the AppImage from `pkgforge-dev/Luanti-AppImage
+<https://github.com/pkgforge-dev/Luanti-AppImage>`_ - a second source, looked up
+separately from Luanti's own releases and always at its newest build.
+
+That AppImage is **unpacked once and then never used as an AppImage again**, which is
+not an implementation detail but the reason the Linux path works at all. Launched as an
+image it re-unpacks itself into ``/tmp`` on every single start: measured at 6.4 seconds
+per ``luanti --version`` against 0.017 seconds for the unpacked tree, which is slow
+enough that a cold first check overran the 20-second timeout in
+:func:`~miney.env.discover._run_version` and the freshly downloaded Luanti was skipped
+as unusable. Unpacking also leaves the image's own ``self-updater.hook`` behind, which
+otherwise asks the learner mid-session whether Luanti may update itself and rewrites the
+downloaded file in place if they agree. The unpacked tree is an ordinary Luanti: its
+``bin/luanti`` is relocatable (sharun) and runs directly, so
+:func:`~miney.env.discover.candidate_commands` finds it exactly like a Windows one.
+
+Architectures pkgforge does not build for - anything that is not x86-64 or 64-bit ARM -
+still get :func:`install_instructions`, because Miney never runs a privileged command.
 """
 from __future__ import annotations
 
@@ -12,17 +29,22 @@ import logging
 import platform
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 from ..exceptions import MineyRunError
 from .fetch import Fetcher, extract_all, read_url
 from .paths import EnvPaths
-from .upstream import Release
+from .upstream import Release, parse_release
 
 logger = logging.getLogger(__name__)
 
-#: Systems with an official portable release asset.
-ACQUIRABLE_SYSTEMS = ("Windows", "Darwin")
+#: Where the Linux AppImage builds are published. Deliberately not
+#: :data:`~miney.env.upstream.RELEASES_URL`: Luanti's own releases carry no Linux asset,
+#: so "the newest Luanti available for Linux" is whatever this repository built last.
+APPIMAGE_RELEASES_URL = (
+    "https://api.github.com/repos/pkgforge-dev/Luanti-AppImage/releases/latest"
+)
 
 #: Asset name patterns, by system and by whether the machine is 64-bit. Matched rather
 #: than spelled out because the names carry both the version and, on macOS, the build's
@@ -34,8 +56,28 @@ _PATTERNS = {
     ("Darwin", False): r"macos[\d.]*_x86_64\.zip$",
 }
 
+#: Asset name patterns for Linux, by architecture. Anchored on ``.AppImage`` because
+#: every image is published next to a ``.AppImage.zsync`` of the same name that sorts
+#: first and holds update metadata rather than a program.
+_LINUX_PATTERNS = {
+    "x86_64": r"anylinux-x86_64\.AppImage$",
+    "aarch64": r"anylinux-aarch64\.AppImage$",
+}
+
+#: The AppImage tag is "5.16.1-1@2026-07-22_1784722284": the Luanti version, then a
+#: build number and the build's timestamp. Only the leading version is read, so this
+#: pattern deliberately does not anchor at the end the way Luanti's own tags do.
+_APPIMAGE_TAG_RE = re.compile(r"^(\d+)\.(\d+)(?:\.(\d+))?")
+
 #: Machine strings that mean "64-bit ARM". platform.machine() is not standardised.
 _ARM64 = ("arm64", "aarch64")
+
+#: Machine strings that mean "64-bit Intel or AMD", for the same reason.
+_X86_64 = ("x86_64", "amd64")
+
+#: First four bytes of every Linux executable. An AppImage is one, so this separates a
+#: real download from an error page that arrived with a 200 status.
+_ELF_MAGIC = b"\x7fELF"
 
 
 def asset_pattern(system: str, machine: str) -> str | None:
@@ -44,14 +86,35 @@ def asset_pattern(system: str, machine: str) -> str | None:
 
     :param system: As :func:`platform.system` reports it.
     :param machine: As :func:`platform.machine` reports it.
-    :return: The pattern, or None if this platform has no official asset.
+    :return: The pattern, or None if Miney has no download for this platform, which
+        today means a Linux machine that is neither x86-64 nor 64-bit ARM.
     """
+    lowered = machine.lower()
     if system == "Darwin":
-        return _PATTERNS[("Darwin", machine.lower() in _ARM64)]
+        return _PATTERNS[("Darwin", lowered in _ARM64)]
     if system == "Windows":
-        sixty_four = machine.lower() in ("amd64", "x86_64", "arm64", "aarch64")
-        return _PATTERNS[("Windows", sixty_four)]
+        return _PATTERNS[("Windows", lowered in (*_X86_64, *_ARM64))]
+    if system == "Linux":
+        if lowered in _ARM64:
+            return _LINUX_PATTERNS["aarch64"]
+        if lowered in _X86_64:
+            return _LINUX_PATTERNS["x86_64"]
     return None
+
+
+def appimage_release(fetch: Fetcher | None = None) -> Release | None:
+    """
+    The newest published Linux AppImage build.
+
+    Not cached, unlike :func:`~miney.env.upstream.latest_release`: this is only ever
+    asked when there is no Luanti on the machine at all, which happens once.
+
+    :param fetch: Substitutable "read this URL" step. Defaults to a real request.
+    :return: The release, or None if the response could not be understood.
+    :raises MineyRunError: If the request itself failed.
+    """
+    payload = fetch(APPIMAGE_RELEASES_URL) if fetch else read_url(APPIMAGE_RELEASES_URL)
+    return parse_release(payload, _APPIMAGE_TAG_RE)
 
 
 def select_asset(release: Release, system: str, machine: str) -> tuple[str, str] | None:
@@ -75,23 +138,33 @@ def select_asset(release: Release, system: str, machine: str) -> tuple[str, str]
     return None
 
 
-def can_acquire(system: str | None = None) -> bool:
+def can_acquire(system: str | None = None, machine: str | None = None) -> bool:
     """
     Whether Miney can download Luanti itself on this platform.
 
+    Architecture matters, not just the operating system: Windows and macOS have an asset
+    for every machine they run on, while the Linux AppImage is built for x86-64 and
+    64-bit ARM only.
+
     :param system: As :func:`platform.system` reports it. Defaults to this machine.
-    :return: True on Windows and macOS, False elsewhere.
+    :param machine: As :func:`platform.machine` reports it. Defaults to this machine.
+    :return: True when there is a download for this platform.
     """
-    return (system or platform.system()) in ACQUIRABLE_SYSTEMS
+    return (
+        asset_pattern(system or platform.system(), machine or platform.machine())
+        is not None
+    )
 
 
 def install_instructions(release: Release | None) -> str:
     """
-    What to tell a user who has to install Luanti themselves.
+    What to tell a user Miney has no download for.
 
-    Miney never runs a privileged command, so on Linux the user runs it. The message
-    names the version Flathub would give, because a distribution package can be older
-    than the 5.7 the Miney mod needs and there is no way to tell from here.
+    Reached only on a Linux machine outside the two architectures the AppImage is built
+    for, so it is genuinely rare - but it must still get that user running, and Miney
+    never runs a privileged command, so they run it themselves. The message names the
+    version Flathub would give, because a distribution package can be older than the 5.7
+    the Miney mod needs and there is no way to tell from here.
 
     :param release: The current release, if it could be looked up. Without one the
         message drops the version rather than guessing at it.
@@ -99,8 +172,9 @@ def install_instructions(release: Release | None) -> str:
     """
     current = f" (currently {release.tag})" if release is not None else ""
     return (
-        "Luanti has no official Linux download, so it has to be installed with your\n"
-        "package manager. Miney never runs a command as root - please run one of these:\n"
+        "Miney has no Luanti download for this computer's processor, so Luanti has to\n"
+        "be installed with your package manager. Miney never runs a command as root -\n"
+        "please run one of these:\n"
         "\n"
         f"  Flathub, always the current version{current}:\n"
         "    flatpak install flathub org.luanti.luanti\n"
@@ -127,19 +201,26 @@ def acquire_luanti(
     Download Luanti and unpack it into the environment.
 
     :param paths: The environment. Luanti lands in ``paths.luanti_dir``.
-    :param release: The release to install.
+    :param release: The release to install. Ignored on Linux, which has its own source -
+        see :func:`appimage_release`.
     :param fetch: Substitutable "read this URL" step. Defaults to a real request.
     :param system: As :func:`platform.system` reports it. Defaults to this machine.
     :param machine: As :func:`platform.machine` reports it. Defaults to this machine.
     :return: The directory Luanti was unpacked into.
-    :raises MineyRunError: On a platform with no official asset, when the release could
-        not be looked up, or when the download or extraction failed.
+    :raises MineyRunError: On a platform Miney has no download for, when the release
+        could not be looked up, or when the download or extraction failed.
     """
     this_system = system or platform.system()
     this_machine = machine or platform.machine()
 
-    if not can_acquire(this_system):
+    if not can_acquire(this_system, this_machine):
         raise MineyRunError(install_instructions(release))
+
+    if this_system == "Linux":
+        # The caller looked up Luanti's own release, which has nothing in it for Linux.
+        # Whatever the AppImage repository built last *is* the newest Luanti available
+        # here, so it is taken as-is and never compared against the upstream version.
+        release = appimage_release(fetch)
 
     if release is None:
         raise MineyRunError(
@@ -161,6 +242,9 @@ def acquire_luanti(
     logger.debug("Downloading %s from %s", name, url)
     data = fetch(url) if fetch else read_url(url, timeout=300.0)
 
+    if this_system == "Linux":
+        return _install_appimage(paths, data)
+
     # Extract into a staging directory first and only remove the existing install once
     # the download has proven to be a valid archive. Deleting paths.luanti_dir before
     # validating the download would leave a user with no Luanti at all after a
@@ -178,6 +262,92 @@ def acquire_luanti(
     if paths.luanti_dir.exists():
         shutil.rmtree(paths.luanti_dir)
     staging.rename(paths.luanti_dir)
+    return paths.luanti_dir
+
+
+def _extract_appimage(image: Path, into: Path) -> Path:
+    """
+    Unpack a downloaded AppImage by running it.
+
+    An AppImage carries its own unpacker, so this is the one place in Miney that
+    executes something it just downloaded - unavoidable, and no worse than the launch
+    that follows a moment later. A named function so tests can replace it without a real
+    image.
+
+    The unpacked tree is called ``AppDir`` by the runtime pkgforge uses; the ``AppImage``
+    convention is ``squashfs-root``, which that runtime leaves behind as a symlink to the
+    same place. Both are accepted so a change of runtime upstream cannot break this
+    silently.
+
+    :param image: The downloaded AppImage, already executable.
+    :param into: Directory to unpack into, which is where the runtime writes.
+    :return: The unpacked directory.
+    :raises MineyRunError: If the image could not be run or refused to unpack.
+    """
+    try:
+        subprocess.run(
+            [str(image), "--appimage-extract"],
+            cwd=str(into),
+            capture_output=True,
+            timeout=600,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise MineyRunError(
+            f"The Luanti download could not unpack itself: {error}\n"
+            "Install Luanti yourself instead:\n"
+            "  flatpak install flathub org.luanti.luanti\n"
+            "Then run this again:\n"
+            "  uv run miney start"
+        ) from error
+    unpacked = into / "AppDir"
+    return unpacked if unpacked.is_dir() else (into / "squashfs-root").resolve()
+
+
+def _install_appimage(paths: EnvPaths, data: bytes) -> Path:
+    """
+    Turn a downloaded AppImage into the shared Luanti install.
+
+    Staged exactly like the Windows download: nothing touches an existing, working
+    Luanti until the new one has been unpacked and checked. The image itself is deleted
+    afterwards - it is 40 MB holding a copy of the 133 MB just written next to it.
+
+    :param paths: The environment. Luanti lands in ``paths.luanti_dir``.
+    :param data: The downloaded AppImage.
+    :return: The directory Luanti was unpacked into.
+    :raises MineyRunError: If the download is not a program, could not be unpacked, or
+        unpacked without a ``bin/luanti`` in it.
+    """
+    if not data.startswith(_ELF_MAGIC):
+        raise MineyRunError(
+            f"The download is not a Linux program ({len(data)} bytes). "
+            "It may have been an error page rather than a file."
+        )
+
+    staging = paths.luanti_dir.with_name(paths.luanti_dir.name + ".new")
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    try:
+        image = staging / "luanti.AppImage"
+        image.write_bytes(data)
+        image.chmod(0o755)
+        unpacked = _extract_appimage(image, staging)
+        if not (unpacked / "bin" / "luanti").is_file():
+            raise MineyRunError(
+                "The Luanti download unpacked without a bin/luanti in it, so there is "
+                "nothing to start.\n"
+                "Install Luanti yourself instead:\n"
+                "  flatpak install flathub org.luanti.luanti\n"
+                "Then run this again:\n"
+                "  uv run miney start"
+            )
+        image.unlink()
+        if paths.luanti_dir.exists():
+            shutil.rmtree(paths.luanti_dir)
+        unpacked.rename(paths.luanti_dir)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     return paths.luanti_dir
 
 

@@ -43,11 +43,16 @@ class Release:
     assets: dict[str, str]
 
 
-def parse_release(payload: bytes) -> Release | None:
+def parse_release(payload: bytes, tag_pattern: re.Pattern[str] | None = None) -> Release | None:
     """
     Read a GitHub release response.
 
     :param payload: The raw response body.
+    :param tag_pattern: How to read a version out of the tag. Defaults to Luanti's own
+        ``5.16.1`` form. :mod:`~miney.env.acquire` passes its own, because the Linux
+        AppImage builds are tagged ``5.16.1-1@2026-07-22_1784722284`` - the same
+        response shape from a different repository, with a build number and a timestamp
+        trailing the version.
     :return: The release, or None if the response could not be understood. An
         unparsable tag yields None rather than a guessed version.
     """
@@ -62,7 +67,7 @@ def parse_release(payload: bytes) -> Release | None:
         logger.debug("Could not read the release response: %s", error)
         return None
 
-    match = _TAG_RE.match(tag.strip())
+    match = (tag_pattern or _TAG_RE).match(tag.strip())
     if match is None:
         logger.debug("Could not read a version from tag %r", tag)
         return None

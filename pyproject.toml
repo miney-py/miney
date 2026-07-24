@@ -30,7 +30,9 @@ miney = "miney.cli:main"
 version = {attr = "miney.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["miney*"]
+include = ["miney*", "mod_data*"]
 
 [tool.setuptools.package-data]
-miney = ["mod_data/miney/*", "mod_data/miney/**/*"]
+# The Lua mod lives at the repo root, not inside the miney/ Python package, but
+# still has to ride along in the wheel. It ships as its own top-level package.
+mod_data = ["miney/*", "miney/**/*"]

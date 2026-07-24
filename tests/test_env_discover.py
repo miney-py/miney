@@ -126,7 +126,7 @@ def test_outdated_version_is_none_when_nothing_runs():
 
 
 def test_minimum_version_matches_the_mod():
-    mod_conf = Path(__file__).parent.parent / "miney" / "mod_data" / "miney" / "mod.conf"
+    mod_conf = Path(__file__).parent.parent / "mod_data" / "miney" / "mod.conf"
     declared = [
         line.split("=", 1)[1].strip()
         for line in mod_conf.read_text(encoding="utf-8").splitlines()

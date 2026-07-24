@@ -20,7 +20,7 @@ from .paths import EnvPaths
 
 logger = logging.getLogger(__name__)
 
-#: Lowest Luanti version the Miney mod supports, mirroring miney/mod_data/miney/mod.conf.
+#: Lowest Luanti version the Miney mod supports, mirroring mod_data/miney/mod.conf.
 MIN_VERSION = (5, 7, 0)
 
 FLATPAK_APP_ID = "org.luanti.luanti"

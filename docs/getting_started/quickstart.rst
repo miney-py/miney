@@ -218,20 +218,26 @@ appear.
    Only paste commands you understand — that goes double for a line that downloads and launches a game engine.
    The step-by-step route above is the same thing, one command at a time, and stays the recommended way in.
 
-.. dropdown:: On Linux, Miney cannot download Luanti for you
-   :icon: alert
+.. dropdown:: Where Miney gets Luanti from on Linux
+   :icon: info
 
-   There is no ready-to-run Luanti download for Linux the way there is for Windows and macOS, so Miney cannot
-   fetch it. ``uv run miney start`` will stop once and print the exact command for your system — usually your
-   package manager or Flatpak, for example:
+   Nothing to do — ``uv run miney init`` downloads Luanti on Linux just like on Windows and macOS, and no
+   command needs ``sudo``. Luanti itself publishes no Linux build, so Miney takes the
+   `AppImage <https://github.com/pkgforge-dev/Luanti-AppImage>`_ instead, unpacks it once into a plain
+   ``Luanti`` folder in your home directory and runs it from there like any other program.
+
+   Already have Luanti installed, from your package manager or from Flatpak? Miney uses that one and downloads
+   nothing, as long as it is version 5.7 or newer.
+
+   The one exception is an unusual processor — anything that is not a 64-bit Intel, AMD or ARM chip. There is
+   no download for those, and Miney will print the command that installs Luanti on your system, for example:
 
    .. code-block:: text
 
       sudo apt install luanti      # Debian/Ubuntu
       flatpak install flathub org.luanti.luanti
 
-   Install Luanti that way, then run ``uv run miney start`` again. From there everything is the same as on
-   Windows and macOS — Miney finds your Luanti and takes over.
+   Install Luanti that way, then run ``uv run miney start`` again.
 
 .. dropdown:: I already run my own Luanti server
    :icon: server
