@@ -21,6 +21,8 @@ no longer means installing and configuring Luanti by hand.
 - ``miney upgrade`` updates Miney, its Lua mod and Luanti itself.
 - ``miney init`` downloads Luanti on Linux as a pkgforge AppImage.
 - Games are installed from `ContentDB <https://content.luanti.org>`_.
+- Tools, ``Vector``, the privilege list and the connection errors have API documentation for
+  the first time.
 
 **Changed**
 
@@ -29,9 +31,6 @@ no longer means installing and configuring Luanti by hand.
   steps. Everything it used to hide in dropdowns moved to a new *Installation in detail*
   page, and exploring Miney in the Python shell moved to *Basics*.
 - The roadmap moved out of the documentation into ``TODO.md``.
-
-- Tools, ``Vector``, the privilege list and the connection errors have API documentation for
-  the first time.
 
 **Fixed**
 

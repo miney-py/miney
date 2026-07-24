@@ -81,8 +81,21 @@ The published documentation is generated from the code (`docs/`, autodoc + `view
 - **A new public class needs its own `docs/api/<name>.rst` and a `toctree` entry**, otherwise it never appears in the docs.
 - **Cross-link with `:class:`~miney.player.Player`` / `:attr:` / `:meth:`.** The `~` keeps the rendered label short.
 - **Use attribute docstrings for documented instance attributes** — a string literal directly after the assignment, as `Player.inventory` does.
-- **Check the rendered output for anything non-trivial**, especially code blocks and examples: `cd docs && make html`. Build into the normal `docs/_build/html/` and **leave the result on disk** — Robert opens those files to look at the rendered pages. Do not build into a throwaway directory and do not clean up afterwards. `docs/_build/` is gitignored, so it never ends up in a commit.
-- **The build must finish with zero warnings.** A broken cross-reference or a short title underline is a rendering bug, not noise.
+- **Check the rendered output for anything non-trivial**, especially code blocks and examples. Build into the normal `docs/_build/html/` and **leave the result on disk** — Robert opens those files to look at the rendered pages. Do not build into a throwaway directory and do not clean up afterwards. `docs/_build/` is gitignored, so it never ends up in a commit.
+
+  ```
+  uv run --group docs sphinx-build -E -W --keep-going -b html docs docs/_build/html
+  ```
+
+  `cd docs && make html` is the documented incantation everywhere else and does **not** work here: Windows has no `make`, and `make.bat` looks for `sphinx-build` on the PATH while it lives in the uv environment. Go through `uv run`.
+- **The build must finish with zero warnings.** A short title underline or an unknown directive is a rendering bug, not noise.
+- **Zero warnings does not mean the cross-references resolve.** A `:class:`/`:attr:`/`:meth:` pointing at nothing renders as plain grey text and passes `-W` silently. Only `-n` reports it, so run that too whenever you touch docstrings or `docs/api/*.rst`:
+
+  ```
+  uv run --group docs sphinx-build -E -n -b html docs docs/_build/html
+  ```
+
+  Twenty dead references accumulated behind a clean `-W` build before anyone noticed. Two get reported that cannot be fixed from prose (`callable`, `LuantiClient` in type annotations) — everything beyond those two is a real broken link.
 
 ## How the docs read
 
@@ -146,7 +159,17 @@ Nothing else triggers a publish. Pushing a tag does not, merging to `master` doe
 
 The workflow file has to live on `master` for the release event to see it at all — that
 is a GitHub rule for repository-level events, so a release workflow edit only takes
-effect after it has been merged.
+effect after it has been merged. That is also why the pull request comes first and the
+`gh release create` second: by the time the release event fires, `master` already carries
+the workflow. No separate push is needed for it.
+
+Editing `release.yml` has one trap worth remembering: naming **any** entry under
+`permissions:` sets every unnamed scope to `none`. Adding `id-token: write` for PyPI
+therefore silently removes the `contents: read` that `actions/checkout` needs. List both.
+
+There is no way to rehearse a release. The workflow only ever runs on a real
+`release: published` event, so the safety net is the version guard and the publish order,
+not a dry run.
 
 If a run fails: the version guard runs before every publish and PyPI before ContentDB, so
 a failure leaves the later registries untouched. Delete the GitHub release and its tag,

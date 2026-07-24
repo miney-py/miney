@@ -7,6 +7,9 @@ jobs:
     name: 📦 Publish
     runs-on: ubuntu-latest
     permissions:
+      # Naming any permission sets every unnamed one to "none", so checkout needs
+      # its read access spelled out here.
+      contents: read
       # Required for PyPI Trusted Publishing - no API token is stored anywhere.
       id-token: write
     steps:
