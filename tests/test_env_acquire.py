@@ -432,3 +432,94 @@ def test_acquire_reports_an_appimage_that_unpacked_without_a_luanti_in_it(
         )
 
     assert not paths.luanti_dir.with_name(paths.luanti_dir.name + ".new").exists()
+
+
+# --- replacing an installed Luanti ----------------------------------------------
+
+
+def _install(root, files):
+    """Write a fake Luanti install: {"relative/path": "contents"}."""
+    for name, contents in files.items():
+        target = root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(contents, encoding="utf-8")
+    return root
+
+
+def test_swap_in_keeps_games_worlds_and_settings(tmp_path):
+    paths = EnvPaths(root=tmp_path / ".miney", luanti_dir=tmp_path / "Luanti")
+    _install(paths.luanti_dir, {
+        "bin/luanti.exe": "old engine",
+        "builtin/gone_in_the_new_one.lua": "orphan",
+        "games/minetest_game/game.conf": "downloaded by miney",
+        "worlds/handmade/world.mt": "made by hand in luanti itself",
+        "textures/mypack/dirt.png": "a texture pack",
+        "minetest.conf": "the user's settings",
+    })
+    staging = _install(tmp_path / "Luanti.new", {
+        "bin/luanti.exe": "new engine",
+        "games/devtest/game.conf": "ships with luanti",
+        "textures/base/pack/dirt.png": "ships with luanti",
+    })
+
+    acquire.swap_in(paths, staging)
+
+    luanti = paths.luanti_dir
+    assert (luanti / "bin/luanti.exe").read_text() == "new engine"
+    # The user's own things survive...
+    assert (luanti / "games/minetest_game/game.conf").is_file()
+    assert (luanti / "worlds/handmade/world.mt").is_file()
+    assert (luanti / "textures/mypack/dirt.png").is_file()
+    assert (luanti / "minetest.conf").read_text() == "the user's settings"
+    # ... and what the new version brought stays next to them.
+    assert (luanti / "games/devtest/game.conf").is_file()
+    assert (luanti / "textures/base/pack/dirt.png").is_file()
+    # An engine file the new version dropped must not creep back in.
+    assert not (luanti / "builtin/gone_in_the_new_one.lua").exists()
+    assert not staging.exists()
+    assert not luanti.with_name("Luanti.old").exists()
+
+
+def test_swap_in_does_not_overwrite_what_the_new_version_brings(tmp_path):
+    paths = EnvPaths(root=tmp_path / ".miney", luanti_dir=tmp_path / "Luanti")
+    _install(paths.luanti_dir, {"games/devtest/game.conf": "old devtest"})
+    staging = _install(tmp_path / "Luanti.new", {"games/devtest/game.conf": "new devtest"})
+
+    acquire.swap_in(paths, staging)
+
+    assert (paths.luanti_dir / "games/devtest/game.conf").read_text() == "new devtest"
+
+
+def test_swap_in_installs_into_an_empty_place(tmp_path):
+    paths = EnvPaths(root=tmp_path / ".miney", luanti_dir=tmp_path / "Luanti")
+    staging = _install(tmp_path / "Luanti.new", {"bin/luanti": "engine"})
+
+    acquire.swap_in(paths, staging)
+
+    assert (paths.luanti_dir / "bin/luanti").read_text() == "engine"
+
+
+def test_swap_in_changes_nothing_when_the_old_install_cannot_be_moved(
+    tmp_path, monkeypatch
+):
+    """
+    The failure that matters: Luanti is still running. Renaming fails before anything
+    has been removed, which is the whole point of renaming rather than deleting - a
+    delete works file by file and can leave a half-removed install behind.
+    """
+    paths = EnvPaths(root=tmp_path / ".miney", luanti_dir=tmp_path / "Luanti")
+    _install(paths.luanti_dir, {"bin/luanti.exe": "old engine", "games/mg/game.conf": "g"})
+    staging = _install(tmp_path / "Luanti.new", {"bin/luanti.exe": "new engine"})
+
+    def refuse(self, target):
+        raise PermissionError("the file is in use by another process")
+
+    monkeypatch.setattr(Path, "rename", refuse)
+
+    with pytest.raises(MineyRunError) as error:
+        acquire.swap_in(paths, staging)
+
+    assert "miney stop" in str(error.value)
+    # Untouched means untouched: the engine and the games are all still where they were.
+    assert (paths.luanti_dir / "bin/luanti.exe").read_text() == "old engine"
+    assert (paths.luanti_dir / "games/mg/game.conf").is_file()

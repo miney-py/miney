@@ -173,7 +173,37 @@ appear.
    * ``uv run miney status`` — what is installed and what is running.
    * ``uv run miney stop`` — stop the server and close the window.
    * ``uv run miney logs -f`` — watch the server log live.
+   * ``uv run miney upgrade`` — get the newest Miney.
    * ``uv run miney start --help`` — all options.
+
+.. dropdown:: Keeping Miney up to date
+   :icon: sync
+
+   ``uv run miney status`` tells you which Miney you have, and says so when a newer one has been released:
+
+   .. code-block:: text
+
+      Miney: 0.6.0
+        A newer Miney is available: 0.7.0. Get it with: uv run miney upgrade
+
+   ``uv run miney upgrade`` asks two separate questions — first whether to update Luanti, then whether to update
+   Miney. Nothing is installed until you say yes, and saying no to one says nothing about the other. There are
+   good reasons to stay on a Luanti that works.
+
+   Your worlds are never part of a Luanti update: they live in the ``.miney`` folder of your project, not in the
+   Luanti installation. The games, mods and settings inside that installation are carried over to the new
+   version. A Luanti that came from your package manager or from Flatpak is left alone entirely — Miney only
+   replaces the one it downloaded itself, and tells you the command for the other case.
+
+   If a world is still running, the Luanti update is refused until you ``uv run miney stop``. Replacing a
+   running program is how installations break.
+
+   In the rare environment where Miney cannot upgrade itself, it prints the command with the reason, and running
+   that line yourself works.
+
+   The mod inside your worlds needs no separate step. It travels inside the Miney package, and the next
+   ``uv run miney start`` puts the new one into every world by itself. If a world's server is still running,
+   stop it first — a running world is left untouched on purpose.
 
 .. dropdown:: Want a different game than Minetest Game?
    :icon: package

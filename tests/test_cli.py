@@ -10,6 +10,7 @@ from miney.env.discover import LuantiInstall
 from miney.env.paths import EnvPaths
 from miney.env.state import WorldState, load_state, save_state
 from miney.env.world import DEFAULT_GAME
+from miney.exceptions import MineyRunError
 
 INSTALL = LuantiInstall(launch=["/opt/luanti"], version=(5, 16, 1), source="path")
 
@@ -1261,3 +1262,270 @@ def test_check_without_an_environment_says_so(project, capsys):
 
     assert code == 1
     assert "miney init" in capsys.readouterr().out
+
+
+# --- upgrade -------------------------------------------------------------------
+
+
+@pytest.fixture
+def installed_miney(monkeypatch):
+    """
+    Make "upgrade" see a normal installation rather than this repository.
+
+    The tests run from the checkout, where ``plan()`` would refuse - which is correct
+    behaviour, and tested on its own, but not what these tests are about.
+    """
+    monkeypatch.setattr("miney.env.upgrade.source_checkout", lambda: None)
+    monkeypatch.setattr("miney.env.upgrade.has_pip", lambda: True)
+
+
+def test_upgrade_does_nothing_when_the_installed_version_is_newest(
+    project, installed_miney, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        "miney.env.pypi.latest_version",
+        lambda *a, **k: cli.pypi.parse_version(cli.__version__),
+    )
+    ran = []
+    monkeypatch.setattr("miney.env.upgrade.run", lambda plan: ran.append(plan))
+
+    assert main(["upgrade"]) == 0
+
+    assert "newest version" in capsys.readouterr().out
+    assert ran == []
+
+
+def test_upgrade_shows_the_command_and_runs_it_after_a_yes(
+    project, installed_miney, monkeypatch, capsys
+):
+    monkeypatch.setattr("miney.env.pypi.latest_version", lambda *a, **k: (99, 0, 0))
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+    ran = []
+    monkeypatch.setattr("miney.env.upgrade.run", lambda plan: ran.append(plan))
+
+    assert main(["upgrade"]) == 0
+
+    out = capsys.readouterr().out
+    assert "99.0.0 available" in out
+    # The equivalent command is shown before the question, every time.
+    assert "-m pip install --upgrade miney" in out
+    assert out.index("-m pip install") < out.index("miney start")
+    assert len(ran) == 1
+
+
+def test_upgrade_does_not_install_after_a_no(
+    project, installed_miney, monkeypatch, capsys
+):
+    monkeypatch.setattr("miney.env.pypi.latest_version", lambda *a, **k: (99, 0, 0))
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+    ran = []
+    monkeypatch.setattr("miney.env.upgrade.run", lambda plan: ran.append(plan))
+
+    assert main(["upgrade"]) == 0
+
+    assert ran == []
+    assert "-m pip install --upgrade miney" in capsys.readouterr().out
+
+
+def test_upgrade_only_prints_the_command_without_a_terminal(
+    project, installed_miney, monkeypatch, capsys
+):
+    monkeypatch.setattr("miney.env.pypi.latest_version", lambda *a, **k: (99, 0, 0))
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: False)
+    ran = []
+    monkeypatch.setattr("miney.env.upgrade.run", lambda plan: ran.append(plan))
+
+    assert main(["upgrade"]) == 0
+
+    assert ran == []
+    assert "-m pip install --upgrade miney" in capsys.readouterr().out
+
+
+def test_upgrade_offers_anyway_when_pypi_cannot_be_reached(
+    project, installed_miney, monkeypatch, capsys
+):
+    # latest_version is None by default (conftest), so this is the offline case.
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: False)
+
+    assert main(["upgrade"]) == 0
+
+    out = capsys.readouterr().out
+    assert "Could not reach PyPI" in out
+    assert "-m pip install --upgrade miney" in out
+
+
+def test_upgrade_refuses_in_a_source_checkout(project, monkeypatch, capsys):
+    monkeypatch.setattr("miney.env.pypi.latest_version", lambda *a, **k: (99, 0, 0))
+    monkeypatch.setattr("miney.env.upgrade.source_checkout", lambda: Path("/src/miney"))
+
+    assert main(["upgrade"]) == 1
+
+    assert "git pull" in capsys.readouterr().err
+
+
+def test_upgrade_tells_a_running_world_to_restart(
+    project, installed_miney, monkeypatch, capsys
+):
+    main(["start"])
+    capsys.readouterr()
+    monkeypatch.setattr("miney.env.pypi.latest_version", lambda *a, **k: (99, 0, 0))
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
+    monkeypatch.setattr("miney.env.upgrade.run", lambda plan: None)
+    monkeypatch.setattr(cli, "is_pid_alive", lambda pid: True)
+
+    assert main(["upgrade"]) == 0
+
+    out = capsys.readouterr().out
+    assert "miney stop" in out
+    assert "miney start" in out
+
+
+def test_status_shows_the_miney_version_and_a_newer_one(project, monkeypatch, capsys):
+    monkeypatch.setattr("miney.env.pypi.latest_version", lambda *a, **k: (99, 0, 0))
+
+    assert main(["status"]) == 0
+
+    out = capsys.readouterr().out
+    assert f"Miney: {cli.__version__}" in out
+    assert "A newer Miney is available: 99.0.0" in out
+    assert "miney upgrade" in out
+
+
+def test_status_stays_quiet_when_miney_is_current(project, capsys):
+    # The conftest stub makes the lookup return None, as an offline machine would.
+    assert main(["status"]) == 0
+
+    out = capsys.readouterr().out
+    assert f"Miney: {cli.__version__}" in out
+    assert "A newer Miney" not in out
+
+
+def test_upgrade_only_prints_the_command_where_it_cannot_run_it(
+    project, monkeypatch, capsys
+):
+    """
+    Windows without pip: the file being replaced is the miney.exe running this, so the
+    command is shown with the reason instead of being run.
+    """
+    monkeypatch.setattr("miney.env.pypi.latest_version", lambda *a, **k: (99, 0, 0))
+    monkeypatch.setattr("miney.env.upgrade.source_checkout", lambda: None)
+    monkeypatch.setattr("miney.env.upgrade.has_pip", lambda: False)
+    monkeypatch.setattr("miney.env.upgrade.shutil.which", lambda name: "uv.exe")
+    monkeypatch.setattr("miney.env.upgrade.sys.platform", "win32")
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: True)
+    ran = []
+    monkeypatch.setattr("miney.env.upgrade.run", lambda plan: ran.append(plan))
+    monkeypatch.setattr("builtins.input", lambda prompt="": pytest.fail("asked anyway"))
+
+    assert main(["upgrade"]) == 0
+
+    out = capsys.readouterr().out
+    assert "uv pip install --upgrade miney" in out
+    assert "miney.exe" in out
+    assert ran == []
+
+
+# --- upgrade: the Luanti half ---------------------------------------------------
+
+
+@pytest.fixture
+def luanti_upgradable(project, monkeypatch):
+    """A bundled Luanti with a newer release waiting, and nothing running."""
+    bundled = LuantiInstall(launch=["/Luanti/luanti"], version=(5, 14, 0), source="bundled")
+    monkeypatch.setattr("miney.env.manage.discover", lambda p: bundled)
+    monkeypatch.setattr(
+        "miney.env.upstream.latest_release",
+        lambda *a, **k: __import__(
+            "miney.env.upstream", fromlist=["Release"]
+        ).Release(version=(5, 16, 1), tag="5.16.1", assets={}),
+    )
+    upgraded = []
+    monkeypatch.setattr(
+        "miney.env.manage.upgrade_luanti",
+        lambda paths, release, report=None: upgraded.append(release.tag),
+    )
+    return upgraded
+
+
+def test_upgrade_asks_about_luanti_separately_and_upgrades_it(
+    luanti_upgradable, installed_miney, monkeypatch, capsys
+):
+    main(["init"])
+    capsys.readouterr()
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+    monkeypatch.setattr("miney.env.pypi.latest_version", lambda *a, **k: (99, 0, 0))
+    monkeypatch.setattr("miney.env.upgrade.run", lambda plan: None)
+
+    assert main(["upgrade"]) == 0
+
+    out = capsys.readouterr().out
+    assert luanti_upgradable == ["5.16.1"]
+    # Luanti first: after the Miney upgrade this process runs code that is no longer
+    # the installed one.
+    assert out.index("Luanti:") < out.index("Miney:")
+
+
+def test_upgrade_leaves_luanti_alone_after_a_no(
+    luanti_upgradable, installed_miney, monkeypatch, capsys
+):
+    """
+    There are good reasons not to update Luanti. A no is a full answer, and says
+    nothing about the Miney upgrade that follows.
+    """
+    main(["init"])
+    capsys.readouterr()
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: True)
+    answers = iter(["n", "y"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+    monkeypatch.setattr("miney.env.pypi.latest_version", lambda *a, **k: (99, 0, 0))
+    upgraded_miney = []
+    monkeypatch.setattr("miney.env.upgrade.run", lambda plan: upgraded_miney.append(plan))
+
+    assert main(["upgrade"]) == 0
+
+    assert luanti_upgradable == []
+    assert len(upgraded_miney) == 1
+
+
+def test_upgrade_refuses_luanti_while_a_world_runs_but_still_offers_miney(
+    luanti_upgradable, installed_miney, monkeypatch, capsys
+):
+    main(["start"])
+    capsys.readouterr()
+    monkeypatch.setattr("miney.env.manage.is_pid_alive", lambda pid: True)
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: False)
+    monkeypatch.setattr("miney.env.pypi.latest_version", lambda *a, **k: (99, 0, 0))
+
+    assert main(["upgrade"]) == 0
+
+    out = capsys.readouterr().out
+    assert luanti_upgradable == []
+    assert "uv run miney stop" in out
+    assert "-m pip install --upgrade miney" in out
+
+
+def test_upgrade_reports_a_failed_luanti_download_and_carries_on(
+    luanti_upgradable, installed_miney, monkeypatch, capsys
+):
+    main(["init"])
+    capsys.readouterr()
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+    monkeypatch.setattr("miney.env.pypi.latest_version", lambda *a, **k: (99, 0, 0))
+
+    def explode(paths, release, report=None):
+        raise MineyRunError("the download was cut short")
+
+    monkeypatch.setattr("miney.env.manage.upgrade_luanti", explode)
+    upgraded_miney = []
+    monkeypatch.setattr("miney.env.upgrade.run", lambda plan: upgraded_miney.append(plan))
+
+    assert main(["upgrade"]) == 1
+
+    assert "the download was cut short" in capsys.readouterr().err
+    # The two have nothing to do with each other, so Miney is still offered.
+    assert len(upgraded_miney) == 1

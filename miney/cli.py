@@ -16,10 +16,13 @@ import subprocess
 import sys
 import traceback
 
-from .env import check, manage
+from . import __version__
+from .env import check, manage, pypi, upgrade
 from .env.contentdb import default_world_name, game_label
 from .env.logs import follow, read_tail
 from .env.paths import ENV_DIR_NAME
+from .env.process import is_pid_alive
+from .env.state import list_states
 from .env.world import DEFAULT_GAME
 from .exceptions import MineyRunError
 
@@ -377,6 +380,214 @@ def cmd_stop(args: argparse.Namespace) -> int:
     return 0
 
 
+def _render_version(version: tuple[int, int, int]) -> str:
+    """
+    A version tuple as a user reads it.
+
+    :param version: ``(major, minor, patch)``.
+    :return: The dotted form.
+    """
+    return ".".join(str(part) for part in version)
+
+
+def _newer_miney() -> tuple[int, int, int] | None:
+    """
+    The Miney release on PyPI, when it is newer than the one running.
+
+    :return: The available version, or None when it is not newer, not readable, or
+        PyPI could not be reached. Never raises, so no version check can break a
+        command.
+    """
+    installed = pypi.parse_version(__version__)
+    available = pypi.latest_version()
+    if installed is None or available is None or available <= installed:
+        return None
+    return available
+
+
+def _print_miney_version() -> None:
+    """
+    Print the running Miney version, and the newer one if there is any.
+
+    Same shape as the Luanti lines below it in ``status``: the fact first, the offer to
+    do something about it indented underneath.
+    """
+    print(f"Miney: {__version__}")
+    newer = _newer_miney()
+    if newer is not None:
+        print(
+            f"  A newer Miney is available: {_render_version(newer)}. "
+            "Get it with: uv run miney upgrade"
+        )
+
+
+def _mod_follow_up() -> str:
+    """
+    How the Lua mod reaches the worlds after the package was upgraded.
+
+    The upgrade replaced files this very process is running from, so nothing can be
+    copied into a world here - the mod that ships with the new package is refreshed by
+    the next ``miney start``, which runs the new code. A world whose server is running
+    needs a stop first, because :func:`manage._refresh_mod` deliberately leaves a
+    running world alone.
+
+    :return: The line to print after a successful upgrade.
+    """
+    paths = manage.find_environment()
+    running = (
+        [state.name for state in list_states(paths) if is_pid_alive(state.server_pid)]
+        if paths is not None
+        else []
+    )
+    if not running:
+        return (
+            "The Lua mod for your worlds comes along automatically the next time you "
+            "run:\n  uv run miney start"
+        )
+    worlds = ", ".join(f"'{name}'" for name in running)
+    return (
+        f"The server for {worlds} is running, so the Lua mod in that world was left "
+        "alone.\nRestart it to pick up the new mod:\n"
+        "  uv run miney stop\n"
+        "  uv run miney start"
+    )
+
+
+def _ask(question: str) -> bool:
+    """
+    Ask a yes-or-no question, defaulting to yes.
+
+    :param question: The question, without the ``[Y/n]``.
+    :return: True if the user agreed. False without a terminal to ask at.
+    """
+    if not _stdin_is_interactive():
+        return False
+    try:
+        return input(f"{question} [Y/n]: ").strip().lower() in ("", "y", "yes")
+    except EOFError:
+        return False
+
+
+def _upgrade_luanti() -> int:
+    """
+    Offer to replace this project's Luanti with a newer release.
+
+    Asked separately from the Miney upgrade, and asked second-guessing nothing: there
+    are good reasons to stay on a Luanti that works, so a no here leaves it alone
+    without further comment. Miney only ever replaces a Luanti it downloaded itself;
+    :func:`~miney.env.manage.plan_luanti_upgrade` is what decides that.
+
+    :return: 0 unless the upgrade itself failed.
+    """
+    paths = manage.find_environment()
+    if paths is None:
+        return 0
+
+    upgrade_plan = manage.plan_luanti_upgrade(paths)
+    installed = (
+        _render_version(upgrade_plan.installed) if upgrade_plan.installed else "unknown"
+    )
+    if upgrade_plan.blocked is not None:
+        print(f"\nLuanti: {installed}")
+        print(upgrade_plan.blocked)
+        return 0
+    if upgrade_plan.release is None:
+        print(f"\nLuanti: {installed} is the newest version. Nothing to do.")
+        return 0
+
+    print(f"\nLuanti: {installed} installed, {upgrade_plan.release.tag} available.")
+    print(
+        "I can download it and put it in place of the one you have. Your worlds are "
+        "not in there and are not touched; the games, mods and settings inside the "
+        "Luanti folder are carried over."
+    )
+    if not _ask("Shall I upgrade Luanti?"):
+        print("Leaving Luanti as it is.")
+        return 0
+
+    manage.upgrade_luanti(paths, upgrade_plan.release, report=_report)
+    return 0
+
+
+def _upgrade_miney() -> int:
+    """
+    Offer to replace the installed Miney package with a newer one.
+
+    Only the Python half is upgraded here, and the Lua mod needs no step of its own: it
+    ships inside the package, so the next ``miney start`` copies the new one into the
+    worlds by itself.
+
+    Nothing is installed without a yes, and the command that does the same thing by
+    hand is printed before the question - a learner should find out what Miney is about
+    to do, not press a magic key. Without a terminal to ask at, only that command is
+    printed, and the same happens where Miney cannot do the upgrade itself at all: on
+    Windows without pip, where the running ``miney.exe`` is the file being replaced.
+
+    :return: 0 unless the upgrade was refused or failed.
+    """
+    installed = pypi.parse_version(__version__)
+    available = pypi.latest_version()
+    if available is not None and installed is not None and available <= installed:
+        print(f"Miney {__version__} is the newest version. Nothing to do.")
+        return 0
+
+    plan = upgrade.plan()
+    if plan.refusal is not None:
+        return _fail(plan.refusal)
+
+    if available is None:
+        print(
+            f"Miney: {__version__} installed. Could not reach PyPI, so I do not know "
+            "whether a newer version exists."
+        )
+    else:
+        print(f"Miney: {__version__} installed, {_render_version(available)} available.")
+
+    if plan.runnable:
+        print("\nI can upgrade Miney for you. That is the same as running:")
+    else:
+        print("\nUpgrade Miney with:")
+    print(f"  {plan.shown}")
+
+    if plan.manual is not None:
+        print(f"\n{plan.manual}")
+        return 0
+    if not _stdin_is_interactive():
+        print("\nRun that command to upgrade.")
+        return 0
+    if not _ask("Shall I upgrade Miney?"):
+        return 0
+
+    upgrade.run(plan)
+    print(f"\n{_mod_follow_up()}")
+    return 0
+
+
+def cmd_upgrade(args: argparse.Namespace) -> int:
+    """
+    Bring this project up to date: Luanti first, then Miney itself.
+
+    Two questions, not one. There are good reasons to stay on a Luanti that works while
+    still wanting the newest Miney, so neither answer decides the other.
+
+    Luanti goes first because after the Miney upgrade this process is running code that
+    is no longer installed - a fix to the Luanti download in that very release would not
+    be the one that runs. A failed Luanti upgrade does not cancel the Miney one; it is
+    reported and the command carries on, because the two have nothing to do with each
+    other.
+
+    :param args: Parsed arguments, unused.
+    :return: 0 when nothing failed.
+    """
+    try:
+        luanti = _upgrade_luanti()
+    except MineyRunError as error:
+        print(str(error), file=sys.stderr)
+        luanti = 1
+    print()
+    return _upgrade_miney() or luanti
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """
     Report what exists and what is running.
@@ -388,6 +599,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     :param args: Parsed arguments, unused.
     :return: Process exit code.
     """
+    _print_miney_version()
     paths = manage.find_environment()
     if paths is None:
         print(f"No {ENV_DIR_NAME} directory found. Create one with: uv run miney start")
@@ -699,6 +911,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     common(check_parser)
     check_parser.set_defaults(func=cmd_check)
+
+    # No --world/--game: the package is upgraded for the whole project, and the Lua mod
+    # follows into every world on its own at the next start.
+    upgrade_parser = subparsers.add_parser(
+        "upgrade", help="Upgrade Miney to the newest version."
+    )
+    upgrade_parser.set_defaults(func=cmd_upgrade)
 
     logs = subparsers.add_parser("logs", help="Show the server log.")
     common(logs)

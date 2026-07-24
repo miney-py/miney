@@ -60,6 +60,17 @@ def _no_upstream_lookup(monkeypatch):
     monkeypatch.setattr(
         "miney.env.upstream.latest_release", lambda *args, **kwargs: None
     )
+    # Same for the Miney release on PyPI, which "status" and "upgrade" ask about.
+    monkeypatch.setattr("miney.env.pypi.latest_version", lambda *args, **kwargs: None)
+    # And no test may really run ensurepip: "miney init" installs pip into environments
+    # that have none, and the interpreter running the suite is a real one. Pretending
+    # pip is already there is the quiet stub - it is what most environments look like,
+    # and it keeps the notice out of the output every other test asserts on. Tests for
+    # the install path patch these two themselves.
+    monkeypatch.setattr("miney.env.upgrade.has_pip", lambda: True)
+    monkeypatch.setattr(
+        "miney.env.upgrade.install_pip", lambda: "stubbed out in the test suite"
+    )
 
 
 @pytest.fixture(autouse=True)

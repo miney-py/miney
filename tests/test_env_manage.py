@@ -1168,3 +1168,186 @@ def test_no_environment_machinery_leaks_into_the_public_api():
         module = getattr(getattr(miney, name), "__module__", "")
         assert not module.startswith("miney.env"), name
         assert module != "miney.cli", name
+
+
+@pytest.fixture
+def windows_without_pip(monkeypatch):
+    """The one environment that needs pip installed: Windows, uv venv, not a checkout."""
+    monkeypatch.setattr("miney.env.upgrade.sys.platform", "win32")
+    monkeypatch.setattr("miney.env.upgrade.has_pip", lambda: False)
+    monkeypatch.setattr("miney.env.upgrade.source_checkout", lambda: None)
+
+
+def test_ensure_pip_installs_pip_when_the_environment_has_none(
+    windows_without_pip, monkeypatch
+):
+    """
+    A venv from "uv venv" has no pip, and on Windows only pip can replace the running
+    miney.exe. Setting up the environment is the moment to get it.
+    """
+    calls = []
+    monkeypatch.setattr("miney.env.upgrade.install_pip", lambda: calls.append(1))
+    messages = []
+
+    manage._ensure_pip(report=lambda progress: messages.append(progress))
+
+    assert calls == [1]
+    assert any("miney upgrade" in m.message for m in messages)
+    assert not any(m.warning for m in messages)
+
+
+def test_ensure_pip_does_nothing_when_pip_is_there(windows_without_pip, monkeypatch):
+    monkeypatch.setattr("miney.env.upgrade.has_pip", lambda: True)
+    monkeypatch.setattr(
+        "miney.env.upgrade.install_pip", lambda: pytest.fail("installed anyway")
+    )
+    messages = []
+
+    manage._ensure_pip(report=lambda progress: messages.append(progress))
+
+    assert messages == []
+
+
+def test_ensure_pip_leaves_a_source_checkout_alone(
+    windows_without_pip, monkeypatch, tmp_path
+):
+    # A developer's environment is theirs, and "git pull" updates it anyway.
+    monkeypatch.setattr("miney.env.upgrade.source_checkout", lambda: tmp_path)
+    monkeypatch.setattr(
+        "miney.env.upgrade.install_pip", lambda: pytest.fail("installed anyway")
+    )
+
+    manage._ensure_pip(report=None)
+
+
+def test_ensure_pip_warns_but_does_not_fail_when_it_cannot(
+    windows_without_pip, monkeypatch
+):
+    monkeypatch.setattr("miney.env.upgrade.install_pip", lambda: "no ensurepip here")
+    messages = []
+
+    manage._ensure_pip(report=lambda progress: messages.append(progress))
+
+    assert [m.warning for m in messages] == [True]
+    assert "no ensurepip here" in messages[0].message
+
+
+def test_ensure_pip_stays_out_of_linux_and_macos(monkeypatch):
+    """
+    Only Windows cannot replace a running executable. Everywhere else uv does the
+    upgrade, so installing pip would be megabytes nobody asked for.
+    """
+    monkeypatch.setattr("miney.env.upgrade.sys.platform", "linux")
+    monkeypatch.setattr("miney.env.upgrade.has_pip", lambda: False)
+    monkeypatch.setattr("miney.env.upgrade.source_checkout", lambda: None)
+    monkeypatch.setattr(
+        "miney.env.upgrade.install_pip", lambda: pytest.fail("installed anyway")
+    )
+    messages = []
+
+    manage._ensure_pip(report=lambda progress: messages.append(progress))
+
+    assert messages == []
+
+
+# --- upgrading Luanti -----------------------------------------------------------
+
+BUNDLED = LuantiInstall(launch=["~/Luanti/bin/luanti"], version=(5, 14, 0), source="bundled")
+NEWER = "miney.env.upstream.latest_release"
+
+
+def _release(version=(5, 16, 1), tag="5.16.1"):
+    from miney.env.upstream import Release
+
+    return Release(version=version, tag=tag, assets={})
+
+
+def test_plan_luanti_upgrade_offers_a_newer_release(tmp_path, monkeypatch):
+    paths = EnvPaths(root=tmp_path / ".miney")
+    monkeypatch.setattr("miney.env.manage.discover", lambda p: BUNDLED)
+    monkeypatch.setattr(NEWER, lambda *a, **k: _release())
+
+    plan = manage.plan_luanti_upgrade(paths)
+
+    assert plan.blocked is None
+    assert plan.release.tag == "5.16.1"
+    assert plan.installed == (5, 14, 0)
+
+
+def test_plan_luanti_upgrade_says_nothing_to_do_when_current(tmp_path, monkeypatch):
+    paths = EnvPaths(root=tmp_path / ".miney")
+    monkeypatch.setattr("miney.env.manage.discover", lambda p: BUNDLED)
+    monkeypatch.setattr(NEWER, lambda *a, **k: _release(version=(5, 14, 0), tag="5.14.0"))
+
+    plan = manage.plan_luanti_upgrade(paths)
+
+    assert plan.release is None
+    assert plan.blocked is None
+
+
+def test_plan_luanti_upgrade_never_touches_a_system_install(tmp_path, monkeypatch):
+    """
+    A Luanti from a package manager belongs to that package manager. Replacing files
+    under it would leave the system's own idea of what is installed wrong.
+    """
+    paths = EnvPaths(root=tmp_path / ".miney")
+    monkeypatch.setattr("miney.env.manage.discover", lambda p: INSTALL)  # source="path"
+    monkeypatch.setattr(NEWER, lambda *a, **k: _release())
+
+    plan = manage.plan_luanti_upgrade(paths)
+
+    assert plan.release is None
+    assert "apt" in plan.blocked
+
+
+def test_plan_luanti_upgrade_names_flatpak_for_a_flatpak_install(tmp_path, monkeypatch):
+    paths = EnvPaths(root=tmp_path / ".miney")
+    flatpak = LuantiInstall(launch=["flatpak"], version=(5, 14, 0), source="flatpak")
+    monkeypatch.setattr("miney.env.manage.discover", lambda p: flatpak)
+    monkeypatch.setattr(NEWER, lambda *a, **k: _release())
+
+    assert "flatpak update" in manage.plan_luanti_upgrade(paths).blocked
+
+
+def test_plan_luanti_upgrade_refuses_while_a_world_is_running(tmp_path, monkeypatch):
+    """
+    Replacing a running Luanti is what leaves an install in pieces. Blocked before the
+    question is even asked, not caught afterwards.
+    """
+    paths = EnvPaths(root=tmp_path / ".miney")
+    save_state(
+        paths.state_file("world"),
+        WorldState(name="world", gameid=DEFAULT_GAME, port=30000, server_pid=4242),
+    )
+    monkeypatch.setattr("miney.env.manage.discover", lambda p: BUNDLED)
+    monkeypatch.setattr("miney.env.manage.is_pid_alive", lambda pid: pid == 4242)
+    monkeypatch.setattr(NEWER, lambda *a, **k: _release())
+
+    plan = manage.plan_luanti_upgrade(paths)
+
+    assert plan.release is None
+    assert "miney stop" in plan.blocked
+    assert "'world'" in plan.blocked
+
+
+def test_plan_luanti_upgrade_without_any_luanti(tmp_path, monkeypatch):
+    paths = EnvPaths(root=tmp_path / ".miney")
+    monkeypatch.setattr("miney.env.manage.discover", lambda p: None)
+
+    assert "miney start" in manage.plan_luanti_upgrade(paths).blocked
+
+
+def test_upgrade_luanti_downloads_and_reports(tmp_path, monkeypatch):
+    paths = EnvPaths(root=tmp_path / ".miney")
+    downloaded = []
+    monkeypatch.setattr(
+        "miney.env.acquire.acquire_luanti",
+        lambda p, release: downloaded.append(release.tag),
+    )
+    monkeypatch.setattr("miney.env.manage.discover", lambda p: BUNDLED)
+    messages = []
+
+    manage.upgrade_luanti(paths, _release(), report=lambda p: messages.append(p.message))
+
+    assert downloaded == ["5.16.1"]
+    assert any("untouched" in m for m in messages)

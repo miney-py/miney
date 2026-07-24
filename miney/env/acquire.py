@@ -259,10 +259,133 @@ def acquire_luanti(
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
-    if paths.luanti_dir.exists():
-        shutil.rmtree(paths.luanti_dir)
-    staging.rename(paths.luanti_dir)
-    return paths.luanti_dir
+    return swap_in(paths, staging)
+
+
+#: What in a Luanti install belongs to the user rather than to the engine, and is
+#: therefore carried across an upgrade. Everything not named here - the executable, the
+#: libraries, ``builtin``, ``locale``, ``fonts``, ``doc`` - comes fresh out of the
+#: download, so no file from the old version can survive as an orphan.
+#:
+#: A directory on this list is merged rather than replaced: the new install keeps what
+#: it brought (``games/devtest``, ``textures/base``) and only gains what it does not
+#: have (``games/minetest_game``, a texture pack). Inside these paths everything is the
+#: user's, so there is nothing to tell apart.
+USER_PATHS = (
+    "worlds",
+    "games",
+    "mods",
+    "clientmods",
+    "textures",
+    "screenshots",
+)
+
+#: Files directly in the install directory that belong to the user. Luanti writes its
+#: settings next to the executable in a portable install, which is what Miney sets up.
+USER_FILE_SUFFIXES = (".conf",)
+
+
+def _carry_over(old: Path, new: Path) -> None:
+    """
+    Move the user's own files from an old Luanti install into the new one.
+
+    Only the paths in :data:`USER_PATHS` and settings files are considered, and only
+    where the new install has nothing of that name - which is what keeps a stale engine
+    file from creeping back in while the learner's worlds, games and mods survive the
+    upgrade.
+
+    Never raises. A file that cannot be moved is not worth failing an upgrade over, and
+    the old install is kept until the swap has succeeded anyway.
+
+    :param old: The install being replaced.
+    :param new: The unpacked new install, which is what will be kept.
+    """
+    for name in USER_PATHS:
+        source = old / name
+        if source.is_dir():
+            _merge_into(source, new / name)
+
+    for item in old.iterdir():
+        if item.is_file() and item.suffix in USER_FILE_SUFFIXES:
+            _move(item, new / item.name)
+
+
+def _merge_into(source: Path, target: Path) -> None:
+    """
+    Add everything from ``source`` that ``target`` does not already have.
+
+    :param source: A directory in the old install.
+    :param target: The same directory in the new install, which may not exist yet.
+    """
+    if not target.exists():
+        _move(source, target)
+        return
+    if not target.is_dir():
+        return
+    for item in source.iterdir():
+        if item.is_dir():
+            _merge_into(item, target / item.name)
+        else:
+            _move(item, target / item.name)
+
+
+def _move(source: Path, target: Path) -> None:
+    """
+    Move one file or directory, unless the target is already there.
+
+    :param source: What to move.
+    :param target: Where it should end up.
+    """
+    if target.exists():
+        return
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(target))
+    except OSError as error:
+        logger.debug("Could not carry %s over to %s: %s", source, target, error)
+
+
+def swap_in(paths: EnvPaths, unpacked: Path) -> Path:
+    """
+    Put a freshly unpacked Luanti in place of the installed one.
+
+    Two renames rather than "delete the old, then rename the new": a rename fails
+    outright when something in the directory is still in use, at a point where nothing
+    has been touched yet, while a delete works file by file and can stop halfway,
+    leaving a half-removed install that still looks startable. The old directory is
+    only removed once the new one is in place.
+
+    :param paths: The environment. Luanti ends up in ``paths.luanti_dir``.
+    :param unpacked: The new install, already extracted and checked.
+    :return: ``paths.luanti_dir``.
+    :raises MineyRunError: If the installed Luanti could not be moved out of the way,
+        which is what happens while it is running.
+    """
+    target = paths.luanti_dir
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        unpacked.rename(target)
+        return target
+
+    # Move the old install aside first, before anything is carried out of it. The other
+    # way round, a rename that fails here would leave the still-installed Luanti robbed
+    # of its games and worlds.
+    previous = target.with_name(target.name + ".old")
+    shutil.rmtree(previous, ignore_errors=True)
+    try:
+        target.rename(previous)
+    except OSError as error:
+        raise MineyRunError(
+            f"Could not replace the Luanti in {target}: {error}\n"
+            "This normally means it is still running. Close the game window and stop "
+            "the server, then try again:\n"
+            "  uv run miney stop\n"
+            "Nothing was changed, so the Luanti you have is untouched."
+        ) from error
+    _carry_over(previous, unpacked)
+    unpacked.rename(target)
+    shutil.rmtree(previous, ignore_errors=True)
+    return target
 
 
 def _extract_appimage(image: Path, into: Path) -> Path:
@@ -343,9 +466,7 @@ def _install_appimage(paths: EnvPaths, data: bytes) -> Path:
                 "  uv run miney start"
             )
         image.unlink()
-        if paths.luanti_dir.exists():
-            shutil.rmtree(paths.luanti_dir)
-        unpacked.rename(paths.luanti_dir)
+        swap_in(paths, unpacked)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return paths.luanti_dir

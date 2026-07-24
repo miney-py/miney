@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..exceptions import MineyRunError
-from . import acquire, contentdb, upstream
+from . import acquire, contentdb, upgrade, upstream
 from ..luanticlient.probe import probe_server
 from .discover import MIN_VERSION, LuantiInstall, discover, outdated_version
 from .paths import ENV_DIR_NAME, EnvPaths, find_env
@@ -695,6 +695,159 @@ def _refresh_mod(paths: EnvPaths, world: str, report: Reporter | None = None) ->
         ) from error
 
 
+@dataclass(frozen=True)
+class LuantiUpgrade:
+    """
+    Whether the Luanti this environment uses can and should be replaced.
+
+    :param release: The release to install, or None when there is nothing to do.
+    :param installed: The version in use, for the message.
+    :param blocked: Why the upgrade cannot happen, already phrased for the user, or
+        None when :attr:`release` can be installed.
+    """
+
+    release: upstream.Release | None = None
+    installed: tuple[int, int, int] | None = None
+    blocked: str | None = None
+
+
+def plan_luanti_upgrade(paths: EnvPaths) -> LuantiUpgrade:
+    """
+    Decide whether ``miney upgrade`` may replace this environment's Luanti.
+
+    Miney only ever touches the Luanti it downloaded itself, into ``paths.luanti_dir``.
+    A Luanti that came from a package manager or from Flatpak belongs to that package
+    manager, and replacing files under it would leave the system's own idea of what is
+    installed wrong; those are named as what they are, with the command that updates
+    them. A running server or client blocks the upgrade too - see
+    :func:`~miney.env.acquire.swap_in` for what that would otherwise risk.
+
+    :param paths: The environment.
+    :return: What to do. Check :attr:`LuantiUpgrade.blocked` first, then
+        :attr:`LuantiUpgrade.release` for whether anything is left to install.
+    """
+    install = discover(paths)
+    if install is None:
+        return LuantiUpgrade(
+            blocked=(
+                "There is no Luanti here yet, so there is nothing to upgrade.\n"
+                "Set one up with:\n"
+                "  uv run miney start"
+            )
+        )
+
+    if install.source != "bundled":
+        return LuantiUpgrade(
+            installed=install.version,
+            blocked=(
+                f"This project uses the Luanti already installed on your system "
+                f"({install.source}), not one Miney downloaded, so Miney will not "
+                "replace it.\n"
+                f"Update it the way you installed it, for example:\n"
+                f"{_system_update_hint(install.source)}"
+            ),
+        )
+
+    running = [state.name for state in list_states(paths) if _world_busy(state)]
+    if running:
+        worlds = ", ".join(f"'{name}'" for name in running)
+        return LuantiUpgrade(
+            installed=install.version,
+            blocked=(
+                f"Luanti is in use by {worlds}, and replacing it while it runs would "
+                "break the installation.\n"
+                "Stop it first, then try again:\n"
+                "  uv run miney stop\n"
+                "  uv run miney upgrade"
+            ),
+        )
+
+    release = upstream.latest_release(paths)
+    if release is None or release.version <= install.version:
+        return LuantiUpgrade(installed=install.version)
+    return LuantiUpgrade(release=release, installed=install.version)
+
+
+def _world_busy(state: WorldState) -> bool:
+    """
+    Whether a world has a live server or client process.
+
+    :param state: The world's recorded runtime state.
+    :return: True when either process is still alive.
+    """
+    return is_pid_alive(state.server_pid) or is_pid_alive(state.client_pid)
+
+
+def _system_update_hint(source: str) -> str:
+    """
+    How to update a Luanti that Miney did not install.
+
+    :param source: The source label :func:`~miney.env.discover.discover` reported.
+    :return: An indented command block.
+    """
+    if source == "flatpak":
+        return "  flatpak update org.luanti.luanti"
+    return (
+        "  sudo apt install --only-upgrade luanti     # Debian, Ubuntu\n"
+        "  https://www.luanti.org/downloads/          # or install it by hand"
+    )
+
+
+def upgrade_luanti(
+    paths: EnvPaths, release: upstream.Release, report: Reporter | None = None
+) -> None:
+    """
+    Replace the downloaded Luanti with a newer release.
+
+    The worlds are not in the line of fire: they live in the project's ``.miney``
+    directory, not in the Luanti install. What is in there - games, mods, settings -
+    is carried across by :func:`~miney.env.acquire.swap_in`.
+
+    :param paths: The environment.
+    :param release: The release to install.
+    :param report: Where to send progress.
+    :raises MineyRunError: If the download or the replacement failed. Either way the
+        Luanti that was there keeps working.
+    """
+    _say(report, f"Downloading Luanti {release.tag}. This can take a few minutes.")
+    acquire.acquire_luanti(paths, release)
+    install = discover(paths)
+    arrived = (
+        ".".join(str(part) for part in install.version) if install else release.tag
+    )
+    _say(report, f"Luanti {arrived} is ready. Your worlds and games are untouched.")
+
+
+def _ensure_pip(report: Reporter | None = None) -> None:
+    """
+    Make sure this environment can upgrade Miney later on.
+
+    Setting up the environment is the moment to do this, because the moment it is
+    needed is too late: on Windows nothing can replace ``miney.exe`` while it is
+    running, and only pip gets around that by moving the file aside instead of deleting
+    it. A venv from ``uv venv`` - what the documentation tells a beginner to create -
+    has no pip, so without this ``miney upgrade`` could only ever print a command there.
+
+    Which environments this applies to is
+    :func:`~miney.env.upgrade.pip_needed_here`'s decision: Windows only, since no other
+    platform has the problem.
+
+    :param report: Where to send the one-off notice, or the warning if it did not work.
+    """
+    if not upgrade.pip_needed_here():
+        return
+    problem = upgrade.install_pip()
+    if problem is None:
+        _say(report, "Installed pip, so 'uv run miney upgrade' can update Miney later.")
+        return
+    _say(
+        report,
+        f"Could not install pip here, so 'miney upgrade' will only be able to show you "
+        f"the upgrade command rather than run it: {problem}",
+        warning=True,
+    )
+
+
 def ensure_world(
     paths: EnvPaths, world: str, game: str, *, report: Reporter | None = None
 ) -> LuantiInstall:
@@ -725,11 +878,12 @@ def ensure_world(
         )
     # Luanti before the game: ensure_game() installs a downloaded game under
     # paths.games_dir, which lives inside paths.luanti_dir (see EnvPaths.games_dir), and
-    # acquire_luanti() replaces paths.luanti_dir wholesale - shutil.rmtree() then a
-    # rename() over it - so a game installed before a fresh Luanti download would be
-    # deleted the moment that download lands. Nothing here talks to a real Luanti or a
-    # real ContentDB, so no automated test downloads both in sequence; the order is
-    # pinned by test_ensure_world_finds_luanti_before_the_game instead.
+    # acquire_luanti() replaces paths.luanti_dir as a whole. acquire.swap_in() does carry
+    # an existing games directory across, so this is no longer the difference between
+    # having the game and not - but it is still the difference between downloading it
+    # once and downloading it twice. Nothing here talks to a real Luanti or a real
+    # ContentDB, so no automated test downloads both in sequence; the order is pinned by
+    # test_ensure_world_finds_luanti_before_the_game instead.
     install = find_luanti(paths, report=report)
     ensure_game(paths, game, report=report)
     _preload_games(paths, exclude=game, report=report)
@@ -738,6 +892,7 @@ def ensure_world(
     write_config(paths.config_file)
     ensure_client_password(paths.client_pw)
     _refresh_mod(paths, world, report=report)
+    _ensure_pip(report=report)
 
     _say(report, f"Environment ready in {paths.root}.")
     _say(report, f"World '{world}' uses {contentdb.game_label(game)}.")

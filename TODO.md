@@ -7,9 +7,10 @@ Feel free to contribute!
 ## General
 
 * [ ] miney command line:
-  * [ ] show miney version
+  * [x] show miney version
   * [x] integrate check_setup.py
-  * [ ] Luanti upgrade
+  * [x] upgrade the miney package ("miney upgrade")
+  * [x] Luanti upgrade (asked separately by "miney upgrade")
   * [x] Use https://github.com/pkgforge-dev/Anylinux-AppImages for linux
 * [ ] automate pypi and contentdb release
 
