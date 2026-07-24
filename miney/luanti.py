@@ -207,7 +207,10 @@ class Luanti:
             self.luanti.connect()
         except LuantiConnectionError as e:
             if e.reason_code == 1:
-                logger.warning(f"Login failed for user '{self.playername}'. The server suggests registration. Attempting to register as a new user.")
+                # Info, not warning: this is what every first connect looks like, and a
+                # script that never configured logging would otherwise have logging's
+                # last-resort handler print it to stderr as if something had gone wrong.
+                logger.info(f"No account for '{self.playername}' yet. Registering one.")
                 self.luanti.disconnect()  # Ensure clean state
 
                 # Re-initialize and attempt to register
@@ -215,9 +218,15 @@ class Luanti:
                                                  port=self.port)
                 try:
                     self.luanti.connect(register=True)
-                    logger.warning(f"Successfully registered and connected as new user '{self.playername}'.")
-                    logger.warning("This new user might not have the required 'miney' privilege.")
-                    logger.warning(f"To grant it, run this command on the server: /grant {self.playername} miney")
+                    logger.info(f"Successfully registered and connected as '{self.playername}'.")
+                    # Only true for a server reached over the network: the Miney mod
+                    # lets a client on a local address run code without the privilege,
+                    # which is every world "miney start" creates. "uv run miney check"
+                    # reports the real answer for the server actually in use.
+                    logger.info(
+                        f"On a remote server '{self.playername}' also needs the 'miney' "
+                        f"privilege: /grant {self.playername} miney"
+                    )
                 except LuantiConnectionError as e2:
                     logger.error(f"Automatic registration failed: {e2}")
                     logger.error("This probably means the user already exists and the initial password was incorrect, or the server does not allow registration.")

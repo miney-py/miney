@@ -9,7 +9,6 @@ import zlib
 from typing import TYPE_CHECKING, Callable
 
 from .constants import ClientState, ToClientCommand
-from .exceptions import LuantiConnectionError
 
 if TYPE_CHECKING:
     from .client import LuantiClient
@@ -115,24 +114,48 @@ class CommandHandler:
         self.client.send_init2()
 
     def _handle_access_denied(self, data: bytes):
+        """
+        Record that the server refused us, and let the thread that asked react.
+
+        This runs on the receiver thread. Raising here reached nothing but that
+        thread's own catch-all, which logged a full traceback - so a first connect,
+        where the server answers "register your player name" and
+        :class:`~miney.luanti.Luanti` then simply registers, printed a stack trace at
+        the user in the middle of a perfectly normal login. The recorded state is the
+        real channel: :meth:`~miney.luanticlient.client.LuantiClient.connect` polls it
+        and raises :class:`~miney.luanticlient.exceptions.LuantiConnectionError` on the
+        thread that can do something about it.
+
+        Which is also why the log level depends on when this arrives. During a connect
+        the caller is told through that exception and needs no second copy in the log.
+        A denial *after* joining is a session dropped out from under a running script,
+        nobody is polling for it, and the log is the only channel it has left.
+
+        :param data: The command payload: a reason code, optionally followed by a
+            custom reason string.
+        """
+        was_connected = self.client.state.state >= ClientState.JOINED
         reason_code = data[0]
         reason_message = self.client.get_access_denied_reason(reason_code)
-        logger.error(f"Access denied: {reason_message} (code: {reason_code})")
 
         if reason_code == 10 and len(data) >= 3:  # Custom string
             str_len = struct.unpack(">H", data[1:3])[0]
             custom_reason = data[3:3 + str_len].decode('utf-8', 'replace')
             reason_message += f": {custom_reason}"
-            logger.error(f"Custom reason: {custom_reason}")
 
         if self.client.register_mode and reason_code == 0:
             reason_message = "User already exists. Try logging in without registration."
-            logger.error(reason_message)
 
         self.client.state.access_denied_reason = reason_message
         self.client.state.access_denied_code = reason_code
         self.client.state.state = ClientState.DISCONNECTED
-        raise LuantiConnectionError(f"Access denied: {reason_message}", reason_code=reason_code)
+
+        if was_connected:
+            logger.warning(
+                f"The server ended this session: {reason_message} (code: {reason_code})"
+            )
+        else:
+            logger.debug(f"Access denied: {reason_message} (code: {reason_code})")
 
     def _handle_srp_bytes_s_b(self, data: bytes):
         logger.debug("Received SRP bytes S and B from server.")
