@@ -6,13 +6,7 @@ Feel free to contribute!
 
 ## General
 
-* [ ] miney command line:
-  * [x] show miney version
-  * [x] integrate check_setup.py
-  * [x] upgrade the miney package ("miney upgrade")
-  * [x] Luanti upgrade (asked separately by "miney upgrade")
-  * [x] Use https://github.com/pkgforge-dev/Anylinux-AppImages for linux
-* [ ] automate pypi and contentdb release
+* [x] automate pypi and contentdb release
 
 ## API
 
@@ -47,5 +41,5 @@ Feel free to contribute!
 * [ ] Github-Actions
   * [x] run tests
   * [x] Tests for pull requests
-  * [ ] Build and push to pypi for tagged commits
-  * [ ] Build and push to Luanti ContentDB for tagged commits
+  * [x] Build and push to pypi for tagged commits
+  * [x] Build and push to Luanti ContentDB for tagged commits

@@ -53,7 +53,9 @@ Some marketing text from the `Python website <https://www.python.org/about/>`_:
 
    These are some of the reasons people who use Python would rather not use anything else.
 
-And it's popular! And cause of that it has a `giant package index <https://pypi.org/>`_ filled by over 450.000 users!
+And it's popular! Because of that it has a `giant package index <https://pypi.org/>`_ with hundreds of
+thousands of ready-made packages — whatever you want to connect your world to, someone has probably already
+written the Python for it.
 
 
 Why Luanti?
@@ -62,14 +64,14 @@ Why Luanti?
    :alt: Luanti logo
    :align: left
 
-Why not Minecraft? Luanti is free. Not only you don't have to pay for Luanti (consider to `donate <https://www.luanti.org/get-involved/#donate>`_!), it's also open source!
-That's a big point, if you try to use this for example in a classroom.
+Why not Minecraft? Luanti is free. You don't have to pay for it (consider a `donation <https://www.luanti.org/get-involved/#donate>`_!),
+and it's open source too. That's a big point if you want to use this in a classroom.
 
-Also modding for minecraft isn't that easy, cause there is no official API or an embedded scripting language like Lua
-in Luanti. Mods have to be written in Java, but have to be recompiled on every Minecraft update.
-Cause of that many attempt for APIs appeared and disappeared in recent years.
+Modding Minecraft isn't that easy either, because it has no official API and no embedded scripting language
+like Lua. Mods have to be written in Java and recompiled on every Minecraft update, so many attempts at an
+API have appeared and disappeared over the years.
 
-In contrast Luanti modding in Lua is easy: no compilation, a official API and all game logic is also in Lua.
+Luanti modding in Lua is easy in contrast: no compilation, an official API, and all game logic is in Lua as well.
 
 Support Miney
 ---------------------
@@ -86,6 +88,7 @@ Table of Contents
 
    getting_started/quickstart
    getting_started/basics
+   getting_started/installation
 
 .. toctree::
    :caption: Examples

@@ -1,0 +1,47 @@
+name: miney Release
+on:
+  release:
+    types: [published]
+jobs:
+  release:
+    name: 📦 Publish
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for PyPI Trusted Publishing - no API token is stored anywhere.
+      id-token: write
+    steps:
+      - name: Check out the codebase.
+        uses: actions/checkout@v7
+
+      # The published version comes from miney.__version__, not from the tag. Catch a
+      # forgotten version bump here, before anything is published - PyPI would reject
+      # the duplicate only after ContentDB already got its release.
+      - name: Verify the tag matches miney.__version__
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(python -c 'import miney; print(miney.__version__)')"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME says $tag, miney.__version__ says $version."
+            echo "Bump __version__ in miney/__init__.py or retag."
+            exit 1
+          fi
+
+      - name: Build the sdist and the wheel
+        run: |
+          pip install build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Publish to ContentDB
+        env:
+          CONTENTDB_API_TOKEN: ${{ secrets.CONTENTDB_API_TOKEN }}
+          RELEASE_NOTES: ${{ github.event.release.body }}
+        run: |
+          python -c 'import json, os; tag = os.environ["GITHUB_REF_NAME"]; print(json.dumps({"method": "git", "title": tag, "ref": tag, "release_notes": os.environ["RELEASE_NOTES"]}))' \
+          | curl --fail-with-body -sS \
+              -X POST "https://content.luanti.org/api/packages/Miney/miney/releases/new/" \
+              -H "Authorization: Bearer $CONTENTDB_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data-binary @-

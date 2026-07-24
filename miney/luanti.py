@@ -454,7 +454,7 @@ class Luanti:
         Provides an iterable helper for accessing all available tool types.
 
         This is a shortcut for getting tool item strings with IDE auto-completion.
-        See :class:`~miney.tool.ToolIterable` for more details.
+        See :class:`~miney.ToolIterable` for more details.
 
         :Examples:
 

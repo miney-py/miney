@@ -20,7 +20,7 @@ class Callback:
     :meth:`~miney.callback.Callback.command` to register functions that are
     automatically called when events occur. This is handled in a background thread.
 
-    You can access this class via the :attr:`~miney.luanti.Luanti.callbacks` property.
+    You can access this class via the :attr:`~miney.Luanti.callbacks` property.
     """
     SUPPORTED_EVENTS = {"chat_message", "player_leaves", "player_joins"}
 

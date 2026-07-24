@@ -10,7 +10,7 @@ class PrivilegeManager:
     """
     Manages player privileges by providing a list-like interface.
 
-    This object is returned by the :attr:`~miney.player.Player.privileges`
+    This object is returned by the :attr:`~miney.Player.privileges`
     property and is not meant to be instantiated directly.
     """
     def __init__(self, player: 'Player'):

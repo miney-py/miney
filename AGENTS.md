@@ -84,11 +84,73 @@ The published documentation is generated from the code (`docs/`, autodoc + `view
 - **Check the rendered output for anything non-trivial**, especially code blocks and examples: `cd docs && make html`. Build into the normal `docs/_build/html/` and **leave the result on disk** — Robert opens those files to look at the rendered pages. Do not build into a throwaway directory and do not clean up afterwards. `docs/_build/` is gitignored, so it never ends up in a commit.
 - **The build must finish with zero warnings.** A broken cross-reference or a short title underline is a rendering bug, not noise.
 
+## How the docs read
+
+The generator rules above decide whether a page renders. These decide whether a beginner
+gets through it. The reader is someone learning Python who may not know what a terminal
+is — write for them, and the experienced reader is fine too.
+
+- **Two layers per topic, and the short one stays short.** `getting_started/quickstart.rst`
+  is the happy path and nothing else; `getting_started/installation.rst` catches every
+  "but what if". New depth goes to the detail page. A quickstart that grows is a quickstart
+  that stopped working.
+- **Answer "what do I type" before "why it works".** The explanation goes after the command,
+  or into the detail page — never in front of it.
+- **End on something visible.** A snippet that connects and stops teaches nothing. The
+  quickstart's first script writes into the chat and moves the sun, because a beginner needs
+  to see the world react. Every page-closing example should pay off that way.
+- **Never leave a reader without a next step.** Close a page with a link, or with a
+  `grid-item-card` set when there is more than one sensible direction.
+- **Emoji in section headings, octicons in the body.** Emoji are stripped from the anchor
+  (`🧰 Step 1: Install uv` → `#step-1-install-uv`) and show up in the sidebar. An
+  `:octicon:` in a heading builds the anchor id out of the SVG markup and ruins it — use
+  those in card titles, admonition titles and inline text only. One icon per heading.
+- **Not everything is a dropdown.** A page made of collapsed boxes is a page nobody opens.
+  `.. dropdown::` is for a genuine aside next to the main flow; anything a reader might
+  come looking for gets a real section on the detail page.
+- **Show commands the way the reader types them**, `uv run miney start`, not `miney start`,
+  and keep that prefix consistent across every page.
+- **Verify every example against the source before it ships.** Method names, `__repr__`
+  output and accepted value ranges — `lt.players.list()` sat in the API docs for a long
+  time without ever having existed.
+- **Second person, present tense, one idea per sentence.** "You install the library, and
+  Miney brings Luanti along." Name the trap where the reader will hit it, in an
+  `.. important::` or `.. warning::`, not three paragraphs earlier.
+
 ## Working agreement
 
 - Work happens on `dev`. `master` gets changes via PR. Don't commit to `master` directly.
 - Public API is re-exported in `miney/__init__.py` and listed in `__all__` — new public names belong in both.
 - Version is `__version__` in `miney/__init__.py`; `pyproject.toml` reads it statically via `[tool.setuptools.dynamic]`. There is no second place to bump.
+- Every user-visible change gets a `docs/changelog.rst` entry under the *unreleased* version heading — added, changed, fixed. Write it in the same commit as the change, not at release time. Internal refactoring, tests and tooling stay out; the changelog is read by users, not by us.
+
+## Releases
+
+Publishing a GitHub release publishes Miney everywhere. `.github/workflows/release.yml`
+runs on `release: published`, checks the tag against `miney.__version__`, builds, pushes
+to PyPI (Trusted Publishing, no token stored) and then creates the ContentDB release from
+the same tag. The GitHub release body becomes the ContentDB release notes verbatim.
+
+Tags are `v0.6.0`. PyPI gets `0.6.0` — the workflow strips the `v`.
+
+A release is a pull request plus one command:
+
+1. On `dev`: bump `__version__` in `miney/__init__.py`, give `docs/changelog.rst` its
+   version heading, and check that the entries match what actually changed.
+2. `uv run pytest` and `cd docs && make html` — both clean.
+3. Open the PR from `dev` to `master`, wait for CI, merge it.
+4. `gh release create v0.6.0 --target master --title "v0.6.0" --notes-file <notes>` —
+   the notes are the changelog section for this version, in Markdown.
+
+Nothing else triggers a publish. Pushing a tag does not, merging to `master` does not.
+
+The workflow file has to live on `master` for the release event to see it at all — that
+is a GitHub rule for repository-level events, so a release workflow edit only takes
+effect after it has been merged.
+
+If a run fails: the version guard runs before every publish and PyPI before ContentDB, so
+a failure leaves the later registries untouched. Delete the GitHub release and its tag,
+fix, tag again.
 
 ## Tests
 

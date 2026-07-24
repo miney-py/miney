@@ -62,8 +62,7 @@ class Nodes:
 
             >>> lt.players.IloveDirt.inventory.add(lt.nodes.names.default.dirt, 99)
 
-        :rtype: :class:`NameIterable`
-        :return: :class:`TypeIterable` object with categories. Look at the examples above for usage.
+        :return: An object with all node names, grouped by category. Look at the examples above for usage.
         """
         return self._types
 
@@ -71,7 +70,7 @@ class Nodes:
         """
         Set a single or multiple nodes at a given position.
 
-        You can get a list of all available node names with :attr:`~miney.nodes.Nodes.name`.
+        You can get a list of all available node names with :attr:`~miney.Nodes.names`.
 
         **The `node` parameter can be a single Node object or a list of Node objects for bulk setting.**
 
@@ -95,7 +94,7 @@ class Nodes:
             ... ]
             >>> lt.nodes.set(nodes_to_set)
 
-        :param node: A single :class:`~miney.Node` object or a list of :class:`~miney.Node` objects.
+        :param node: A single :class:`~miney.node.Node` object or a list of :class:`~miney.node.Node` objects.
         """
         # Set a single node
         if type(node) is Node:
@@ -124,7 +123,7 @@ class Nodes:
         If instead of a single point/node a list or tuple with 2 points/nodes is given, this function returns a list of
         nodes. This list contains a cuboid of nodes with the diagonal between the given points.
 
-        Tip: You can get a list of all available node types with :attr:`~miney.Luanti.node.type`.
+        Tip: You can get a list of all available node names with :attr:`~miney.Nodes.names`.
 
         :param point: A Point object
         :return: The node type on this position
