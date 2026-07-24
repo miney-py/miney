@@ -16,7 +16,7 @@ import subprocess
 import sys
 import traceback
 
-from .env import manage
+from .env import check, manage
 from .env.contentdb import default_world_name, game_label
 from .env.logs import follow, read_tail
 from .env.paths import ENV_DIR_NAME
@@ -430,6 +430,160 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+#: Markers for the three states a check step can be in, in the pretty and the plain
+#: variant. The plain one is not a fallback nobody sees: redirecting the command's
+#: output on Windows encodes with the locale code page, and a bare print of an emoji
+#: raises UnicodeEncodeError there - a check that crashes when piped into a file is
+#: worse than one that prints ASCII.
+_MARKERS_UNICODE = {check.OK: "✅", check.WARNING: "⚠️ ", check.FAILED: "❌"}
+_MARKERS_PLAIN = {check.OK: "[ ok ]", check.WARNING: "[warn]", check.FAILED: "[FAIL]"}
+
+
+def _markers() -> dict[str, str]:
+    """
+    The state markers this terminal can actually print.
+
+    :return: The unicode markers when standard output can encode them, plain ASCII
+        otherwise.
+    """
+    try:
+        "".join(_MARKERS_UNICODE.values()).encode(sys.stdout.encoding or "ascii")
+    except (UnicodeEncodeError, LookupError, AttributeError):
+        return _MARKERS_PLAIN
+    return _MARKERS_UNICODE
+
+
+def _print_report(report: check.CheckReport) -> None:
+    """
+    Print one line per checked layer.
+
+    :param report: What the checks found.
+    """
+    markers = _markers()
+    width = max(len(step.name) for step in report.steps)
+    for step in report.steps:
+        print(f"{markers[step.state]} {step.name.ljust(width)}  {step.detail}")
+        if step.state != check.OK and step.hint:
+            print(f"     {step.hint}")
+
+
+def _last_resort(paths: manage.EnvPaths) -> str:
+    """
+    The two ways to start over, for when nothing else worked.
+
+    Ordered by what they cost. Deleting the shared Luanti loses nothing that cannot be
+    downloaded again; deleting the environment loses every world the learner built in
+    it, so it comes second and says so plainly. Neither is ever offered as a y/n - a
+    command that can destroy a week of building has to be typed on purpose.
+
+    :param paths: The environment, for the real paths to name.
+    :return: A printable block.
+    """
+    if sys.platform == "win32":
+        remove_luanti = f'Remove-Item -Recurse -Force "{paths.luanti_dir}"'
+    else:
+        remove_luanti = f'rm -rf "{paths.luanti_dir}"'
+    return (
+        "\nIf none of that helps, you can start over:\n"
+        f"\n  {remove_luanti}\n"
+        "      Deletes Luanti and its games. Both are downloaded again on the next\n"
+        "      start, and none of your worlds are stored there.\n"
+        "\n  uv run miney remove --yes\n"
+        "      Deletes this project's .miney directory - including every world you\n"
+        "      have built in it. There is no undo.\n"
+    )
+
+
+def _explain_failure(step: check.CheckStep, paths: manage.EnvPaths) -> None:
+    """
+    Say what is wrong and which command puts it right.
+
+    Printed whenever a fix is not offered, is declined, or did not help - so a learner
+    always leaves with the command in front of them rather than only with a refusal.
+
+    :param step: The step that failed.
+    :param paths: The environment, for the last-resort paths.
+    """
+    if step.remedy is not None:
+        print(f"\nFix it with:\n  {step.remedy.command}")
+    print(_last_resort(paths))
+
+
+def _offer(step: check.CheckStep) -> bool:
+    """
+    Describe the repair, show the equivalent command, and ask whether to run it.
+
+    The command is shown before the question on purpose: the point is that the learner
+    finds out what Miney is about to do and how they would do it themselves, not that
+    they press a magic key.
+
+    :param step: The failing step, which must carry a remedy.
+    :return: True if the user agreed.
+    """
+    remedy = step.remedy
+    print(f"\nI can {remedy.what} for you. That is the same as running:")
+    print(f"  {remedy.command}")
+    try:
+        answer = input(f"Shall I {remedy.what}? [Y/n]: ").strip().lower()
+    except EOFError:
+        return False
+    return answer in ("", "y", "yes")
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    """
+    Verify that Python can drive Luanti, and offer to fix what stands in the way.
+
+    Diagnosis first, repair only with a yes: every step that Miney could put right is
+    described, shown as the command that does the same thing by hand, and then offered.
+    Nothing is downloaded, created or started without that yes, which is why this reads
+    with :func:`~miney.env.check.run_checks` rather than with ``ensure_world``.
+
+    Each step gets one repair attempt. A step that still fails after its own fix ran
+    ends the command with the command to run and the ways to start over, rather than
+    asking the same question again.
+
+    :param args: Parsed arguments.
+    :return: 0 when nothing failed, 1 otherwise. Warnings do not fail the command.
+    """
+    paths = manage.find_environment()
+    if paths is None:
+        print(
+            f"No {ENV_DIR_NAME} directory here, so there is nothing to check yet.\n"
+            "Set one up with: uv run miney init"
+        )
+        return 1
+
+    world = _world_to_act_on(paths, args)
+    game = manage.read_world_gameid(paths.world_dir(world)) or args.game
+    attempted: set[str] = set()
+
+    while True:
+        report = check.run_checks(paths, world, game)
+        _print_report(report)
+
+        failure = report.failure
+        if failure is None:
+            print("\nEverything is ready. Your Python scripts can drive this world.")
+            return 0
+
+        if (
+            failure.remedy is None
+            or failure.name in attempted
+            or not _stdin_is_interactive()
+        ):
+            _explain_failure(failure, paths)
+            return 1
+
+        if not _offer(failure):
+            _explain_failure(failure, paths)
+            return 1
+
+        attempted.add(failure.name)
+        failure.remedy.apply(_report)
+        print()
+
+
 def cmd_logs(args: argparse.Namespace) -> int:
     """
     Print the tail of a world's server log, optionally following it.
@@ -539,6 +693,12 @@ def build_parser() -> argparse.ArgumentParser:
     status = subparsers.add_parser("status", help="Show what exists and what is running.")
     common(status)
     status.set_defaults(func=cmd_status)
+
+    check_parser = subparsers.add_parser(
+        "check", help="Verify that Python can drive Luanti, and offer to fix what cannot."
+    )
+    common(check_parser)
+    check_parser.set_defaults(func=cmd_check)
 
     logs = subparsers.add_parser("logs", help="Show the server log.")
     common(logs)

@@ -4,17 +4,6 @@ Code Examples
 This section contains practical examples demonstrating how to use the Miney library.
 The code is included directly from the source files, so it's always up-to-date.
 
-Setup Checker (`check_setup.py`)
---------------------------------
-
-This script is the best starting point to verify that your Miney installation and server connection are working correctly.
-
-.. dropdown:: View Code
-
-   .. literalinclude:: ../examples/check_setup.py
-      :language: python
-      :linenos:
-
 Lua Console (`luaconsole.py`)
 -----------------------------
 

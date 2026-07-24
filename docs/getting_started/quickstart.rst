@@ -304,29 +304,43 @@ Save your Python file in the ``miney-world`` folder and start it like this:
 Verify your setup
 -----------------
 
-With your world from step 3 still open, it is a good idea to confirm that Python and Luanti really talk to each
-other. The ``check_setup.py`` script does exactly that: it connects to your server, performs a few basic actions,
-and reports whether it worked.
-
-.. dropdown:: View Code (`check_setup.py`)
-
-   .. literalinclude:: ../../examples/check_setup.py
-      :language: python
-      :linenos:
-
-Copy the code into a file named ``check_setup.py`` inside your ``miney-world`` folder and start it:
+With your world from step 3 still open, confirm that Python and Luanti really talk to each other:
 
 .. code-block:: text
 
-   uv run check_setup.py
+   uv run miney check
 
 .. code-block:: text
 
-   2025-08-11 01:03:43 | INFO     | ✅ Verification successful. Miney appears to be correctly set up!
-   2025-08-11 01:03:44 | INFO     | Disconnecting from server
-   2025-08-11 01:03:44 | INFO     | Script finished.
+   ✅ Miney       0.6.0 on Python 3.12.3
+   ✅ Luanti      5.16.1 (bundled)
+   ✅ World       'minetest_game' (Minetest Game)
+   ✅ Miney mod   installed and up to date
+   ✅ Server      running on port 30000
+   ✅ Connection  talking to Luanti 5.16.1
+   ✅ Privilege   'miney' has the 'miney' privilege
+   ✅ Content     412 node types, 34 tool types
 
-This is the best way to confirm your setup before diving into more complex projects. You can find this and other examples in the :doc:`../examples` section.
+   Everything is ready. Your Python scripts can drive this world.
+
+Each line is one layer the one above it stands on, so a failure tells you *where* the problem is rather than
+only that there is one. When Miney can fix it, it explains the problem, shows you the command that fixes it,
+and asks before doing anything:
+
+.. code-block:: text
+
+   ✅ Miney       0.6.0 on Python 3.12.3
+   ✅ Luanti      5.16.1 (bundled)
+   ✅ World       'minetest_game' (Minetest Game)
+   ✅ Miney mod   installed and up to date
+   ❌ Server      not running
+
+   I can start the server for you. That is the same as running:
+     uv run miney start --no-client
+   Shall I start the server? [Y/n]:
+
+Answer ``n`` and it prints the command instead, so you can run it yourself. ``miney check`` never downloads,
+creates or starts anything without a yes.
 
 
 First lines of code

@@ -1074,3 +1074,190 @@ def test_init_reports_a_locked_mod_install_cleanly(project, monkeypatch, capsys)
     error = capsys.readouterr().err
     assert "minetest_game" in error
     assert "miney init" in error
+
+
+# --- miney check --------------------------------------------------------------------
+
+
+def _report(*steps) -> "check.CheckReport":
+    from miney.env import check
+
+    return check.CheckReport(list(steps))
+
+
+def _step(name, state, detail="", hint="", remedy=None):
+    from miney.env import check
+
+    return check.CheckStep(name=name, state=state, detail=detail, hint=hint, remedy=remedy)
+
+
+def _remedy(applied: list, what="start the server", command="uv run miney start"):
+    from miney.env import check
+
+    return check.Remedy(
+        what=what, command=command, apply=lambda report: applied.append(what)
+    )
+
+
+def _green():
+    from miney.env import check
+
+    return _report(
+        _step("Miney", check.OK, "0.6.0"),
+        _step("Luanti", check.OK, "5.16.1 (bundled)"),
+    )
+
+
+def _broken(applied=None):
+    from miney.env import check
+
+    return _report(
+        _step("Miney", check.OK, "0.6.0"),
+        _step(
+            "Server",
+            check.FAILED,
+            "not running",
+            remedy=_remedy(applied) if applied is not None else None,
+        ),
+    )
+
+
+def test_check_prints_every_step_and_succeeds(project, monkeypatch, capsys):
+    main(["init"])
+    capsys.readouterr()
+    monkeypatch.setattr("miney.env.check.run_checks", lambda *a, **k: _green())
+
+    code = main(["check"])
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Miney" in out and "Luanti" in out and "5.16.1 (bundled)" in out
+
+
+def test_check_fails_with_a_non_zero_exit_code(project, monkeypatch, capsys):
+    main(["init"])
+    capsys.readouterr()
+    monkeypatch.setattr("miney.env.check.run_checks", lambda *a, **k: _broken())
+
+    assert main(["check"]) == 1
+
+
+def test_check_names_the_command_that_fixes_the_problem(project, monkeypatch, capsys):
+    applied: list = []
+    main(["init"])
+    capsys.readouterr()
+    monkeypatch.setattr("miney.env.check.run_checks", lambda *a, **k: _broken(applied))
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: False)
+
+    main(["check"])
+
+    out = capsys.readouterr().out + capsys.readouterr().err
+    assert "uv run miney start" in out
+    assert applied == []
+
+
+def test_check_offers_the_fix_and_applies_it_when_told_to(project, monkeypatch, capsys):
+    applied: list = []
+    main(["init"])
+    capsys.readouterr()
+    reports = [_broken(applied), _green()]
+    monkeypatch.setattr("miney.env.check.run_checks", lambda *a, **k: reports.pop(0))
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+    code = main(["check"])
+
+    out = capsys.readouterr().out
+    assert applied == ["start the server"]
+    assert code == 0
+    # The question says what will happen and shows the command it stands for, so the
+    # learner could have run it themselves.
+    assert "start the server" in out
+    assert "uv run miney start" in out
+
+
+def test_check_does_nothing_when_the_offer_is_declined(project, monkeypatch, capsys):
+    applied: list = []
+    main(["init"])
+    capsys.readouterr()
+    monkeypatch.setattr("miney.env.check.run_checks", lambda *a, **k: _broken(applied))
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+
+    code = main(["check"])
+
+    assert applied == []
+    assert code == 1
+    assert "uv run miney start" in capsys.readouterr().out
+
+
+def test_check_never_asks_without_a_terminal(project, monkeypatch, capsys):
+    # Piped, redirected or in CI: report and exit, never block on a question nobody
+    # will answer.
+    applied: list = []
+    main(["init"])
+    capsys.readouterr()
+    monkeypatch.setattr("miney.env.check.run_checks", lambda *a, **k: _broken(applied))
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: False)
+
+    def no_input(prompt=""):
+        raise AssertionError("check must not prompt without a terminal")
+
+    monkeypatch.setattr("builtins.input", no_input)
+
+    assert main(["check"]) == 1
+    assert applied == []
+
+
+def test_check_tries_a_fix_only_once_per_step(project, monkeypatch, capsys):
+    # The fix ran and the step is still broken: asking again would loop forever.
+    # init runs before the stubs go in - with a stubbed interactive stdin it would hit
+    # the game prompt, which rejects "y" and asks again forever.
+    applied: list = []
+    main(["init"])
+    capsys.readouterr()
+    monkeypatch.setattr(
+        "miney.env.check.run_checks", lambda *a, **k: _broken(applied)
+    )
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+    code = main(["check"])
+
+    assert code == 1
+    assert applied == ["start the server"]
+
+
+def test_check_offers_the_last_resort_when_it_fails(project, monkeypatch, capsys):
+    main(["init"])
+    capsys.readouterr()
+    monkeypatch.setattr("miney.env.check.run_checks", lambda *a, **k: _broken())
+    monkeypatch.setattr(cli, "_stdin_is_interactive", lambda: False)
+
+    main(["check"])
+
+    out = capsys.readouterr().out
+    assert "Luanti" in out
+    assert "uv run miney remove --yes" in out
+    # The harmless one first, and the one that destroys built worlds clearly marked.
+    assert out.index("Luanti") < out.index("uv run miney remove --yes")
+    assert "no undo" in out.lower() or "cannot be undone" in out.lower()
+
+
+def test_check_stays_quiet_about_the_last_resort_when_all_is_well(
+    project, monkeypatch, capsys
+):
+    main(["init"])
+    capsys.readouterr()
+    monkeypatch.setattr("miney.env.check.run_checks", lambda *a, **k: _green())
+
+    main(["check"])
+
+    assert "miney remove --yes" not in capsys.readouterr().out
+
+
+def test_check_without_an_environment_says_so(project, capsys):
+    code = main(["check"])
+
+    assert code == 1
+    assert "miney init" in capsys.readouterr().out
