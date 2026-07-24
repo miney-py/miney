@@ -93,8 +93,14 @@ The published documentation is generated from the code (`docs/`, autodoc + `view
 ## Tests
 
 ```
-pytest
+uv sync      # once - installs the "dev" dependency group
+uv run pytest
 ```
+
+The tooling lives in `[dependency-groups]` in `pyproject.toml`: `dev` (pytest), `docs`
+(Sphinx, `uv sync --group docs`) and `release` (build/twine). Groups are not part of the
+wheel, so none of it reaches a Miney user. Miney itself has no runtime dependencies —
+the package imports the standard library only, and that is worth keeping.
 
 Config in `pytest.ini`: `--strict-markers --maxfail=1` plus coverage — the run stops at the first failure by design.
 
