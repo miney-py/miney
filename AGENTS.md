@@ -146,6 +146,14 @@ the same tag. The GitHub release body becomes the ContentDB release notes verbat
 
 Tags are `v0.6.0`. PyPI gets `0.6.0` — the workflow strips the `v`.
 
+The ContentDB half uploads `mod_data/miney/` as a zip and does **not** use ContentDB's
+`method: git`. That method clones the repository and expects a mod at its root; our mod
+sits in `mod_data/`, and neither the API nor `.cdb.json` has a field to point at a
+subdirectory. A git release therefore fails asynchronously with *"Expected a mod or
+modpack, found unknown"* — the API call itself returns `success: true`, so nothing goes
+red. If a release ever looks fine but no new version shows up on ContentDB, open the
+task URL from the API response; that is where the real error is.
+
 A release is a pull request plus one command:
 
 1. On `dev`: bump `__version__` in `miney/__init__.py`, give `docs/changelog.rst` its
@@ -172,8 +180,11 @@ There is no way to rehearse a release. The workflow only ever runs on a real
 not a dry run.
 
 If a run fails: the version guard runs before every publish and PyPI before ContentDB, so
-a failure leaves the later registries untouched. Delete the GitHub release and its tag,
-fix, tag again.
+a failure leaves the later registries untouched. Fix the cause, then delete the GitHub
+release and create it again on the same tag — that fires a fresh `release: published`
+event, and GitHub reads the workflow from `master`, so the re-run picks up the fix. PyPI
+is set to `skip-existing`, so an already-published version is skipped rather than failing
+the run. Only delete the tag as well if the code itself has to change.
 
 ## Tests
 

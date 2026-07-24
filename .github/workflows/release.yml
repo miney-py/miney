@@ -36,15 +36,26 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Makes a re-run after a later step failed a no-op instead of an error.
+          skip-existing: true
 
       - name: Publish to ContentDB
         env:
           CONTENTDB_API_TOKEN: ${{ secrets.CONTENTDB_API_TOKEN }}
           RELEASE_NOTES: ${{ github.event.release.body }}
         run: |
-          python -c 'import json, os; tag = os.environ["GITHUB_REF_NAME"]; print(json.dumps({"method": "git", "title": tag, "ref": tag, "release_notes": os.environ["RELEASE_NOTES"]}))' \
-          | curl --fail-with-body -sS \
+          # ContentDB's "git" method clones the repository and expects to find a mod
+          # at its root. Ours lives in mod_data/, and the API has no field to point
+          # at a subdirectory, so upload the mod folder as a zip instead.
+          (cd mod_data && zip -q -r ../miney-mod.zip miney)
+          # Write the notes to a file: curl -F reads a leading "@" or "<" in an
+          # inline value as a filename, and release notes may start with anything.
+          printf '%s' "$RELEASE_NOTES" > release-notes.md
+          curl --fail-with-body -sS \
               -X POST "https://content.luanti.org/api/packages/Miney/miney/releases/new/" \
               -H "Authorization: Bearer $CONTENTDB_API_TOKEN" \
-              -H "Content-Type: application/json" \
-              --data-binary @-
+              -F "title=$GITHUB_REF_NAME" \
+              -F "commit=$GITHUB_SHA" \
+              -F "release_notes=<release-notes.md" \
+              -F "file=@miney-mod.zip"
