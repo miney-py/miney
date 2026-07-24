@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "miney"
+dynamic = ["version"]
+authors = [
+    {name = "Robert Lieback", email = "robertlieback@zetabyte.de"},
+]
+description = "The python interface to Luanti"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Games/Entertainment",
+]
+
+[project.urls]
+Homepage = "https://github.com/miney-py/miney"
+Documentation = "https://miney.readthedocs.io"
+
+[project.scripts]
+miney = "miney.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "miney.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["miney*"]
+
+[tool.setuptools.package-data]
+miney = ["mod_data/miney/*", "mod_data/miney/**/*"]

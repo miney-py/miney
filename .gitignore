@@ -37,8 +37,8 @@ $RECYCLE.BIN/
 [Ss]cripts
 pyvenv.cfg
 .venv
-env
-venv
+/env
+/venv
 pip-selfcheck.json
 
 ### macOS template
@@ -99,11 +99,17 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# uv: miney is a library, not an app - consumers resolve their own versions
+uv.lock
+
 # miney
 tmp
 Minetest
+docs/superpowers
+.miney/
 
 .aider*
 .coverage
 coverage.xml
 htmlcov/
+.superpowers

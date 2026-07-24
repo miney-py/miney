@@ -3,7 +3,7 @@
 Python interface to [Luanti](https://www.luanti.org/) (formerly Minetest). Two halves that must stay in sync:
 
 - `miney/luanticlient/` — a from-scratch implementation of the Luanti **client** network protocol (UDP, SRP auth, packet builders). Miney logs into the server as a real player account.
-- `mod/miney/` — the server-side Lua mod that receives commands and fires callbacks. Requires Luanti 5.7+.
+- `miney/mod_data/miney/` — the server-side Lua mod that receives commands and fires callbacks, shipped inside the wheel so an installed Miney always carries a matching copy. Requires Luanti 5.7+.
 - `miney/` (rest) — the user-facing API: `Luanti`, `Player`, `Nodes`, `Chat`, `Lua`, `Callback`, `Point`/`Vector`.
 
 Changing a wire message, command name or callback payload usually means touching **both** the Python side and the Lua mod.
@@ -32,7 +32,7 @@ These are not aspirations — they describe how the existing code already works.
 - **One entry point.** `Luanti` is the façade; everything hangs off it as a property: `lt.chat`, `lt.nodes`, `lt.players`, `lt.lua`, `lt.tool`, `lt.callbacks`. A new capability becomes a property on an existing namespace, never an object the user has to construct and wire up themselves.
 - **Keep the set of user-constructible classes tiny.** Today it is `Luanti`, `Point`, `Node`. Everything else (`Chat`, `Nodes`, `Inventory`, `PrivilegeManager`, the `*Iterable` helpers) is reached through a property and says so in its docstring. Every additional class in that set is one more concept in the learner's head.
 - **Properties for state, methods for actions.** `player.speed = 5`, `lt.time_of_day = 0.5` versus `chat.send_to_all(...)`, `nodes.set(...)`. It should read like a sentence.
-- **Expose the intent, hide the mechanism.** `player.fly = True` instead of teaching the privilege system; `player.creative` hides the MineClone2 `mcl_gamemode` versus privilege split. The mechanism stays reachable one level down (`player.privileges`, `lt.lua.run()`) for whoever wants it.
+- **Expose the intent, hide the mechanism.** `player.fly = True` instead of teaching the privilege system; `player.creative` hides the VoxeLibre (mineclone2) `mcl_gamemode` versus privilege split. The mechanism stays reachable one level down (`player.privileges`, `lt.lua.run()`) for whoever wants it.
 - **Behave like the builtins the learner already knows.** `Point` supports `+ - * /`, `len()`, iteration and indexing; `PrivilegeManager` behaves like a list (`in`, `append`, `remove`); `Luanti` is a context manager. Prefer implementing the right dunder over inventing a method name.
 - **Every user-visible class gets a `__repr__`.** `<Luanti Player "Steve">`, `<Players: [...]>`. The REPL echo is a teaching channel.
 - **Autocomplete is didactics, not comfort.** `lt.nodes.names.default.dirt` and `lt.tool.default.pick_mese` exist so the node/tool strings are discoverable with TAB instead of memorized. That machinery is worth its weight; keep new string-y APIs discoverable the same way.
@@ -88,7 +88,7 @@ The published documentation is generated from the code (`docs/`, autodoc + `view
 
 - Work happens on `dev`. `master` gets changes via PR. Don't commit to `master` directly.
 - Public API is re-exported in `miney/__init__.py` and listed in `__all__` — new public names belong in both.
-- Version is `__version__` in `miney/__init__.py`; `setup.py` parses it out with a regex. There is no second place to bump.
+- Version is `__version__` in `miney/__init__.py`; `pyproject.toml` reads it statically via `[tool.setuptools.dynamic]`. There is no second place to bump.
 
 ## Tests
 
