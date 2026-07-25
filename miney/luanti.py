@@ -11,6 +11,7 @@ from .luanticlient import LuantiClient
 from .luanticlient.exceptions import LuantiConnectionError
 from .nodes import Nodes
 from .player import PlayerIterable
+from .storage import Storage
 from .tool import ToolIterable
 from .env import manage
 from .env.paths import EnvPaths, find_env
@@ -242,6 +243,7 @@ class Luanti:
         self._lua: Lua = Lua(self.luanti)
         self._chat: Chat = Chat(self)
         self._nodes: Nodes = Nodes(self)
+        self._storage: Storage = Storage(self)
 
         self._tools_cache = self.lua.run(
             """
@@ -326,6 +328,24 @@ class Luanti:
         :return: :class:`~miney.nodes.Nodes`
         """
         return self._nodes
+
+    @property
+    def storage(self) -> 'Storage':
+        """
+        The world's key-value store, used like a dictionary.
+
+        The one place that survives your script ending, and a server restart with it.
+        See :class:`~miney.storage.Storage` for the whole picture.
+
+        :Example:
+
+            >>> lt.storage["home"] = "10,20,30"
+            >>> lt.storage["home"]
+            '10,20,30'
+
+        :return: :class:`~miney.storage.Storage`
+        """
+        return self._storage
 
     @property
     def callbacks(self) -> 'Callback':

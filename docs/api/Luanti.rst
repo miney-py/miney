@@ -46,4 +46,5 @@ All interaction with the game world starts with the ``Luanti`` object. The follo
    nodes
    players
    point
+   storage
    tool

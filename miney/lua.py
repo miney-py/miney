@@ -22,6 +22,67 @@ logger = logging.getLogger(__name__)
 
 LUA_IDENTIFIER_REGEX = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
+#: How much a formspec submit may carry, names and values of every field added up.
+#: The server drops anything larger without a word to the client
+#: (``pkt_read_formspec_fields`` in ``serverpackethandler.cpp``), so the request has to
+#: be measured here or it ends as a timeout with no reason given.
+FORMSPEC_FIELD_LIMIT = 640 * 1024
+
+#: The oldest Lua mod this version of Miney can talk to. The mod sends its own number
+#: with every answer (``MOD_API`` in ``mod_data/miney/init.lua``); anything lower, or a
+#: mod old enough not to send one at all, is refused with an error that says how to
+#: update instead of failing later on a name the mod does not have yet.
+#:
+#: This is not the Miney version and does not move with a release. Raise it only
+#: together with ``MOD_API``, when the two halves stop understanding each other.
+REQUIRED_MOD_API = 1
+
+#: Lua's own escapes for the characters that have one. Everything else below a space
+#: becomes a numeric escape - see :func:`_lua_string`.
+_LUA_ESCAPES = {
+    '"': '\\"',
+    "\\": "\\\\",
+    "\a": "\\a",
+    "\b": "\\b",
+    "\f": "\\f",
+    "\n": "\\n",
+    "\r": "\\r",
+    "\t": "\\t",
+    "\v": "\\v",
+}
+
+
+def _lua_string(value: str) -> str:
+    """
+    Quote a Python string as a Lua string literal.
+
+    Written by hand rather than with :func:`json.dumps`, which looks close enough to
+    Lua but escapes control characters as ``\\u0000``. Lua has no ``\\u`` escape, so
+    the server answered ``chat.send_to_all("hello\\x00world")`` with *invalid escape
+    sequence* - a Lua syntax error, at somebody who never wrote any Lua.
+
+    Control characters also may not travel unescaped: the server runs every incoming
+    formspec field through ``sanitize_untrusted()``, which truncates the code at the
+    first NUL and drops carriage returns.
+
+    Numeric escapes are always padded to three digits. ``"\\7"`` followed by a literal
+    ``8`` would otherwise read as ``"\\78"``.
+
+    :param value: The string to quote.
+    :return: A Lua string literal, quotes included.
+    """
+    out = ['"']
+    for character in value:
+        escape = _LUA_ESCAPES.get(character)
+        if escape is not None:
+            out.append(escape)
+        elif character < " " or character == "\x7f":
+            out.append(f"\\{ord(character):03d}")
+        else:
+            out.append(character)
+    out.append('"')
+    return "".join(out)
+
 
 class Lua:
     """
@@ -36,6 +97,9 @@ class Lua:
     def __init__(self, luanti: 'LuantiClient'):
         self.luanti = luanti
         self.form_ready: bool = False
+        #: Which contract version the Lua mod on the server answered with, or None while
+        #: nothing has answered yet. Compared against ``REQUIRED_MOD_API``.
+        self.mod_api: int | None = None
         self.pending_lua_results: dict[str, dict | None] = {}
         self._register_handlers()
 
@@ -71,6 +135,11 @@ class Lua:
             if response_data is None:
                 logger.debug("Received null JSON response. Likely an initial form. Ignoring.")
                 return
+
+            # Read before anything else returns early: the warm-up answer carries this
+            # and nothing else, and it is what run() waits for.
+            if isinstance(response_data, dict) and "mod_api" in response_data:
+                self.mod_api = response_data["mod_api"]
 
             execution_id = response_data.get("execution_id")
 
@@ -146,6 +215,31 @@ class Lua:
         s = s.replace(r'\\', '\\')
         return s
 
+    def _check_mod_api(self) -> None:
+        """
+        Refuse a Lua mod that is older than this version of Miney.
+
+        Miney ships the mod it needs, so the two halves normally move together. They
+        come apart when the mod was installed by hand or from ContentDB and only the
+        Python side was updated. Without this check the symptom is whatever the new
+        half asks for first - ``attempt to index global 'storage' (a nil value)`` -
+        which reads as a bug in the user's own code.
+
+        :raises LuantiConnectionError: If the mod is too old, or too old to say.
+        """
+        if self.mod_api is not None and self.mod_api >= REQUIRED_MOD_API:
+            return
+
+        found = "did not say which version it is" if self.mod_api is None \
+            else f"speaks version {self.mod_api}"
+        raise LuantiConnectionError(
+            f"The 'miney' mod on the server is too old for this version of Miney: it "
+            f"{found}, and version {REQUIRED_MOD_API} is needed. Update the mod on the "
+            f"server. For a world you started with the 'miney' command, that is "
+            f"'miney upgrade'; for somebody else's server, the admin updates it from "
+            f"https://content.luanti.org/packages/Miney/miney/"
+        )
+
     def send_command(self, command: str) -> bool:
         """
         Sends a chat command prefixed with /miney to the server.
@@ -158,6 +252,37 @@ class Lua:
     def run(self, lua_code: str, timeout: int = 10, execution_id: str = None) -> Any:
         """
         Execute Lua code on the server and return the result.
+
+        The code runs in a sandbox that lives as long as your connection, so a global
+        you assign in one call is still there in the next one::
+
+            lt.lua.run("counter = (counter or 0) + 1")
+            lt.lua.run("counter = (counter or 0) + 1")
+            print(lt.lua.run("return counter"))  # 2
+
+        The names are yours alone - another script on the same server has its own set -
+        and they are gone once you disconnect. Assigning a name the sandbox already
+        provides (``minetest = 5``) hides it for your connection only.
+
+        The sandbox has no ``_G``. ``_G.counter = 1`` raises *attempt to index global
+        '_G' (a nil value)* - assign the bare name instead, as above.
+
+        .. warning::
+
+           The sandbox keeps scripts from tripping over each other. It is not a security
+           boundary. Everything Luanti gives a mod is reachable from here, so granting
+           somebody the ``miney`` privilege on your server is granting them the server.
+
+        To keep something for longer than that, write it to ``storage``, the world's own
+        key-value store::
+
+            lt.lua.run("storage:set_string('base', '10,20,30')")
+            print(lt.lua.run("return storage:get_string('base')"))  # '10,20,30'
+
+        It lives in the world directory and survives a server restart, which is also the
+        trade-off: every script on that world shares one set of keys. It is Luanti's
+        ``StorageRef``, so ``set_string``, ``get_string``, ``set_int``, ``get_int``,
+        ``to_table`` and ``from_table`` all work.
 
         :param lua_code: The Lua code to execute.
         :param timeout: Maximum wait time in seconds for the result.
@@ -179,20 +304,24 @@ class Lua:
             logger.warning(f"Cannot execute Lua code: not fully connected (state: {self.luanti.state.state})")
             raise LuantiConnectionError("Not fully connected to the server")
 
-        # Ensure the code form is ready before proceeding.
-        if not self.form_ready:
+        # Ensure the code form is ready before proceeding. The same answer carries the
+        # mod's API number, so ask again when only the form is known - that happens when
+        # a callback event arrived before the first run().
+        if not self.form_ready or self.mod_api is None:
             logger.debug("Code form is not ready, requesting it now...")
             self.send_command("form")
 
             # Wait for the form to become ready
             form_timeout = time.time() + 5
-            while not self.form_ready and time.time() < form_timeout:
+            while (not self.form_ready or self.mod_api is None) and time.time() < form_timeout:
                 time.sleep(0.1)
 
             if not self.form_ready:
                 logger.error("Failed to receive code form from the server after request.")
                 raise LuantiConnectionError("Cannot execute Lua code: 'miney:code_form' is not available. "
                                       "Ensure the 'miney' mod is installed on the server.")
+
+        self._check_mod_api()
 
         # Generate a unique ID if none was provided
         if execution_id is None:
@@ -208,6 +337,18 @@ class Lua:
             "execute": "true",
             "execution_id": execution_id
         }
+
+        payload_size = sum(
+            len(name.encode()) + len(value.encode()) for name, value in fields.items()
+        )
+        if payload_size >= FORMSPEC_FIELD_LIMIT:
+            self.pending_lua_results.pop(execution_id, None)
+            raise LuaError(
+                f"This Lua code is too long to send: {payload_size} bytes, and the "
+                f"server accepts less than {FORMSPEC_FIELD_LIMIT}. It would be dropped "
+                f"on arrival without an answer. Send it in several smaller calls, or "
+                f"replace a long list of values in the code with a loop that builds it."
+            )
 
         try:
             self.luanti.send_formspec_response("miney:code_form", fields)
@@ -331,9 +472,7 @@ class Lua:
         if isinstance(data, (int, float)):
             return str(data)
         if isinstance(data, str):
-            # json.dumps is a safe way to create a quoted and escaped string
-            # that is compatible with Lua's string literal format.
-            return json.dumps(data, ensure_ascii=False)
+            return _lua_string(data)
         # Treat Python tuples like Lua arrays as well
         if isinstance(data, (list, tuple)):
             return "{" + ", ".join(self.dumps(item) for item in data) + "}"

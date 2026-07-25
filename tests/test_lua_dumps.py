@@ -48,3 +48,29 @@ def test_nested_structures_and_escaping(lua_for_dumps):
 def test_tuple_dump(lua_for_dumps: Lua):
     dumped = lua_for_dumps.dumps((1, "x"))
     assert dumped == '{1, "x"}'
+
+
+def test_control_characters_use_lua_escapes(lua_for_dumps: Lua):
+    """
+    Lua has no ``\\u`` escape. JSON writes one for every control character, and the
+    server answered such a string with a Lua syntax error.
+    """
+    assert lua_for_dumps.dumps("a\x00b") == '"a\\000b"'
+    assert lua_for_dumps.dumps("a\x1bb") == '"a\\027b"'
+    assert lua_for_dumps.dumps("a\x7fb") == '"a\\127b"'
+    assert "\\u" not in lua_for_dumps.dumps("".join(chr(c) for c in range(32)))
+
+    # The ones Lua names itself stay readable.
+    assert lua_for_dumps.dumps("a\nb\tc\rd") == '"a\\nb\\tc\\rd"'
+
+    # Three digits always, or "\1" before a literal "8" would read as "\18".
+    assert lua_for_dumps.dumps("\x018") == '"\\0018"'
+
+
+def test_backslashes_are_not_double_escaped(lua_for_dumps: Lua):
+    assert lua_for_dumps.dumps("a\\b") == '"a\\\\b"'
+    assert lua_for_dumps.dumps("\\u0000") == '"\\\\u0000"'
+
+
+def test_non_ascii_passes_through(lua_for_dumps: Lua):
+    assert lua_for_dumps.dumps("Höhle") == '"Höhle"'

@@ -135,6 +135,14 @@ is — write for them, and the experienced reader is fine too.
 - Work happens on `dev`. `master` gets changes via PR. Don't commit to `master` directly.
 - Public API is re-exported in `miney/__init__.py` and listed in `__all__` — new public names belong in both.
 - Version is `__version__` in `miney/__init__.py`; `pyproject.toml` reads it statically via `[tool.setuptools.dynamic]`. There is no second place to bump.
+- The two halves have their own contract number, and it is **not** the release version:
+  `MOD_API` in `mod_data/miney/init.lua` and `REQUIRED_MOD_API` in `miney/lua.py`. The
+  mod sends its number with every answer and `Lua.run` refuses anything older, so a
+  server still carrying last year's mod gets a sentence telling it to update instead of
+  a nil index deep inside somebody's script. Raise both together when a command, a
+  field or a name in the sandbox changes so that an older Python would not survive it —
+  and leave them alone at release time. `mod.conf` is not an option for this: Luanti's
+  spec has no `version` field, and its `release` belongs to ContentDB.
 - Every user-visible change gets a `docs/changelog.rst` entry under the *unreleased* version heading — added, changed, fixed. Write it in the same commit as the change, not at release time. Internal refactoring, tests and tooling stay out; the changelog is read by users, not by us.
 
 ## Releases
