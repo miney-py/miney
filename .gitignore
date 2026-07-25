@@ -115,3 +115,6 @@ docs/superpowers
 coverage.xml
 htmlcov/
 .superpowers
+
+# local demo playground, not part of the library
+/demo/

@@ -28,13 +28,26 @@ local default_player_animations = {
 --      - step_interval (number): The time between each animation step. (Default: 0.05)
 --      - animation (boolean): Whether to play walk/stand animations. (Default: true)
 --
-function smooth_move(player, params)
+-- @param owner (string) - The player name whose connection this animation belongs to.
+--   Its frames are registered under that name, so leaving cancels them. The sandbox
+--   binds this; a caller from mod code may leave it out.
+--
+function smooth_move(player, params, owner)
     -- Validate that there is something to do
     if not player or not params or
        (not params.destination and not params.distance and not params.look_at and not params.yaw and not params.pitch) then
         minetest.log("error", "[smooth_move] Invalid parameters: At least one action (destination, distance, look_at, yaw, pitch) is required.")
         return
     end
+
+    -- One animation per player, so a second call replaces the first instead of fighting
+    -- it. Both chains used to call set_pos every frame, from their own start position
+    -- captured at their own time, and the player drifted between the two paths without
+    -- reaching either. Teleporting away did not help either: the next frame recomputed
+    -- the position from the start the animation remembered and pulled the player back.
+    owner = owner or "(mod)"
+    local key = "move:" .. player:get_player_name()
+    miney_tasks.cancel_key(owner, key)
 
     -- Default values
     local duration = params.duration or 1.0
@@ -67,10 +80,20 @@ function smooth_move(player, params)
 
     -- Look direction
     if params.look_at then
-        local direction = vector.direction(start_pos, params.look_at)
+        -- Measured from where the player ends up, not from where they set off. Taking
+        -- it from start_pos aimed along the old sight line, so a camera that flew 34
+        -- nodes to look at a building arrived pointing past it - the further the
+        -- flight, the wider the miss. The instant path in Player.move does the same
+        -- thing for the same reason, and the two now agree.
+        local direction = vector.direction(target_pos or start_pos, params.look_at)
         local rotation = vector.dir_to_rotation(direction)
         target_yaw = rotation.y
-        target_pitch = rotation.x
+        -- Negated on purpose. vector.dir_to_rotation returns asin(direction.y), which
+        -- is positive when the direction points up, while set_look_vertical is
+        -- documented as "positive is downwards". Passing one to the other tilted the
+        -- camera the wrong way: a look_at 45 degrees above the player aimed 45 degrees
+        -- below instead, a 90 degree error, while the compass bearing was correct.
+        target_pitch = -rotation.x
         do_look = true
     else
         if params.yaw or params.pitch then
@@ -126,7 +149,7 @@ function smooth_move(player, params)
             player:set_look_vertical(start_pitch + step_pitch * current_step)
         end
 
-        minetest.after(step_interval, animation_step)
+        miney_tasks.after(owner, step_interval, animation_step, key)
     end
 
     -- Start animation

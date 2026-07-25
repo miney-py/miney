@@ -35,7 +35,7 @@ FORMSPEC_FIELD_LIMIT = 640 * 1024
 #:
 #: This is not the Miney version and does not move with a release. Raise it only
 #: together with ``MOD_API``, when the two halves stop understanding each other.
-REQUIRED_MOD_API = 1
+REQUIRED_MOD_API = 4
 
 #: Lua's own escapes for the characters that have one. Everything else below a space
 #: becomes a numeric escape - see :func:`_lua_string`.

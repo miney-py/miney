@@ -22,7 +22,11 @@ local form_version = 4
 -- would not survive, and raise REQUIRED_MOD_API in miney/lua.py to match.
 --
 --   1  storage in the sandbox, the instruction budget, no getfenv
-local MOD_API = 1
+--   2  timers belong to the connection that started them, miney_task_busy
+--   3  event payloads name their fields like miney/events.py, event filters are honoured
+--   4  node and player events (node_dug, node_placed, node_punched, player_dies,
+--      player_respawns, player_punched, player_hp_changed), filter values are checked
+local MOD_API = 4
 
 -- Logger function for consistent logging
 local function log(level, message)
@@ -108,6 +112,8 @@ function minetest.send_leave_message(player_name, timed_out)
     return builtin_send_leave_message(player_name, timed_out)
 end
 
+-- Before player.lua: smooth_move registers its frames here.
+dofile(minetest.get_modpath(modname) .. "/tasks.lua")
 dofile(minetest.get_modpath(modname) .. "/player.lua")
 local callbacks = dofile(minetest.get_modpath(modname) .. "/callbacks.lua")
 
@@ -239,6 +245,28 @@ local function scratch_for(player_name)
     local scratch = player_scratch[player_name]
     if not scratch then
         scratch = setmetatable({}, {__index = cached_env})
+
+        -- A timer this connection starts has to be findable again when it leaves, so
+        -- minetest.after is shadowed by one that keeps the handle it hands back.
+        -- Everything else falls through to the real table. Code in the sandbox is
+        -- written exactly as it would be in a mod; it is this side that remembers.
+        scratch.minetest = setmetatable({
+            after = function(delay, fn, ...)
+                return miney_tasks.after(player_name, delay, fn, nil, ...)
+            end,
+        }, {__index = minetest})
+
+        -- Bound to the caller for the same reason: its frames are this connection's.
+        scratch.smooth_move = function(player, params)
+            return smooth_move(player, params, player_name)
+        end
+
+        -- How Player.move(wait=True) asks whether the animation is over. Plumbing, not
+        -- something a script is meant to reach for.
+        scratch.miney_task_busy = function(key)
+            return miney_tasks.busy(player_name, key)
+        end
+
         player_scratch[player_name] = scratch
     end
     return scratch

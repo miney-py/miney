@@ -1,4 +1,6 @@
+import atexit
 import logging
+import weakref
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, Dict, Optional, Callable
@@ -41,13 +43,20 @@ def _log_progress(progress: manage.Progress) -> None:
         logger.info(progress.message)
 
 
-def _resolve_env_world(world: str | None) -> tuple[EnvPaths, WorldState] | None:
+def _resolve_env_world(world: str | None,
+                       port: int | None = None) -> tuple[EnvPaths, WorldState] | None:
     """
     Find the environment and the world to use inside it.
 
+    With no world named, this follows :func:`~miney.env.manage.pick_world`: the world on
+    the port that was asked for, the only world there is, or the only one that is
+    running. A script therefore keeps working when a second world appears next to the
+    one it uses, as long as that one is the one that is up.
+
     :param world: Explicitly requested world name, or None.
+    :param port: Explicitly requested port, or None.
     :return: The environment and the world's state, or None if there is no environment.
-    :raises MineyRunError: If no world matches, or if several exist and none was named.
+    :raises MineyRunError: If no world matches, or if it cannot be told which is meant.
     """
     paths = find_env()
     if paths is None:
@@ -68,13 +77,61 @@ def _resolve_env_world(world: str | None) -> tuple[EnvPaths, WorldState] | None:
         raise MineyRunError(
             f"{paths.root} has no world yet. Create one with: uv run miney start"
         )
-    if len(states) > 1:
-        names = ", ".join(s.name for s in states)
-        raise MineyRunError(
-            f"Several worlds exist ({names}). Say which one to use:\n"
-            f"    miney.Luanti(world=\"{states[0].name}\")"
-        )
-    return paths, states[0]
+
+    chosen = manage.pick_world(paths, port=port)
+    if chosen is not None:
+        return paths, chosen
+
+    # Ambiguous, and which kind of ambiguous decides what to suggest: with several
+    # servers up, naming one is the only way out; with none up, starting one answers it
+    # for every command afterwards.
+    running = [state for state in states if manage.is_server_up(state)]
+    suggestion = (running[0] if running else manage.last_used_world(paths) or states[0])
+    if running:
+        opening = "Several worlds are running, so Miney cannot tell which one you mean:"
+        closing = ""
+    else:
+        opening = ("Several worlds exist and none of them is running, so Miney cannot "
+                   "tell which one you mean:")
+        closing = ("\nOr start one - everything after that follows the world that is "
+                   f"up:\n    uv run miney start --world {suggestion.name}")
+    raise MineyRunError(
+        f"{opening}\n"
+        f"{manage.describe_worlds(paths)}\n"
+        f"Say which one:\n"
+        f'    miney.Luanti(world="{suggestion.name}"){closing}'
+    )
+
+
+def _make_atexit_disconnect(luanti_ref: "weakref.ReferenceType[Luanti]") -> Callable[[], None]:
+    """
+    Build the handler that disconnects one :class:`Luanti` when the script ends.
+
+    ``__del__`` cannot do this. Every namespace hanging off ``Luanti`` - ``Chat``,
+    ``Nodes``, ``Lua``, ``Storage``, ``Callback`` - keeps a reference back to it, so the
+    object is only ever reachable in a cycle and only the cyclic collector could free
+    it. CPython does not promise to run that collector at interpreter shutdown, and in
+    practice it does not: a script that ends without ``with`` never disconnected at all.
+    The server then held the session until it timed out, and running the same script
+    again a moment later was refused with *"Another client is already connected with
+    this name."* - which reads like the user's own fault and is not.
+
+    ``atexit`` runs while the interpreter is still whole, so the disconnect packet goes
+    out and the name is free immediately.
+
+    The handler holds a weak reference on purpose. ``atexit`` keeps whatever it is given
+    alive until the process ends, and a strong reference here would keep the connection
+    open for exactly as long as the bug it fixes did.
+
+    :param luanti_ref: Weak reference to the object to disconnect.
+    :return: The handler to hand to :func:`atexit.register`.
+    """
+    def _disconnect_at_exit() -> None:
+        luanti = luanti_ref()
+        if luanti is not None:
+            luanti.disconnect()
+
+    return _disconnect_at_exit
 
 
 @dataclass
@@ -158,7 +215,10 @@ class Luanti:
         :param port: The apisocket port, defaults to 30000
         :param invisible: If True, makes the Miney player invisible and grants creative privilege to be safe from mobs.
         :param world: Name of the world in the local ``.miney`` environment to connect to.
-            Only needed when several exist. Ignored when an explicit ``server`` is given.
+            Only needed when it cannot be worked out: with one world that one is used,
+            and with several the one whose server is running - so a second world next to
+            the one you work in changes nothing while it is shut down. Naming a ``port``
+            picks the world on that port. Ignored when an explicit ``server`` is given.
         :param autostart: Start the local Luanti server if it is not running, and open a
             Luanti game window connected to it. Ignored when an explicit server is given.
         :raises MineyRunError: If the environment has no matching world, several worlds
@@ -166,7 +226,7 @@ class Luanti:
         """
         env_selection = None
         if server is None:
-            env_selection = _resolve_env_world(world)
+            env_selection = _resolve_env_world(world, port)
 
         if env_selection is not None:
             paths, state = env_selection
@@ -255,6 +315,18 @@ class Luanti:
         )
         self._tool = ToolIterable(self, self._tools_cache)
 
+        # Registered once the connection really exists, so a failed connect leaves
+        # nothing behind to run at exit.
+        self._atexit_disconnect = _make_atexit_disconnect(weakref.ref(self))
+        atexit.register(self._atexit_disconnect)
+
+        # Without this, Miney's own player stays dead for the rest of the session: a
+        # corpse standing in the world that answers every command with the position it
+        # died at. See _get_up_again for why the client's own answer is not enough.
+        self._invisible = invisible
+        self._callbacks.register("player_dies", self._get_up_again,
+                                 {"player_name": self.playername})
+
         # Optionally make player invisible and grant creative privilege
         if invisible:
             try:
@@ -263,6 +335,36 @@ class Luanti:
                 player_obj.creative = True
             except Exception as e:
                 logger.error(f"Failed to set invisible/creative for player '{self.playername}': {e}")
+
+    def _get_up_again(self, event) -> None:
+        """
+        Send Miney's own player back into the world after it died.
+
+        Registered for every session, and never for anybody else's player - yours keeps
+        the death screen it is supposed to get.
+
+        The client does answer that screen by itself, but the answer is usually thrown
+        away: the server only accepts a form it is still expecting, and the mod shows
+        ``miney:code_form`` again for every command answer and every event - including
+        the one that says the player just died. The server then logs *"submitted
+        formspec ('__builtin:death') ... possible exploitation attempt"* and the player
+        stays dead. Asking for the respawn from Lua goes through the channel that is
+        always open anyway.
+
+        Invisibility is put back on afterwards, because a game that gives players a skin
+        gives them a fresh one when they respawn.
+
+        :param event: The :class:`~miney.events.PlayerDiesEvent` that arrived.
+        """
+        try:
+            self.lua.run(
+                f"local player = minetest.get_player_by_name({self.lua.dumps(self.playername)})\n"
+                f"if player then player:respawn() end"
+            )
+            if self._invisible:
+                self.players[self.playername].invisible = True
+        except Exception as error:  # noqa: BLE001 - a dead bot is not worth a traceback
+            logger.error("Could not respawn '%s' after it died: %s", self.playername, error)
 
     def __enter__(self):
         """
@@ -496,6 +598,13 @@ class Luanti:
         called automatically when the object is deleted or when exiting a 'with'
         block.
         """
+        # Nothing left for the interpreter to do at exit. Unregistering the instance's
+        # own handler rather than the shared function keeps other open connections.
+        handler = getattr(self, "_atexit_disconnect", None)
+        if handler is not None:
+            atexit.unregister(handler)
+            self._atexit_disconnect = None
+
         # Best-effort cleanup of registered callbacks before dropping the connection
         if hasattr(self, "_callbacks") and self._callbacks:
             try:

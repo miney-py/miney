@@ -6,12 +6,47 @@ import struct
 import threading
 import time
 import logging
+from dataclasses import dataclass
 from typing import Callable
 
 from .protocol import Protocol, OriginalPacketPayload, SplitPacketPayload, ControlPacketData
 from .state import ClientStateHolder
 
 logger = logging.getLogger(__name__)
+
+# Reliable delivery. These are Luanti's own numbers, taken from its connection layer
+# so that both ends agree about what "reliable" means.
+#
+# SEND_WINDOW is how many packets may be unacknowledged at once. It is the engine's
+# START_RELIABLE_WINDOW_SIZE (src/network/mtp/internal.h). It is what paces the sender:
+# a full window blocks until an ACK frees a slot, which on a fast link is no wait at
+# all and on a slow one is exactly as much waiting as the link needs.
+SEND_WINDOW = 64
+
+# How long to wait for an ACK before sending the packet again. The engine's own default
+# (`resend_timeout = 0.5`, internal.h), and its floor for an adaptive value is 0.1.
+RESEND_TIMEOUT = 0.5
+
+# Give up after this many attempts. The engine drops the peer at this point; Miney lets
+# the layer above notice, because "the answer never came" is a better error for a user
+# than a connection that vanished.
+MAX_SEND_TRIES = 5
+
+# How long a full window may block before the send is abandoned.
+SEND_STALL_TIMEOUT = 30.0
+
+# How often the receive loop wakes up. It only needs to be quick while there is
+# something to retransmit; the rest of the time it idles on the socket.
+POLL_WHILE_SENDING = 0.05
+POLL_WHILE_IDLE = 1.0
+
+
+@dataclass
+class _Unacked:
+    """A reliable packet that has been sent and not yet acknowledged."""
+    packet: bytes
+    sent_at: float
+    tries: int
 
 
 class Connection:
@@ -45,6 +80,12 @@ class Connection:
         self.split_seqnum = 0
         self.seqnum_lock = threading.Lock()
         self.split_seqnum_lock = threading.Lock()
+
+        # Reliable packets that are on their way out and not yet acknowledged, by
+        # sequence number. The receiver thread removes entries as ACKs arrive and
+        # wakes anyone waiting for a free window slot.
+        self._unacked: dict[int, _Unacked] = {}
+        self._unacked_cond = threading.Condition()
 
     def establish(self) -> bool:
         """
@@ -91,6 +132,9 @@ class Connection:
 
     def disconnect(self):
         """Disconnects from the server and cleans up resources."""
+        # Before the receiver stops, because it is the thread that collects ACKs. A
+        # last message that is still in flight gets a moment to land.
+        self._wait_for_acks(timeout=0.5)
         self.stop_receiver()
 
         if self.state.connected and self.state.peer_id is not None and self.sock and not self.state.access_denied_reason:
@@ -124,11 +168,29 @@ class Connection:
             logger.debug("Receiver thread started.")
 
     def stop_receiver(self):
-        """Stops the background receiver thread."""
+        """
+        Stops the background receiver thread.
+
+        The join is allowed to fail. A script that never used ``with`` leaves the
+        disconnect to ``Luanti.__del__``, which the interpreter calls while it is
+        already shutting down - and joining a thread at that point raises
+        ``PythonFinalizationError`` (a ``RuntimeError``, since Python 3.13). That
+        exception used to escape through :meth:`disconnect` before it got to send the
+        disconnect packet, so the server kept the session alive until it timed out and
+        the next run of the same script was refused with *"Another client is already
+        connected with this name."* The thread is a daemon and the process is ending
+        anyway, so not waiting for it costs nothing; getting the packet out is what
+        matters.
+        """
         self.running = False
+        with self._unacked_cond:  # let go of anyone waiting for a window slot
+            self._unacked_cond.notify_all()
         if self.receive_thread and self.receive_thread.is_alive():
-            self.receive_thread.join(timeout=1.0)
-            logger.debug("Receiver thread stopped.")
+            try:
+                self.receive_thread.join(timeout=1.0)
+                logger.debug("Receiver thread stopped.")
+            except RuntimeError as e:
+                logger.debug(f"Could not join the receiver thread, continuing anyway: {e}")
 
     def _receive_and_keep_alive_loop(self):
         last_keep_alive_time = time.time()
@@ -148,8 +210,13 @@ class Connection:
                     if self.running:
                         logger.error(f"Error in keep-alive: {e}")
 
+            self._resend_expired()
+
             try:
-                self.sock.settimeout(1.0)
+                # Only wake up often while there is something waiting to be
+                # acknowledged; an idle connection goes back to sitting on the socket.
+                self.sock.settimeout(
+                    POLL_WHILE_SENDING if self._unacked else POLL_WHILE_IDLE)
                 data, addr = self.sock.recvfrom(4096)
                 self.state.packets_received += 1
                 logger.debug(f"Received packet from {addr} with length {len(data)}")
@@ -180,6 +247,9 @@ class Connection:
                         logger.debug(
                             f"Updating peer_id from {self.state.peer_id} to {new_peer_id}")
                         self.state.peer_id = new_peer_id
+
+                elif parsed_packet.type == 'ack':
+                    self._handle_ack(parsed_packet.content.seqnum)
 
                 elif parsed_packet.type == 'direct_command':
                     p = parsed_packet.content
@@ -226,6 +296,120 @@ class Connection:
                 command_id = struct.unpack(">H", data[0:2])[0]
                 self.command_processor(command_id, data[2:])
 
+    def _send_reliable(self, packet: bytes, seqnum: int) -> bool:
+        """
+        Send a reliable packet and keep it until the server acknowledges it.
+
+        This is the whole of Miney's flow control. Luanti acknowledges every reliable
+        packet it accepts, and deliberately does *not* acknowledge one that arrives too
+        far ahead of what it expects - its own comment there reads *"if this was a valid
+        packet it's gonna be retransmitted"*. Miney never retransmitted, so a packet lost
+        to a full socket buffer or to the network was lost for good: the split message it
+        belonged to never completed and the call above waited out its timeout for an
+        answer that could not come. The old code avoided that by sending slowly enough
+        that it rarely happened - 495 bytes every 10 ms, about 45 KB/s.
+
+        With the packet kept and resent, speed stops being dangerous. What limits the
+        rate now is :data:`SEND_WINDOW` packets in flight: a full window waits for an
+        ACK, so a fast link runs at its own speed and a slow one is throttled to a window
+        per round trip, which is what a sender is supposed to do.
+
+        :param packet: The fully built packet, kept verbatim so a resend is identical.
+        :param seqnum: Its sequence number, which is how the ACK will name it.
+        :return: True if it went out, False if the window never cleared or the socket
+            refused it.
+        """
+        with self._unacked_cond:
+            deadline = time.monotonic() + SEND_STALL_TIMEOUT
+            while len(self._unacked) >= SEND_WINDOW:
+                if not self.running:
+                    logger.debug("Receiver stopped while waiting for a window slot.")
+                    return False
+                self._unacked_cond.wait(timeout=0.1)
+                if time.monotonic() > deadline:
+                    logger.error(
+                        f"No acknowledgement for {SEND_WINDOW} packets in "
+                        f"{SEND_STALL_TIMEOUT:.0f}s - giving up on this send.")
+                    return False
+            self._unacked[seqnum] = _Unacked(packet, time.monotonic(), 1)
+
+        try:
+            self.sock.sendto(packet, (self.host, self.port))
+            self.state.packets_sent += 1
+            return True
+        except Exception as e:
+            logger.error(f"Error sending reliable packet {seqnum}: {e}")
+            with self._unacked_cond:
+                self._unacked.pop(seqnum, None)
+                self._unacked_cond.notify_all()
+            return False
+
+    def _handle_ack(self, seqnum: int):
+        """
+        Retire an acknowledged packet and free its window slot.
+
+        :param seqnum: The sequence number the server acknowledged.
+        """
+        with self._unacked_cond:
+            if self._unacked.pop(seqnum, None) is not None:
+                self._unacked_cond.notify_all()
+
+    def _resend_expired(self):
+        """
+        Send again anything that has gone unacknowledged for too long.
+
+        Called from the receive loop, which is the only thread that learns about ACKs.
+        The packets are collected under the lock and sent outside it, so a slow socket
+        cannot hold up the ACKs that would empty the queue.
+        """
+        if not self._unacked:
+            return
+
+        now = time.monotonic()
+        due: list[bytes] = []
+        with self._unacked_cond:
+            for seqnum, pending in list(self._unacked.items()):
+                if now - pending.sent_at < RESEND_TIMEOUT:
+                    continue
+                if pending.tries >= MAX_SEND_TRIES:
+                    logger.error(
+                        f"Packet {seqnum} was not acknowledged after "
+                        f"{MAX_SEND_TRIES} attempts - dropping it.")
+                    del self._unacked[seqnum]
+                    continue
+                pending.tries += 1
+                pending.sent_at = now
+                due.append(pending.packet)
+                logger.debug(f"Resending packet {seqnum}, attempt {pending.tries}")
+            self._unacked_cond.notify_all()
+
+        for packet in due:
+            try:
+                self.sock.sendto(packet, (self.host, self.port))
+                self.state.packets_sent += 1
+            except Exception as e:
+                logger.error(f"Error resending a packet: {e}")
+
+    def _wait_for_acks(self, timeout: float):
+        """
+        Wait until everything sent has been acknowledged, or until time runs out.
+
+        Used on the way out, so that a last message is not still sitting in the queue
+        when the socket closes.
+
+        :param timeout: How long to wait, in seconds.
+        """
+        deadline = time.monotonic() + timeout
+        with self._unacked_cond:
+            while self._unacked and self.running:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    logger.debug(
+                        f"{len(self._unacked)} packets still unacknowledged at "
+                        f"disconnect.")
+                    return
+                self._unacked_cond.wait(timeout=remaining)
+
     def _get_next_split_seqnum(self) -> int:
         with self.split_seqnum_lock:
             seqnum = self.split_seqnum
@@ -247,17 +431,14 @@ class Connection:
             offset = i * MAX_CHUNK_SIZE
             chunk_data = data[offset:offset + min(MAX_CHUNK_SIZE, len(data) - offset)]
             with self.seqnum_lock:
+                seqnum = self.state.sequence_number
                 packet = self.protocol.create_reliable_split_packet(
-                    peer_id=self.state.peer_id, sequence_number=self.state.sequence_number,
+                    peer_id=self.state.peer_id, sequence_number=seqnum,
                     split_seqnum=split_seqnum, total_chunks=total_chunks, chunk_num=i,
                     chunk_data=chunk_data)
                 self.state.sequence_number = (self.state.sequence_number + 1) % 65536
-            try:
-                self.sock.sendto(packet, (self.host, self.port))
-                self.state.packets_sent += 1
-                time.sleep(0.01)
-            except Exception as e:
-                logger.error(f"Error sending split chunk {i + 1}/{total_chunks}: {e}")
+            if not self._send_reliable(packet, seqnum):
+                logger.error(f"Error sending split chunk {i + 1}/{total_chunks}")
                 return False
         return True
 
@@ -272,15 +453,10 @@ class Connection:
             return self.send_split_packet(data)
 
         with self.seqnum_lock:
+            seqnum = self.state.sequence_number
             packet = self.protocol.create_reliable_original_packet(
                 peer_id=self.state.peer_id,
-                sequence_number=self.state.sequence_number,
+                sequence_number=seqnum,
                 data=data)
             self.state.sequence_number = (self.state.sequence_number + 1) % 65536
-        try:
-            self.sock.sendto(packet, (self.host, self.port))
-            self.state.packets_sent += 1
-            return True
-        except Exception as e:
-            logger.error(f"Error sending packet: {e}")
-            return False
+        return self._send_reliable(packet, seqnum)

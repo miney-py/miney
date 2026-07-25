@@ -2,7 +2,7 @@
 Miney is the python interface to Luanti
 """
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 
 # base classes
 from .point import Point
