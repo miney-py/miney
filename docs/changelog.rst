@@ -7,8 +7,65 @@ The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`
 removed and security sections),
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
-Unreleased
-----------
+v0.7.0
+------
+
+A big release of small repairs. Blocks placed away from a player arrived nowhere, event
+filters were accepted and ignored, a smooth move looked the wrong way when it landed, and
+a script could not be run twice in a row - all of that works now. Uploading and reading
+the world got faster, seven new events let a script react to what people do, and the Lua
+sandbox no longer hands out the server's file system.
+
+Nothing was removed or renamed, so every call a v0.6.0 script makes still exists. A few
+things behave differently, and one of them - the Lua mod on the server has to be the one
+that ships with this release - stops a script before it starts. They are listed below.
+
+**Breaking**
+
+Version 0.6.0 is a day old, so the release most people are coming from is 0.5.8. This
+section covers everything since then, 0.6.0 included.
+
+- **The Lua mod on the server has to be updated.** The two halves ship together and
+  have their own version number, which this release raises. Miney checks it on the first
+  call and refuses with a sentence naming the fix, rather than failing somewhere inside
+  your own Lua. For a world started with the ``miney`` command that is
+  ``uv run miney upgrade``; on somebody else's server the admin updates the mod from
+  `ContentDB <https://content.luanti.org/packages/Miney/miney/>`_.
+- **Python 3.10 is the minimum version** (since v0.6.0, was 3.6).
+- **Event filters are applied now**, and a script written against a version that ignored
+  them sees fewer events. ``lt.callbacks.on("chat_message", {"sender_name": "Steve"})``
+  used to call the handler for every message from everyone; it now calls it for Steve.
+  Registrations that relied on that - a filter written and then worked around in the
+  handler - keep working, but a handler that was never told about the filter now runs
+  less often. A filter naming a field the event does not carry raises instead of matching
+  nothing, and so does a filter value the server cannot compare with ``==``, such as a
+  :class:`~miney.Point`.
+- **Lua names belong to one connection.** A global assigned in :meth:`~miney.Lua.run` used
+  to stay visible to every other script on the server until it restarted; now each
+  connection has its own set and it is cleared when the connection ends. A script that
+  picked up a value another script had left behind has to pass it on itself -
+  :attr:`lt.storage <miney.Luanti.storage>` is the place for that.
+- **``getfenv`` is gone from the Lua sandbox**, along with the way it gave to the
+  server's real globals and its file system.
+- **Lua sent to :meth:`~miney.Lua.run` has an instruction budget.** Code that does not
+  return after about a tenth of a second of Lua steps is stopped and comes back as an
+  error. It exists because such code used to freeze the whole server. Waiting for the
+  engine does not count, so ordinary work is unaffected - a deliberately long computation
+  in one call is not, and has to be split.
+- **A timer outlives its script no longer.** Anything scheduled with ``minetest.after``
+  is cancelled when the connection that asked for it goes. That is what stops a runaway
+  animation, and it also means a script cannot arm something and exit expecting it to
+  fire.
+- **:meth:`lt.nodes.set() <miney.Nodes.set>` raises instead of doing nothing.** A node
+  name on its own, or a list with a :class:`~miney.Point` in it, used to be accepted
+  silently and place no blocks; it now raises :class:`TypeError`. Code that appeared to
+  work and did not will start reporting itself.
+- **A second smooth :meth:`~miney.Player.move` replaces the first** instead of running
+  alongside it.
+- **:meth:`player.move(look_at=...) <miney.Player.move>` tilts the right way.** The
+  smooth path measured pitch upwards where Luanti measures it downwards, so a script that
+  compensated by negating its own angle has to stop doing that. Without ``smooth`` the
+  call raised for every target, so there is nothing to undo there.
 
 **Added**
 
