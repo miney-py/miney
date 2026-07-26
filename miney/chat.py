@@ -43,8 +43,40 @@ class Chat:
             f"return minetest.chat_send_player({self.lt.lua.dumps(player)}, {self.lt.lua.dumps(message)})"
         )
 
-    def format_message(self, playername: str, message: str):
-        return self.lt.lua.run("return minetest.format_chat_message({}, {})".format(playername, message))
+    def format_message(self, playername: str, message: str) -> str:
+        """
+        Render a message the way the server would show it in the chat.
+
+        Applies the server's ``chat_message_format`` setting, so what comes back is the
+        line as a player would read it, decorations and all::
+
+            >>> lt.chat.format_message("Steve", "hello")
+            '<Steve> hello'
+
+        Useful when a script wants to log or forward chat that looks like chat, rather
+        than assembling the angle brackets by hand and getting them wrong on a server
+        that has configured a different format.
+
+        :param playername: Who the message is from.
+        :param message: What they said.
+        :return: The formatted line.
+        :raises TypeError: If either argument is not a string.
+        """
+        # Both values went into the Lua source unquoted until now, so every ordinary
+        # call built something like format_chat_message(Steve, hello world) - two
+        # undefined globals and a syntax error at the space. Nothing crossing into Lua
+        # may skip dumps(); this function was the one place in Miney that did.
+        if not isinstance(playername, str):
+            raise TypeError(
+                f"'playername' must be str, got {type(playername).__name__}."
+            )
+        if not isinstance(message, str):
+            raise TypeError(f"'message' must be str, got {type(message).__name__}.")
+
+        return self.lt.lua.run(
+            f"return minetest.format_chat_message("
+            f"{self.lt.lua.dumps(playername)}, {self.lt.lua.dumps(message)})"
+        )
 
     def register_command(
         self,

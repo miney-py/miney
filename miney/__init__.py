@@ -2,7 +2,7 @@
 Miney is the python interface to Luanti
 """
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 # base classes
 from .point import Point
@@ -12,6 +12,7 @@ from .luanti import Luanti, default_playername
 from .player import Player, PlayerIterable
 from .chat import Chat
 from .nodes import Nodes
+from .storage import Storage
 from .lua import Lua
 from .inventory import Inventory
 from .exceptions import (
@@ -62,5 +63,6 @@ __all__ = [
     "PlayerOffline",
     "Point",
     "SessionReconnected",
+    "Storage",
     "ToolIterable",
 ]

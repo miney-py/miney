@@ -105,6 +105,8 @@ uv.lock
 # miney
 tmp
 Minetest
+# upstream C++ sources, reference only for the native client protocol
+luanti-src
 docs/superpowers
 .miney/
 
@@ -113,3 +115,6 @@ docs/superpowers
 coverage.xml
 htmlcov/
 .superpowers
+
+# local demo playground, not part of the library
+/demo/

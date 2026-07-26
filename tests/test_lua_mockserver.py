@@ -3,7 +3,7 @@ import json
 import pathlib
 import pytest
 from typing import Callable, Dict, Any
-from miney.lua import Lua
+from miney.lua import Lua, REQUIRED_MOD_API
 
 
 class _DummyState:
@@ -29,10 +29,13 @@ class MockLuanti:
     - Sends back JSON or legacy formspec content upon send_formspec_response()
     """
     def __init__(self, playername: str = "Tester", mode: str = "success",
-                 connected: bool = True, legacy: bool = False) -> None:
+                 connected: bool = True, legacy: bool = False,
+                 mod_api: int | None = REQUIRED_MOD_API) -> None:
         self.playername = playername
         self.mode = mode
         self.legacy = legacy
+        #: What the mod claims to speak. None emulates a mod from before the handshake.
+        self.mod_api = mod_api
         self.command_handler = _DummyCommandHandler()
         self.state = _DummyState(connected=connected, state_value=999)
         self.sent_messages: list[str] = []
@@ -44,7 +47,10 @@ class MockLuanti:
         if message.strip() == "/miney form":
             handler = self.command_handler.handlers.get("miney:code_form")
             if handler:
-                handler("null")  # JSON null -> marks form as ready, nothing stored
+                # A current mod answers the warm-up with its API number and nothing
+                # else; one from before the handshake answers with JSON null.
+                handler("null" if self.mod_api is None
+                        else json.dumps({"mod_api": self.mod_api}))
         return True
 
     def send_formspec_response(self, formname: str, fields: dict) -> bool:
@@ -123,6 +129,56 @@ def test_run_regular_error_raises():
     with pytest.raises(Exception) as exc:
         lua.run("return 0")
     assert "boom" in str(exc.value)
+
+
+def test_run_refuses_a_mod_from_before_the_handshake():
+    """The failure this replaces was a nil index inside the user's own Lua."""
+    client = MockLuanti(mode="success", legacy=False, mod_api=None)
+    lua = Lua(client)
+
+    with pytest.raises(Exception) as exc:
+        lua.run("return 1")
+    message = str(exc.value)
+    assert "too old" in message
+    assert "miney upgrade" in message
+    assert not client.sent_fields  # refused before any code went out
+
+
+def test_run_refuses_a_mod_that_is_behind():
+    client = MockLuanti(mode="success", legacy=False, mod_api=REQUIRED_MOD_API - 1)
+    lua = Lua(client)
+
+    with pytest.raises(Exception) as exc:
+        lua.run("return 1")
+    assert f"speaks version {REQUIRED_MOD_API - 1}" in str(exc.value)
+
+
+def test_run_accepts_a_newer_mod():
+    """A mod ahead of us still speaks what we know, so it must not be refused."""
+    client = MockLuanti(mode="success", legacy=False, mod_api=REQUIRED_MOD_API + 5)
+    lua = Lua(client)
+
+    assert lua.run("return 1") == 42
+
+
+def test_run_refuses_code_over_the_formspec_limit():
+    """
+    Oversized submits are dropped by the server without an answer, so the client has
+    to catch them - otherwise the only symptom is a timeout with no reason in it.
+    """
+    from miney.lua import FORMSPEC_FIELD_LIMIT
+
+    client = MockLuanti(mode="success", legacy=False)
+    lua = Lua(client)
+
+    with pytest.raises(Exception) as exc:
+        lua.run("local s = " + '"' + "x" * FORMSPEC_FIELD_LIMIT + '"')
+    assert "too long to send" in str(exc.value)
+    assert not lua.pending_lua_results
+
+    # Just under the limit still goes out. The other fields cost a few bytes too, so
+    # leave room for them rather than testing the exact boundary.
+    assert lua.run("--" + "x" * (FORMSPEC_FIELD_LIMIT - 200)) == 42
 
 
 def test_run_timeout_raises_fast():

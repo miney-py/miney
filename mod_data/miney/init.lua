@@ -12,6 +12,22 @@ end)()
 -- Formspec related variables
 local form_version = 4
 
+-- What this mod promises the Python side, sent with every answer so it can check once
+-- and say something useful instead of failing halfway through.
+--
+-- Deliberately not the Miney release number. The Python package is versioned in
+-- miney/__init__.py and that stays the only place to bump at release time; this counts
+-- something slower - the request and response contract between the two halves. Raise it
+-- when a command, a field or a name in the sandbox changes in a way an older Python
+-- would not survive, and raise REQUIRED_MOD_API in miney/lua.py to match.
+--
+--   1  storage in the sandbox, the instruction budget, no getfenv
+--   2  timers belong to the connection that started them, miney_task_busy
+--   3  event payloads name their fields like miney/events.py, event filters are honoured
+--   4  node and player events (node_dug, node_placed, node_punched, player_dies,
+--      player_respawns, player_punched, player_hp_changed), filter values are checked
+local MOD_API = 4
+
 -- Logger function for consistent logging
 local function log(level, message)
     local lvl = LOG_LEVELS[(level or LOG_LEVEL_DEFAULT):lower()] or LOG_LEVELS.info
@@ -59,14 +75,62 @@ local function is_local_address(addr)
     return addr == "::ffff:127.0.0.1" or addr == "127.0.0.1"
 end
 
+-- The Miney client identifies itself by the version string it sends in
+-- TOSERVER_CLIENT_READY. The engine keeps that per connection, so this is the one
+-- way to tell a script's session apart from a person with a real client.
+local function is_miney_client(player_name)
+    local client_info = minetest.get_player_information(player_name) or {}
+    return client_info.version_string == "miney_v1.0"
+end
+
+-- Miney logs in as a real player account, so every script start and stop announced
+-- "*** Miney joined the game." to everyone on the server. That is noise: nobody
+-- arrived, a program connected. The engine has no switch for it, but builtin calls
+-- these two through the global table (builtin/game/misc.lua), so a mod can wrap them.
+--
+-- Join is decided from the live connection; by the time the leave message is sent the
+-- client may already be gone, so remember the name while it is still knowable.
+local miney_client_names = {}
+local builtin_send_join_message = minetest.send_join_message
+local builtin_send_leave_message = minetest.send_leave_message
+
+function minetest.send_join_message(player_name)
+    if is_miney_client(player_name) then
+        miney_client_names[player_name] = true
+        log("action", "Suppressed join message for the Miney client '" .. player_name .. "'.")
+        return
+    end
+    return builtin_send_join_message(player_name)
+end
+
+function minetest.send_leave_message(player_name, timed_out)
+    if miney_client_names[player_name] then
+        miney_client_names[player_name] = nil
+        log("action", "Suppressed leave message for the Miney client '" .. player_name .. "'.")
+        return
+    end
+    return builtin_send_leave_message(player_name, timed_out)
+end
+
+-- Before player.lua: smooth_move registers its frames here.
+dofile(minetest.get_modpath(modname) .. "/tasks.lua")
 dofile(minetest.get_modpath(modname) .. "/player.lua")
 local callbacks = dofile(minetest.get_modpath(modname) .. "/callbacks.lua")
 
 local cached_env = nil
 
+-- Fetched here because minetest.get_mod_storage() only works while mods load; called
+-- later, from inside the sandbox, it returns nil. This is the one place in Miney where
+-- a script can put something that outlives its connection, and the server restart after
+-- it. It is written to the world directory, so it belongs to the world, not to a player.
+local mod_storage = minetest.get_mod_storage()
+
 -- Register the 'miney' privilege
+-- Worth being blunt in the description: this is not "may use a tool", it is code
+-- execution inside the server process. Grant it the way you grant /lua, not the way
+-- you grant /home.
 minetest.register_privilege("miney", {
-    description = "Allows execution of Lua code via the miney mod",
+    description = "Run Lua code on this server through Miney. Full mod-level access to the world - only grant to people you trust with the server itself.",
     give_to_singleplayer = false
 })
 
@@ -85,7 +149,7 @@ end
 local function show_code_form(player_name, result_table, execution_id)
     local client_info = minetest.get_player_information(player_name) or {}
     local client_ip = client_info.address
-    local is_miney_client = client_info and client_info.version_string == "miney_v1.0"
+    local miney_client = is_miney_client(player_name)
 
     -- Handle unauthorized access first and exit early.
     if not is_local_address(client_ip) and not minetest.check_player_privs(player_name, {miney = true}) then
@@ -105,7 +169,8 @@ local function show_code_form(player_name, result_table, execution_id)
         -- Create the error response payload.
         local error_response = {
             error = "Permission denied: You lack the 'miney' privilege to execute code.",
-            admins = admins_with_privs
+            admins = admins_with_privs,
+            mod_api = MOD_API
         }
         if execution_id then
             error_response.execution_id = execution_id
@@ -117,7 +182,7 @@ local function show_code_form(player_name, result_table, execution_id)
         chat_send_to_priv("privs", admin_notification)
 
         -- Send the appropriate response based on client type.
-        if is_miney_client then
+        if miney_client then
             minetest.show_formspec(player_name, "miney:code_form", minetest.write_json(error_response))
         else
             minetest.chat_send_player(player_name, error_response.error)
@@ -134,9 +199,14 @@ local function show_code_form(player_name, result_table, execution_id)
     end
 
     -- If we reach here, the player is authorized.
-    if is_miney_client then
+    if miney_client then
         --log("action", "Sending JSON response to LuantiClient " .. player_name)
-        
+
+        -- Carried by every answer including the empty warm-up one, so the client knows
+        -- what it is talking to before it sends the first line of code. Only for Miney:
+        -- a person looking at the form has no use for it in their result box.
+        response_data.mod_api = MOD_API
+
         local final_json_response = minetest.write_json(response_data)
         minetest.show_formspec(player_name, "miney:code_form", final_json_response)
     else
@@ -159,16 +229,106 @@ local function show_code_form(player_name, result_table, execution_id)
     return true
 end
 
+-- One scratch table per connected player, thrown away when they leave.
+--
+-- The sandbox used to be a single table shared by everyone, and it was also what the
+-- code wrote to. So `x = 1` in one script was still there in the next one, in every
+-- other player's scripts, and until the server restarted. `minetest = nil` - one typo
+-- away from `minetest = nil or something` - disabled the whole mod for the entire
+-- server, including Miney's own calls.
+--
+-- Reads still reach the shared environment through __index, so building it once is
+-- still worth it. Writes land in the player's own table and go away with them.
+local player_scratch = {}
+
+local function scratch_for(player_name)
+    local scratch = player_scratch[player_name]
+    if not scratch then
+        scratch = setmetatable({}, {__index = cached_env})
+
+        -- A timer this connection starts has to be findable again when it leaves, so
+        -- minetest.after is shadowed by one that keeps the handle it hands back.
+        -- Everything else falls through to the real table. Code in the sandbox is
+        -- written exactly as it would be in a mod; it is this side that remembers.
+        scratch.minetest = setmetatable({
+            after = function(delay, fn, ...)
+                return miney_tasks.after(player_name, delay, fn, nil, ...)
+            end,
+        }, {__index = minetest})
+
+        -- Bound to the caller for the same reason: its frames are this connection's.
+        scratch.smooth_move = function(player, params)
+            return smooth_move(player, params, player_name)
+        end
+
+        -- How Player.move(wait=True) asks whether the animation is over. Plumbing, not
+        -- something a script is meant to reach for.
+        scratch.miney_task_busy = function(key)
+            return miney_tasks.busy(player_name, key)
+        end
+
+        player_scratch[player_name] = scratch
+    end
+    return scratch
+end
+
+minetest.register_on_leaveplayer(function(player)
+    player_scratch[player:get_player_name()] = nil
+end)
+
+-- User code runs inside the server step, so for as long as it runs the whole server
+-- stands still - no player moves, nothing is saved. "while true do end" used to mean
+-- killing the process and losing whatever had not been written to disk yet.
+--
+-- The engine has no time limit to offer, but Lua counts instructions: a hook installed
+-- with the "count" mask fires every N of them, whatever the code is doing, and raising
+-- an error from inside it unwinds the call. The hook belongs to a coroutine, so the
+-- error stops that coroutine instead of the server step, and comes back through
+-- coroutine.resume in the same shape pcall would have returned.
+--
+-- Two things this depends on, both verified against a running server rather than
+-- assumed. LuaJIT does not check hooks inside a compiled trace, and "while true do end"
+-- is the first thing it compiles - with the hook alone the server froze exactly as
+-- before. jit.off(exec_func, true) keeps the user's code and everything it defines in
+-- the interpreter, where the hook fires. That costs nothing worth measuring here: these
+-- snippets spend their time inside engine calls, not in Lua arithmetic.
+--
+-- Not a hard guarantee: instructions are counted in Lua, not in C, so a single engine
+-- call that blocks for a minute still blocks for a minute. It catches the loop that a
+-- person actually writes by accident.
+--
+-- The budget is counted in Lua steps rather than seconds because that is what the hook
+-- offers. Measured on the test server: 20 million steps is about 0.02 s of frozen
+-- server and roughly 9 million iterations of a plain arithmetic loop. 200 million buys
+-- a tenth of a second in the worst case, which nobody notices, and leaves ten times the
+-- headroom for a script that genuinely has work to do.
+local INSTRUCTION_BUDGET = 200000000
+
+local function resume_with_budget(exec_func)
+    if jit and jit.off then
+        jit.off(exec_func, true)
+    end
+    local co = coroutine.create(exec_func)
+    debug.sethook(co, function()
+        debug.sethook(co)
+        error("Miney stopped this code after " .. INSTRUCTION_BUDGET .. " steps, to keep " ..
+              "the server responding. Is there a loop in it that never ends?", 2)
+    end, "", INSTRUCTION_BUDGET)
+    local success, result = coroutine.resume(co)
+    debug.sethook(co)
+    return success, result
+end
+
 -- Function to safely execute Lua code
-local function execute_lua_code(code)
+local function execute_lua_code(code, player_name)
     -- On the first run, build and cache the secure base environment.
     if not cached_env then
         log("action", "First run: Initializing and caching the secure Lua environment.")
         cached_env = {
             minetest = minetest,
+            storage = mod_storage,
             dump = dump,
             dump2 = dump2,
-            getfenv = getfenv,
             print = function(...)
                 local args = {...}
                 local result = ""
@@ -181,6 +341,11 @@ local function execute_lua_code(code)
             tostring = tostring,
             tonumber = tonumber,
             type = type,
+            -- No getfenv here on purpose. Lua 5.1 defines getfenv(0) as "the global
+            -- environment", so handing it out handed out the real _G: writable, shared
+            -- by every connection, and carrying io, os.remove and require. That made
+            -- the per-player scratch tables below decorative and gave anyone with the
+            -- 'miney' privilege read and write access to the server's file system.
             math = math,
             string = string,
             table = table,
@@ -233,10 +398,10 @@ local function execute_lua_code(code)
     local exec_func = factory_func()
 
     -- Now, directly set the environment of the final closure to our secure sandbox.
-    setfenv(exec_func, cached_env)
+    setfenv(exec_func, scratch_for(player_name))
 
     -- Execute the code and catch errors.
-    local success, result = pcall(exec_func)
+    local success, result = resume_with_budget(exec_func)
 
     if not success then
         return {error = "Runtime error: " .. tostring(result)}
@@ -283,7 +448,7 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 
         local execution_id = fields.execution_id
         if fields.execute and fields.lua and fields.lua ~= "" then
-            local result_table = execute_lua_code(fields.lua)
+            local result_table = execute_lua_code(fields.lua, player_name)
             if execution_id then
                 result_table.execution_id = execution_id
             end
@@ -308,8 +473,7 @@ minetest.register_chatcommand("miney", {
             show_code_form(name)
             return true
         elseif command == "callbacks" then
-            local client_info = minetest.get_player_information(name) or {}
-            if client_info and client_info.version_string == "miney_v1.0" then
+            if is_miney_client(name) then
                 -- Warm-up uses the code form now to keep expected formname aligned
                 show_code_form(name)
                 return true

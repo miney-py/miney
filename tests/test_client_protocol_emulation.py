@@ -243,7 +243,17 @@ def test_connect_success_and_events(fake_server: FakeServer, monkeypatch):
     fake_server.push_show_formspec("miney:code_form", "hello-json-or-legacy")
     _wait_for(lambda: calls == ["hello-json-or-legacy"])
 
-    # death screen auto-respawn sends formspec response
+    # The death screen is answered only when auto_respawn is switched on. It is off by
+    # default because the miney mod's own formspec makes the server refuse the answer;
+    # a Miney session respawns through Lua instead (Luanti._get_up_again).
+    fake_server.push_show_formspec("__builtin:death", "dead")
+    # A second form behind it, so the wait ends only once the death screen has been
+    # handled - packets are processed in the order they arrive.
+    fake_server.push_show_formspec("miney:code_form", "after-death")
+    _wait_for(lambda: calls == ["hello-json-or-legacy", "after-death"])
+    assert not any(f[0] == "__builtin:death" for f in fake_server.recorded_inventory_fields)
+
+    client.state.auto_respawn = True
     fake_server.push_show_formspec("__builtin:death", "dead")
     _wait_for(lambda: any(f[0] == "__builtin:death" for f in fake_server.recorded_inventory_fields))
     formname, fields = next(f for f in fake_server.recorded_inventory_fields if f[0] == "__builtin:death")

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import argparse
 from pathlib import Path
 
 import pytest
@@ -59,6 +60,9 @@ def no_real_connection(monkeypatch):
         def __init__(self, *args, **kwargs):
             pass
 
+        def register(self, *args, **kwargs):
+            return "token"
+
         def shutdown(self):
             return None
 
@@ -104,12 +108,109 @@ def test_several_worlds_require_naming_one(tmp_path, monkeypatch, no_real_connec
     paths = EnvPaths(root=tmp_path / ".miney")
     save_state(paths.state_file("alpha"), WorldState("alpha", "minetest_game", 30000))
     save_state(paths.state_file("beta"), WorldState("beta", "mineclone2", 30001))
+    monkeypatch.setattr(manage, "is_server_up", lambda state: False)
 
     with pytest.raises(MineyRunError) as error:
         luanti_module.Luanti(autostart=False)
 
     assert "alpha" in str(error.value)
     assert "beta" in str(error.value)
+
+
+def test_the_running_world_is_the_one_that_is_meant(tmp_path, monkeypatch,
+                                                    no_real_connection):
+    """
+    A second world must not take the answer away from a script that worked yesterday.
+
+    This is the whole point of the rule: a test world, a tutorial world or a world left
+    over from an experiment sits on disk beside the one being worked in, and the one
+    that is *running* is obviously the one meant.
+    """
+    monkeypatch.chdir(tmp_path)
+    paths = EnvPaths(root=tmp_path / ".miney")
+    save_state(paths.state_file("alpha"), WorldState("alpha", "minetest_game", 30000))
+    save_state(paths.state_file("beta"), WorldState("beta", "mineclone2", 30001))
+    monkeypatch.setattr(manage, "is_server_up", lambda state: state.name == "beta")
+
+    lt = luanti_module.Luanti(autostart=False)
+
+    assert lt.port == 30001
+
+
+def test_a_bare_start_reuses_a_world_instead_of_inventing_one(tmp_path, monkeypatch):
+    """
+    'miney start' with several worlds and none running must not create a new one.
+
+    It used to fall through to the world named after the default game, which with two
+    worlds already there meant a *third* one: a first start, a full map generation, and
+    minutes of waiting for a world nobody asked for.
+    """
+    monkeypatch.chdir(tmp_path)
+    paths = EnvPaths(root=tmp_path / ".miney")
+    for name, game, port in (("alpha", "minetest_game", 30000),
+                             ("beta", "mineclone2", 30001)):
+        save_state(paths.state_file(name), WorldState(name, game, port))
+        (paths.world_dir(name)).mkdir(parents=True, exist_ok=True)
+        (paths.world_dir(name) / "world.mt").write_text(f"gameid = {game}\n",
+                                                        encoding="utf-8")
+    monkeypatch.setattr(manage, "is_server_up", lambda state: False)
+    # 'beta' was worked in last.
+    later = paths.state_file("alpha").stat().st_mtime + 60
+    import os
+    os.utime(paths.state_file("beta"), (later, later))
+
+    args = argparse.Namespace(world=None, game=None)
+    world, game = cli_module._resolve_world_and_game(paths, args)
+
+    assert (world, game) == ("beta", "mineclone2")
+
+
+def test_a_named_port_picks_the_world_on_it(tmp_path, monkeypatch, no_real_connection):
+    monkeypatch.chdir(tmp_path)
+    paths = EnvPaths(root=tmp_path / ".miney")
+    save_state(paths.state_file("alpha"), WorldState("alpha", "minetest_game", 30000))
+    save_state(paths.state_file("beta"), WorldState("beta", "mineclone2", 30001))
+    monkeypatch.setattr(manage, "is_server_up", lambda state: True)
+
+    lt = luanti_module.Luanti(port=30001, autostart=False)
+
+    assert lt.port == 30001
+
+
+def test_several_running_worlds_are_all_named_in_the_error(tmp_path, monkeypatch,
+                                                           no_real_connection):
+    monkeypatch.chdir(tmp_path)
+    paths = EnvPaths(root=tmp_path / ".miney")
+    save_state(paths.state_file("alpha"), WorldState("alpha", "minetest_game", 30000))
+    save_state(paths.state_file("beta"), WorldState("beta", "mineclone2", 30001))
+    monkeypatch.setattr(manage, "is_server_up", lambda state: True)
+
+    with pytest.raises(MineyRunError) as error:
+        luanti_module.Luanti(autostart=False)
+
+    message = str(error.value)
+    assert "running" in message
+    assert "alpha" in message and "beta" in message
+
+
+def test_the_error_suggests_the_world_used_last(tmp_path, monkeypatch,
+                                                no_real_connection):
+    """Not the first one alphabetically - that is the throwaway world often enough."""
+    monkeypatch.chdir(tmp_path)
+    paths = EnvPaths(root=tmp_path / ".miney")
+    save_state(paths.state_file("alpha"), WorldState("alpha", "minetest_game", 30000))
+    save_state(paths.state_file("beta"), WorldState("beta", "mineclone2", 30001))
+    monkeypatch.setattr(manage, "is_server_up", lambda state: False)
+    # 'beta' was written a minute later than 'alpha'.
+    import os
+    later = paths.state_file("alpha").stat().st_mtime + 60
+    os.utime(paths.state_file("beta"), (later, later))
+
+    with pytest.raises(MineyRunError) as error:
+        luanti_module.Luanti(autostart=False)
+
+    assert 'miney.Luanti(world="beta")' in str(error.value)
+    assert "miney start --world beta" in str(error.value)
 
 
 def test_named_world_is_selected(tmp_path, monkeypatch, no_real_connection):

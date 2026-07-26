@@ -135,6 +135,14 @@ is — write for them, and the experienced reader is fine too.
 - Work happens on `dev`. `master` gets changes via PR. Don't commit to `master` directly.
 - Public API is re-exported in `miney/__init__.py` and listed in `__all__` — new public names belong in both.
 - Version is `__version__` in `miney/__init__.py`; `pyproject.toml` reads it statically via `[tool.setuptools.dynamic]`. There is no second place to bump.
+- The two halves have their own contract number, and it is **not** the release version:
+  `MOD_API` in `mod_data/miney/init.lua` and `REQUIRED_MOD_API` in `miney/lua.py`. The
+  mod sends its number with every answer and `Lua.run` refuses anything older, so a
+  server still carrying last year's mod gets a sentence telling it to update instead of
+  a nil index deep inside somebody's script. Raise both together when a command, a
+  field or a name in the sandbox changes so that an older Python would not survive it —
+  and leave them alone at release time. `mod.conf` is not an option for this: Luanti's
+  spec has no `version` field, and its `release` belongs to ContentDB.
 - Every user-visible change gets a `docs/changelog.rst` entry under the *unreleased* version heading — added, changed, fixed. Write it in the same commit as the change, not at release time. Internal refactoring, tests and tooling stay out; the changelog is read by users, not by us.
 
 ## Releases
@@ -154,6 +162,12 @@ modpack, found unknown"* — the API call itself returns `success: true`, so not
 red. If a release ever looks fine but no new version shows up on ContentDB, open the
 task URL from the API response; that is where the real error is.
 
+Release titles are unique per package on ContentDB, and a failed import keeps its name.
+Retrying after a failure gives `{"error":"A release with this name already exists"}` until
+the broken release is deleted by hand at
+`https://content.luanti.org/packages/Miney/miney/releases/`. A release with `size: 0` and
+`url: null` in the API listing is one of those corpses.
+
 A release is a pull request plus one command:
 
 1. On `dev`: bump `__version__` in `miney/__init__.py`, give `docs/changelog.rst` its
@@ -165,11 +179,17 @@ A release is a pull request plus one command:
 
 Nothing else triggers a publish. Pushing a tag does not, merging to `master` does not.
 
-The workflow file has to live on `master` for the release event to see it at all — that
-is a GitHub rule for repository-level events, so a release workflow edit only takes
-effect after it has been merged. That is also why the pull request comes first and the
-`gh release create` second: by the time the release event fires, `master` already carries
-the workflow. No separate push is needed for it.
+The workflow file has to live on `master` for the release event to fire at all — that is a
+GitHub rule for repository-level events. But the version that actually *runs* is the one
+in **the commit the tag points at**, not the current `master`. Both together give one
+rule: tag a commit of `master` that already contains the workflow you want to run.
+
+That is why the pull request comes first and `gh release create` second. It also means a
+workflow fix does not reach an existing tag: merging the fix to `master` changes nothing
+for `v0.6.0`, because that tag still points at the commit before it. Re-tagging is the
+only way, and it is only acceptable while nothing but the workflow has changed — check
+with `git diff --stat <tag>..master -- miney/ mod_data/ pyproject.toml` and expect it to
+be empty.
 
 Editing `release.yml` has one trap worth remembering: naming **any** entry under
 `permissions:` sets every unnamed scope to `none`. Adding `id-token: write` for PyPI

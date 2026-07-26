@@ -1,3 +1,4 @@
+import time
 from typing import Union, Iterable, List, TYPE_CHECKING, Optional
 from .exceptions import PlayerNotFoundError, PlayerOffline, LuaError
 from .point import Point
@@ -100,7 +101,7 @@ class Player:
             self.last_login = data["last_login"]
             self.privileges = data["privileges"]
         else:
-            raise PlayerNotFoundError("There is no player with that name")
+            raise PlayerNotFoundError(f"There is no player {self.name!r} on this server.")
 
         self.inventory: Inventory = Inventory(luanti, self)
         """Manipulate player's inventory.
@@ -173,6 +174,7 @@ class Player:
         smooth: bool = False,
         duration: float = 1.0,
         step_interval: float = 0.05,
+        wait: bool = False,
     ):
         """
         Moves the player and/or changes their look direction, with an option for smooth animation.
@@ -218,6 +220,20 @@ class Player:
                 duration=5
             )
 
+            # 7. Fly there and only carry on once the player has arrived
+            player.move(destination=Point(100, 25, 100), smooth=True, duration=5, wait=True)
+            lt.chat.send_to_all("Made it!")
+
+        .. note::
+
+            A smooth move returns straight away, so the script keeps running while the
+            player is still travelling. That is usually what you want - it is how a
+            camera flies over a building site while the building goes on. Use
+            ``wait=True`` when the next line depends on the player having arrived.
+
+            **A second smooth move on the same player replaces the first.** Two of them
+            at once used to drag the player between two paths and arrive at neither.
+
         :param destination: The target position as a :class:`~miney.point.Point`.
         :param distance: The distance to move forward (alternative to `destination`).
         :param look_at: A :class:`~miney.point.Point` to look at (alternative to `yaw`/`pitch`).
@@ -233,7 +249,13 @@ class Player:
         :param smooth: If ``True``, the action is animated over `duration`. If ``False``, it's instant.
         :param duration: The total time for the animation in seconds (if `smooth=True`).
         :param step_interval: The time between each animation step (if `smooth=True`).
-        :raises ValueError: If conflicting or no parameters are provided.
+        :param wait: If ``True``, block until the animation has finished. Needs
+                     ``smooth=True``. Waiting is not the same as
+                     ``time.sleep(duration)``: a step is scheduled for the *next* server
+                     frame, never sooner, so an animation always takes at least its
+                     duration and under load a little longer.
+        :raises ValueError: If conflicting or no parameters are provided, or if ``wait``
+                            is used without ``smooth``.
         """
         if all(p is None for p in [destination, distance, look_at, yaw, pitch]):
             raise ValueError("At least one action (destination, distance, look_at, yaw, pitch) must be provided.")
@@ -241,6 +263,11 @@ class Player:
             raise ValueError("Provide either 'destination' or 'distance', but not both.")
         if look_at is not None and (yaw is not None or pitch is not None):
             raise ValueError("Provide either 'look_at' or 'yaw'/'pitch', but not both.")
+        if wait and not smooth:
+            raise ValueError(
+                "'wait' needs 'smooth=True'. Without an animation there is nothing to "
+                "wait for - the player is already there when move() returns."
+            )
 
         params = {}
         if destination:
@@ -265,6 +292,8 @@ class Player:
             end
             """
             self.lt.lua.run(lua_code)
+            if wait:
+                self._wait_for_animation()
         else:
             # Instantaneous action
             lua_parts = []
@@ -278,8 +307,27 @@ class Player:
                 lua_parts.append(f"player:set_pos({self.lt.lua.dumps(target_pos)})")
 
             if "look_at" in params:
-                direction = params['look_at'] - self.position
-                lua_parts.append(f"player:set_look_dir({self.lt.lua.dumps(direction)})")
+                # Luanti has no set_look_dir - only set_look_horizontal and
+                # set_look_vertical - so the direction has to become two angles first.
+                # vector.dir_to_rotation returns them as {x = pitch, y = yaw}, which is
+                # exactly what smooth_move() in the mod already does for the animated
+                # path; doing the same here keeps instant and smooth in agreement.
+                #
+                # The direction is measured from where the player ends up rather than
+                # from where they started, so "teleport there and look at this" points
+                # at the thing instead of past it.
+                # The pitch is negated. The two halves of this disagree about which way
+                # is up: vector.dir_to_rotation returns asin(direction.y), positive when
+                # the direction points upwards, while set_look_vertical documents
+                # "positive is downwards". Feeding one straight into the other aims the
+                # camera at the mirror image of the target - correct compass bearing,
+                # inverted tilt - which is a 90 degree error when looking 45 degrees up.
+                lua_parts.append(
+                    f"local rot = vector.dir_to_rotation(vector.direction("
+                    f"player:get_pos(), {self.lt.lua.dumps(params['look_at'])})) "
+                    f"player:set_look_horizontal(rot.y) "
+                    f"player:set_look_vertical(-rot.x)"
+                )
             else:
                 if "yaw" in params:
                     lua_parts.append(f"player:set_look_horizontal({params['yaw']})")
@@ -288,6 +336,25 @@ class Player:
 
             if lua_parts:
                 self.lt.lua.run(f"local player = minetest.get_player_by_name('{self.name}'); if player then {' '.join(lua_parts)} end")
+
+    #: How often :meth:`move` with ``wait=True`` asks whether the animation is over. The
+    #: animation itself advances every ``step_interval``, so asking faster than that
+    #: would spend round trips on an answer that cannot have changed.
+    _WAIT_POLL_INTERVAL = 0.05
+
+    def _wait_for_animation(self) -> None:
+        """
+        Block until this player's smooth animation has finished.
+
+        Asked, not pushed. The alternative is for the mod to send a message when the
+        last frame runs, and that message would arrive on the callback channel, which
+        one thread dispatches. Waiting inside a chat command handler would then wait for
+        something that cannot be delivered until the handler returns - a deadlock a
+        beginner has no way to see coming. Polling blocks only the caller.
+        """
+        key = self.lt.lua.dumps(f"move:{self.name}")
+        while self.lt.lua.run(f"return miney_task_busy({key})"):
+            time.sleep(self._WAIT_POLL_INTERVAL)
 
     @property
     def speed(self) -> int:
@@ -384,8 +451,25 @@ class Player:
     def look_dir(self, value: Vector):
         """
         Sets the player's look direction using a vector.
+
+        Luanti has no ``set_look_dir`` to mirror its ``get_look_dir`` - a player is
+        aimed with two angles, not with a vector - so the vector is converted to a yaw
+        and a pitch here. Calling the method that does not exist is what this used to
+        do, and it raised *attempt to call method 'set_look_dir' (a nil value)* for
+        every value.
         """
-        self.lt.lua.run(f"minetest.get_player_by_name('{self.name}'):set_look_dir({self.lt.lua.dumps(value)})")
+        self.lt.lua.run(
+            f"""
+            local player = minetest.get_player_by_name({self.lt.lua.dumps(self.name)})
+            if not player then return false end
+            local rot = vector.dir_to_rotation({self.lt.lua.dumps(value)})
+            player:set_look_horizontal(rot.y)
+            -- Negated: dir_to_rotation counts pitch positive upwards,
+            -- set_look_vertical counts it positive downwards.
+            player:set_look_vertical(-rot.x)
+            return true
+            """
+        )
 
     @property
     def look_vertical(self):
@@ -570,8 +654,21 @@ class Player:
         """
         Get or set the player's visibility.
 
-        When set to ``True``, the player model, nametag, and minimap marker
-        are hidden. When ``False``, restores normal appearance.
+        When set to ``True``, the player model, nametag and minimap marker are hidden,
+        and nothing can point at them any more - no hitbox, no selection box. Miney's own
+        player is invisible from the moment it connects, unless you say
+        ``miney.Luanti(invisible=False)``.
+
+        Setting it back to ``False`` puts back what the player looked like before,
+        including the skin this game gave them. That is remembered in the player's
+        metadata rather than guessed, so it survives a script that ends while its player
+        is hidden.
+
+        .. code-block:: python
+
+            bot = lt.players[lt.playername]
+            bot.invisible = False       # now it can be seen, and hit
+            bot.invisible = True        # out of the way again
 
         .. note::
             This feature may not work for mobs in some games, so they may still attack the player. Maybe it's better to
@@ -597,11 +694,35 @@ class Player:
             raise TypeError("Value for invisible must be a boolean (True or False).")
 
         if value:
-            # Make player invisible
+            # What the player looked like is written down before it is taken away, so
+            # that turning this off puts back what this game gave them - a skin, a model,
+            # a size - instead of a guess. It goes into the player's own metadata, which
+            # survives a disconnect: a script that dies while its player is invisible
+            # leaves a way back rather than a permanently blank character.
             self.lt.lua.run(
                 f"""
                 local player = minetest.get_player_by_name('{self.name}')
                 if not player then return end
+
+                -- minetest.serialize and not write_json: a player's selectionbox is a
+                -- list of numbers *and* a 'rotate' flag in one table, and write_json
+                -- refuses to mix the two - it answers nil, and the appearance would be
+                -- lost with nothing said about it.
+                local meta = player:get_meta()
+                if meta:get_string("miney:before_invisible") == "" then
+                    local props = player:get_properties()
+                    meta:set_string("miney:before_invisible", minetest.serialize({{
+                        visual = props.visual,
+                        mesh = props.mesh,
+                        textures = props.textures,
+                        visual_size = props.visual_size,
+                        pointable = props.pointable,
+                        makes_footstep_sound = props.makes_footstep_sound,
+                        collisionbox = props.collisionbox,
+                        selectionbox = props.selectionbox,
+                        show_on_minimap = props.show_on_minimap
+                    }}) or "")
+                end
 
                 player:set_properties({{
                     visual = "cube",
@@ -620,21 +741,41 @@ class Player:
                 """
             )
         else:
-            # Make player visible
+            # Make player visible again, from what was written down when they were
+            # hidden. The fallback is only for a player this Miney never hid: it is a
+            # plain character, which is right in most games and at least visible in all
+            # of them.
             self.lt.lua.run(
                 f"""
                 local player = minetest.get_player_by_name('{self.name}')
                 if not player then return end
 
-                player:set_properties({{
-                    visual = "mesh",
-                    visual_size = {{x = 1, y = 1}},
-                    pointable = true,
-                    makes_footstep_sound = true,
-                    collisionbox = {{-0.3, -1.0, -0.3, 0.3, 1.0, 0.3}},
-                    selectionbox = {{-0.3, -1.0, -0.3, 0.3, 1.0, 0.3}},
-                    show_on_minimap = true
-                }})
+                local meta = player:get_meta()
+                local saved = meta:get_string("miney:before_invisible")
+                local restored = false
+                if saved ~= "" then
+                    -- deserialize answers nil for anything it cannot read, which is the
+                    -- whole error handling this needs; the sandbox has no pcall.
+                    local props = minetest.deserialize(saved)
+                    if type(props) == "table" then
+                        player:set_properties(props)
+                        restored = true
+                    end
+                    meta:set_string("miney:before_invisible", "")
+                end
+
+                if not restored then
+                    player:set_properties({{
+                        visual = "mesh",
+                        textures = {{"character.png"}},
+                        visual_size = {{x = 1, y = 1}},
+                        pointable = true,
+                        makes_footstep_sound = true,
+                        collisionbox = {{-0.3, -1.0, -0.3, 0.3, 1.0, 0.3}},
+                        selectionbox = {{-0.3, -1.0, -0.3, 0.3, 1.0, 0.3}},
+                        show_on_minimap = true
+                    }})
+                end
 
                 player:set_nametag_attributes({{
                     color = {{a = 255, r = 255, g = 255, b = 255}}
@@ -720,7 +861,9 @@ class PlayerIterable:
         else:
             if type(item_key) == int:
                 return self.__getattribute__(self.__online_players[item_key])
-            raise IndexError("unknown player")
+            online = ", ".join(repr(name) for name in self.__online_players)
+            who = f"Online: {online}." if online else "Nobody is online."
+            raise PlayerNotFoundError(f"There is no player {item_key!r}. {who}")
 
     def __len__(self):
         return len(self.__online_players)

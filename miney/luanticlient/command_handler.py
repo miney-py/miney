@@ -216,11 +216,14 @@ class CommandHandler:
     def _handle_death_screen(self):
         """Handles the death screen formspec."""
         if self.client.state.auto_respawn:
-            logger.info("Auto-respawning after death.")
+            # Off by default, see LuantiClientState.auto_respawn: the server refuses this
+            # answer whenever the mod has shown its own form in between, and says so in
+            # its log. Left here for a client used without the miney mod.
+            logger.info("Answering the death screen; the server may ignore it.")
             fields = {"btn_respawn": "true"}
             self.client.send_formspec_response("__builtin:death", fields)
         else:
-            logger.info("Received death screen, auto-respawn is disabled.")
+            logger.debug("Received the death screen; Miney respawns from Lua.")
 
     def _handle_chat_message(self, data: bytes):
         stream = io.BytesIO(data)

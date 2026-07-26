@@ -34,7 +34,13 @@ class ClientStateHolder:
         self.last_processed_command_id: int | None = None
 
         # Game world state
-        self.auto_respawn: bool = True
+        # Off, because answering the death screen from here does not work in a session
+        # that uses the miney mod - and every Miney session does. The server accepts an
+        # answer only for the form it still expects, and the mod shows 'miney:code_form'
+        # for every result and every event, so the answer is refused and logged as a
+        # "possible exploitation attempt" in the server's log. Luanti._get_up_again asks
+        # for the respawn over the Lua channel instead.
+        self.auto_respawn: bool = False
         self._player_position: dict[str, float] = {"x": 0.0, "y": 0.0, "z": 0.0}
         self._time_of_day: float = 0.0
         self._time_speed: float = 0.0

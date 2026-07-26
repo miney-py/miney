@@ -230,6 +230,18 @@ def _resolve_world_and_game(
         # The one world already here, reused with its own game.
         return worlds[0]
 
+    if args.game is None and len(worlds) > 1:
+        # Several worlds and no hint: the one that is up is the one being worked in, and
+        # starting it again only opens a window onto it; with none up, the one worked in
+        # last. Reaching for the default-named world instead *creates a new world* beside
+        # the ones already here - a first start, a full map generation, a long wait, and
+        # a world nobody asked for. The game comes from the world itself rather than from
+        # its recorded state, because only world.mt decides what a world is.
+        by_name = dict(worlds)
+        chosen = manage.pick_world(paths) or manage.last_used_world(paths)
+        if chosen is not None and chosen.name in by_name:
+            return chosen.name, by_name[chosen.name]
+
     if args.game is not None:
         game = args.game
     elif not worlds and _stdin_is_interactive():
@@ -243,11 +255,11 @@ def _world_to_act_on(paths: manage.EnvPaths, args: argparse.Namespace) -> str:
     """
     The world a command that acts on an existing one (stop, logs) should target.
 
-    Same principle as :func:`_resolve_world_and_game`: with no ``--world`` given, a lone
-    existing world is the obvious target, so ``miney stop`` after ``miney start`` just
-    stops it, whatever game it uses, instead of reaching for a default-named world that
-    was never created. With no world or several, the game-derived default name is kept so
-    the command's own "does not exist" or naming message still fires.
+    Same rule as everywhere else - :func:`~miney.env.manage.pick_world` - so ``miney
+    stop`` after ``miney start`` stops what was started, whatever game it uses and
+    however many other worlds sit next to it on disk. Without an answer, the
+    game-derived default name is kept so the command's own "does not exist" message
+    still fires.
 
     :param paths: The environment.
     :param args: Parsed arguments.
@@ -255,10 +267,13 @@ def _world_to_act_on(paths: manage.EnvPaths, args: argparse.Namespace) -> str:
     """
     if args.world is not None:
         return args.world
+    chosen = manage.pick_world(paths)
+    if chosen is not None:
+        return chosen.name
     worlds = _worlds_on_disk(paths)
     if len(worlds) == 1:
         return worlds[0][0]
-    return args.game
+    return default_world_name(args.game) if args.game else args.game
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -369,6 +384,23 @@ def cmd_stop(args: argparse.Namespace) -> int:
             "Start a world first with: uv run miney start"
         )
         return 0
+
+    # Without --world and without an answer from pick_world, stopping "the" world would
+    # aim at a name nobody started - the user watches nothing happen and reaches for the
+    # task manager. Say what is there instead.
+    if args.world is None and manage.pick_world(paths) is None and len(list_states(paths)) > 1:
+        running = [one for one in list_states(paths)
+                   if manage.server_status(one) != "stopped"]
+        if not running:
+            print("No server is running. The worlds in this project:")
+            print(manage.describe_worlds(paths))
+            return 0
+        print("Several worlds are running. Say which one to stop:")
+        print(manage.describe_worlds(paths))
+        for one in running:
+            print(f"    uv run miney stop --world {one.name}")
+        return 1
+
     manage.stop(
         paths,
         _world_to_act_on(paths, args),

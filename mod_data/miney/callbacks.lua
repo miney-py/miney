@@ -50,19 +50,301 @@ local function valid_chatcommand_name(name)
     return type(name) == "string" and name:match("^[a-z0-9_:+%-]+$") ~= nil
 end
 
--- Supported events that clients can subscribe to
-local SUPPORTED_EVENTS = {
-    chat_message = true,
-    player_leaves = true,
-    player_joins = true,
+-- The name of whoever a callback hands us, as a plain string.
+--
+-- Two things can go missing here and neither is an error: a node dug by a mod has no
+-- digger at all, and ObjectRef:get_player_name() answers "" for anything that is not a
+-- player - a mob punching someone, an arrow. Both arrive as "".
+local function object_name(obj)
+    if obj == nil then
+        return ""
+    end
+    return obj:get_player_name() or ""
+end
+
+-- A position as three plain numbers.
+--
+-- Luanti hands out vectors with a metatable, and write_json would carry whatever else
+-- is attached to them across the wire. Only x, y and z are anybody's business.
+local function point(pos)
+    return {x = pos.x, y = pos.y, z = pos.z}
+end
+
+-- Every event a client can subscribe to.
+--
+-- `on` is the Luanti registrar, `fields` turns its arguments into the payload the Python
+-- side receives, and `keys` names the fields a filter may match on. Adding an event means
+-- adding an entry here: the registration, the filtering and the dispatch below are
+-- written once and do not grow with the list.
+--
+-- The payload keys are spelled the way miney/events.py spells its attributes, so an event
+-- travels from Luanti into a Python attribute without being renamed anywhere on the way.
+local EVENTS = {
+    chat_message = {
+        on = minetest.register_on_chat_message,
+        keys = {"sender_name", "message"},
+        fields = function(name, message)
+            return {sender_name = name, message = message}
+        end,
+    },
+    player_joins = {
+        on = minetest.register_on_joinplayer,
+        keys = {"player_name", "last_login"},
+        fields = function(player, last_login)
+            return {player_name = player:get_player_name(), last_login = last_login}
+        end,
+    },
+    player_leaves = {
+        on = minetest.register_on_leaveplayer,
+        keys = {"player_name", "timed_out"},
+        fields = function(player, timed_out)
+            return {player_name = player:get_player_name(), timed_out = timed_out}
+        end,
+    },
+    node_dug = {
+        on = minetest.register_on_dignode,
+        keys = {"pos", "node_name", "player_name"},
+        fields = function(pos, oldnode, digger)
+            return {pos = point(pos), node_name = oldnode.name,
+                    player_name = object_name(digger)}
+        end,
+    },
+    node_placed = {
+        on = minetest.register_on_placenode,
+        keys = {"pos", "node_name", "player_name"},
+        fields = function(pos, newnode, placer)
+            return {pos = point(pos), node_name = newnode.name,
+                    player_name = object_name(placer)}
+        end,
+    },
+    node_punched = {
+        on = minetest.register_on_punchnode,
+        keys = {"pos", "node_name", "player_name"},
+        fields = function(pos, node, puncher)
+            return {pos = point(pos), node_name = node.name,
+                    player_name = object_name(puncher)}
+        end,
+    },
+    player_dies = {
+        on = minetest.register_on_dieplayer,
+        keys = {"player_name", "reason"},
+        fields = function(player, reason)
+            return {player_name = object_name(player),
+                    reason = (reason and reason.type) or "unknown"}
+        end,
+    },
+    player_respawns = {
+        on = minetest.register_on_respawnplayer,
+        keys = {"player_name"},
+        fields = function(player)
+            return {player_name = object_name(player)}
+        end,
+    },
+    player_punched = {
+        on = minetest.register_on_punchplayer,
+        keys = {"player_name", "hitter_name", "damage"},
+        fields = function(player, hitter, time_from_last_punch, tool_capabilities, dir, damage)
+            return {player_name = object_name(player), hitter_name = object_name(hitter),
+                    damage = damage or 0}
+        end,
+    },
+    player_hp_changed = {
+        -- The second argument is what makes this a *logger* rather than a modifier. A
+        -- modifier has to return the hp change it wants, and that answer would have to
+        -- come back from Python from inside the callback, with the server waiting. A
+        -- logger is only told what happened, which is all this can promise.
+        on = function(handler)
+            minetest.register_on_player_hpchange(handler, false)
+        end,
+        keys = {"player_name", "hp_change", "hp", "reason"},
+        fields = function(player, hp_change, reason)
+            -- The engine applies the change *after* the loggers have run, so get_hp()
+            -- here still answers with the health from before it - reporting that as 'hp'
+            -- would say "20 left" to somebody who just took four damage. So the value is
+            -- worked out, and kept inside the range the game allows: a hit that takes
+            -- more than is left ends at 0, not below.
+            local maximum = (player:get_properties() or {}).hp_max or 20
+            local after = math.max(0, math.min(player:get_hp() + hp_change, maximum))
+            return {
+                player_name = object_name(player),
+                hp_change = hp_change,
+                hp = after,
+                reason = (reason and reason.type) or "unknown",
+            }
+        end,
+    },
 }
 
--- [client_id] = { player = "<name>", subs = { chat_message = true }, cmds = { [name] = true } }
+-- [client_id] = { player = "<name>", subs = { chat_message = { [handler_id] = {filter = {...}} } }, cmds = { [name] = true } }
 local miney_cb = {
     clients = {},
     -- [public_name] = { client_id = "<uuid>", def = { ... } }
     commands = {}
 }
+
+local function event_names()
+    local names = {}
+    for name in pairs(EVENTS) do
+        names[#names + 1] = name
+    end
+    table.sort(names)
+    return table.concat(names, ", ")
+end
+
+local function is_scalar(value)
+    local kind = type(value)
+    return kind == "string" or kind == "number" or kind == "boolean"
+end
+
+-- One value, or a list of values, and every one of them something that can be compared
+-- with '=='.
+--
+-- Anything else is refused rather than accepted and never matched. A position is the
+-- case that makes this necessary: {pos = {x = 1, y = 2, z = 3}} looks like a perfectly
+-- sensible filter, and matches() would read that table as a list of accepted values,
+-- find no numbered entries in it and reject every event for the rest of the session -
+-- in silence, because nothing about "no events ever" says why.
+local function valid_filter_value(want)
+    if is_scalar(want) then
+        return true
+    end
+    if type(want) ~= "table" then
+        return false
+    end
+    local count = 0
+    for _ in pairs(want) do
+        count = count + 1
+    end
+    if count == 0 then
+        return false
+    end
+    for index = 1, count do
+        if not is_scalar(want[index]) then
+            return false
+        end
+    end
+    return true
+end
+
+-- A filter naming a field its event never sends would match nothing and say nothing
+-- about it, so it is refused at subscription time instead of at delivery time.
+local function valid_filter(event_name, filter)
+    if filter == nil then
+        return true
+    end
+    if type(filter) ~= "table" then
+        return nil, "A filter must be a table of field names and values."
+    end
+    local allowed = {}
+    for _, key in ipairs(EVENTS[event_name].keys) do
+        allowed[key] = true
+    end
+    for key, want in pairs(filter) do
+        if not allowed[key] then
+            return nil, ("Event '%s' has no field '%s'. It sends: %s."):format(
+                event_name, tostring(key), table.concat(EVENTS[event_name].keys, ", "))
+        end
+        if not valid_filter_value(want) then
+            return nil, ("Filter '%s' has to be a string, a number, a boolean or a list "
+                .. "of those. A position or any other table cannot be compared this way; "
+                .. "let the event through and decide in your own code."):format(tostring(key))
+        end
+    end
+    return true
+end
+
+-- A filter is a flat table of payload field -> accepted value, or field -> list of
+-- accepted values. Every field has to match; no filter accepts everything.
+--
+-- Deliberately no ranges and no areas. The one event that needs an area filter is
+-- player_moves, which needs a rate limit in the same breath, and both belong to that
+-- event rather than here.
+local function matches(filter, payload)
+    if filter == nil then
+        return true
+    end
+    for key, want in pairs(filter) do
+        local have = payload[key]
+        if type(want) == "table" then
+            local hit = false
+            for _, one in ipairs(want) do
+                if one == have then
+                    hit = true
+                    break
+                end
+            end
+            if not hit then
+                return false
+            end
+        elseif want ~= have then
+            return false
+        end
+    end
+    return true
+end
+
+local function anyone_wants(event_name)
+    for _, rec in pairs(miney_cb.clients) do
+        local subs = rec.subs and rec.subs[event_name]
+        if subs and next(subs) ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
+-- The single way an event leaves this mod.
+--
+-- One connection can watch the same event from several handlers that disagree about what
+-- is interesting, so every handler is its own subscription with its own filter, and the
+-- message names the handlers it is for. That keeps the whole comparison here: the Python
+-- side is told which of its functions this event is meant for and does not have to work
+-- it out a second time from the filters it once sent.
+--
+-- Still one message however many handlers match. Every event costs a formspec, and that
+-- channel carries the results of lua.run as well.
+local function broadcast(event_name, payload)
+    for client_id, rec in pairs(miney_cb.clients) do
+        local subs = rec.subs and rec.subs[event_name]
+        if subs then
+            local handlers = {}
+            for handler_id, sub in pairs(subs) do
+                if matches(sub.filter, payload) then
+                    handlers[#handlers + 1] = handler_id
+                end
+            end
+            if #handlers > 0 then
+                send_callbacks_json(rec.player, {
+                    event = event_name,
+                    payload = payload,
+                    ts = os.time(),
+                    client_id = client_id,
+                    handlers = handlers,
+                })
+            end
+        end
+    end
+end
+
+-- Hook every event into Luanti, once, while the mod loads. Luanti has no unregister for
+-- these - builtin/game/register.lua only ever appends - so registration cannot depend on
+-- anyone being interested yet. anyone_wants() is what makes that free: with nobody
+-- subscribed the handler walks an empty table and returns, and the payload for the event
+-- is never built.
+--
+-- The wrapper returns nothing on purpose. A truthy return from an on_chat_message
+-- handler would swallow the message. An event whose return value the engine actually
+-- reads - register_on_prejoinplayer, the allow_* family - cannot be listed in EVENTS at
+-- all, because the answer would have to come back from Python from inside the callback.
+local function register_events()
+    for name, ev in pairs(EVENTS) do
+        ev.on(function(...)
+            if anyone_wants(name) then
+                broadcast(name, ev.fields(...))
+            end
+        end)
+    end
+end
 
 local function cleanup_player_callbacks(player_name)
     local to_unregister = {}
@@ -141,12 +423,31 @@ local function handle_receive_fields(player, fields)
             send_cb_error(player_name, "Field 'events' must be a list.", client_id, "bad_request")
             return true
         end
+        local handler_id = req.handler
+        if type(handler_id) ~= "string" or handler_id == "" then
+            send_cb_error(player_name, "Missing 'handler' in request.", client_id, "bad_request")
+            return true
+        end
+        -- Everything is checked before anything is stored, so a rejected request leaves
+        -- no half-finished subscription behind.
         for _, ev in ipairs(events) do
-            if SUPPORTED_EVENTS[ev] then
-                rec.subs[ev] = true
+            if not EVENTS[ev] then
+                send_cb_error(player_name, ("Unknown event '%s'. Available: %s."):format(
+                    tostring(ev), event_names()), client_id, "bad_request")
+                return true
+            end
+            local filter_ok, why = valid_filter(ev, req.filter)
+            if not filter_ok then
+                send_cb_error(player_name, why, client_id, "bad_request")
+                return true
             end
         end
-        log("action", ("register: client_id=%s, events_count=%d"):format(client_id, #(req.events or {})))
+        for _, ev in ipairs(events) do
+            rec.subs[ev] = rec.subs[ev] or {}
+            rec.subs[ev][handler_id] = {filter = req.filter}
+        end
+        log("action", ("register: client_id=%s, handler=%s, events_count=%d, filtered=%s"):format(
+            client_id, handler_id, #(req.events or {}), tostring(req.filter ~= nil)))
         send_cb_ack(player_name, action, client_id)
         return true
 
@@ -156,12 +457,23 @@ local function handle_receive_fields(player, fields)
             send_cb_error(player_name, "Field 'events' must be a list.", client_id, "bad_request")
             return true
         end
+        -- Without a handler this drops every subscription for the event, which is what
+        -- a client shutting down sends.
+        local handler_id = req.handler
         for _, ev in ipairs(events) do
-            if SUPPORTED_EVENTS[ev] then
-                rec.subs[ev] = nil
+            if EVENTS[ev] and rec.subs[ev] then
+                if handler_id then
+                    rec.subs[ev][handler_id] = nil
+                    if next(rec.subs[ev]) == nil then
+                        rec.subs[ev] = nil
+                    end
+                else
+                    rec.subs[ev] = nil
+                end
             end
         end
-        log("action", ("unregister: client_id=%s, events_count=%d"):format(client_id, #(req.events or {})))
+        log("action", ("unregister: client_id=%s, handler=%s, events_count=%d"):format(
+            client_id, tostring(handler_id), #(req.events or {})))
         send_cb_ack(player_name, action, client_id)
         return true
 
@@ -190,7 +502,7 @@ local function handle_receive_fields(player, fields)
                 log("action", ("chatcommand invoked: name=%s, issuer=%s, param=%s"):format(name, issuer, param or ""))
                 local event = {
                     event = "chatcommand",
-                    payload = { name = name, issuer = issuer, param = param or "" },
+                    payload = { command_name = name, issuer = issuer, param = param or "" },
                     ts = os.time(),
                     client_id = client_id,
                 }
@@ -229,62 +541,15 @@ local function handle_receive_fields(player, fields)
     end
 end
 
--- Broadcast chat messages to subscribed Miney clients
-minetest.register_on_chat_message(function(name, message)
-    local delivered = 0
-    for client_id, rec in pairs(miney_cb.clients) do
-        if rec.subs and rec.subs.chat_message then
-            local event = {
-                event = "chat_message",
-                payload = { name = name, message = message },
-                ts = os.time(),
-                client_id = client_id,
-            }
-            send_callbacks_json(rec.player, event)
-            delivered = delivered + 1
-        end
-    end
-    log("info", ("on_chat_message: name=%s, delivered=%d"):format(name, delivered))
-    return false
-end)
+register_events()
 
--- Cleanup and event generation on player leave
+-- After register_events(), and that is not cosmetic: Luanti runs leave handlers in
+-- registration order, so the player_leaves event goes out while the leaving client's
+-- subscriptions still exist. Tearing them down first would drop the last event.
 minetest.register_on_leaveplayer(function(player, timed_out)
     local player_name = player:get_player_name()
     log("action", ("on_leaveplayer: player=%s, timed_out=%s"):format(player_name, tostring(timed_out)))
-
-    -- Broadcast 'player_leaves' event to subscribed Miney clients
-    for client_id, rec in pairs(miney_cb.clients) do
-        if rec.subs and rec.subs.player_leaves then
-            local event = {
-                event = "player_leaves",
-                payload = { name = player_name, timed_out = timed_out },
-                ts = os.time(),
-                client_id = client_id,
-            }
-            send_callbacks_json(rec.player, event)
-        end
-    end
-
     cleanup_player_callbacks(player_name)
-end)
-
--- Broadcast an event when a new player joins
-minetest.register_on_joinplayer(function(player, last_login)
-    local player_name = player:get_player_name()
-    log("action", ("on_joinplayer: player=%s, last_login=%s"):format(player_name, tostring(last_login)))
-
-    for client_id, rec in pairs(miney_cb.clients) do
-        if rec.subs and rec.subs.player_joins then
-            local event = {
-                event = "player_joins",
-                payload = { name = player_name, last_login = last_login },
-                ts = os.time(),
-                client_id = client_id,
-            }
-            send_callbacks_json(rec.player, event)
-        end
-    end
 end)
 
 -- Cleanup on shutdown

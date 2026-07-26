@@ -321,6 +321,77 @@ def server_status(state: WorldState) -> str:
     return "stopped"
 
 
+def pick_world(paths: EnvPaths, port: int | None = None) -> WorldState | None:
+    """
+    The world a command that was not told which one means.
+
+    One rule, used by the command line and by :class:`~miney.luanti.Luanti` alike, so a
+    ``miney start`` and the script run after it cannot disagree about which world they
+    are talking about:
+
+    1. the world listening on ``port``, when a port was named;
+    2. the only world there is;
+    3. the only world whose server is **running**.
+
+    Rule 3 is what makes a second world harmless. Creating one used to take the answer
+    away from every unnamed command in the project - a script that had worked all day
+    stopped with "Several worlds exist" and no way to say which, even after everything
+    was shut down again. A world that is up is the one being worked in.
+
+    :param paths: The environment to look in.
+    :param port: A port that was asked for explicitly, or None.
+    :return: The world to use, or None when it is genuinely ambiguous - several worlds
+        and none, or more than one, running. Report that with :func:`describe_worlds`.
+    """
+    states = list_states(paths)
+    if not states:
+        return None
+    if port is not None:
+        on_that_port = [state for state in states if state.port == port]
+        if len(on_that_port) == 1:
+            return on_that_port[0]
+    if len(states) == 1:
+        return states[0]
+    running = [state for state in states if is_server_up(state)]
+    if len(running) == 1:
+        return running[0]
+    return None
+
+
+def describe_worlds(paths: EnvPaths) -> str:
+    """
+    Every world and what it is doing, as indented lines for an error message.
+
+    :param paths: The environment to look in.
+    :return: One line per world: its name, its status and its port.
+    """
+    lines = []
+    for state in sorted(list_states(paths), key=lambda one: one.name.lower()):
+        lines.append(f"    {state.name:<16} {server_status(state):<9} port {state.port}")
+    return "\n".join(lines)
+
+
+def last_used_world(paths: EnvPaths) -> WorldState | None:
+    """
+    The world whose state was written most recently - the one worked in last.
+
+    Only used to suggest a name in a message. Suggesting the first world alphabetically
+    once told somebody to use the throwaway world a test had left behind, over the world
+    they had been building in all evening.
+
+    :param paths: The environment to look in.
+    :return: The most recently touched world, or None if there are none.
+    """
+    def touched(state: WorldState) -> float:
+        try:
+            return paths.state_file(state.name).stat().st_mtime
+        except OSError:
+            return 0.0
+
+    states = list_states(paths)
+    return max(states, key=touched) if states else None
+
+
 def _worlds_without_state(paths: EnvPaths, known: set[str]) -> dict[str, str]:
     """
     Worlds that exist on disk but are not among the names already known from state.
@@ -408,6 +479,7 @@ def wait_until_up(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
     report: Reporter | None = None,
+    first_start: bool = False,
 ) -> None:
     """
     Wait until a freshly started server accepts connections.
@@ -446,11 +518,15 @@ def wait_until_up(
                 f"Read the end of it with: uv run miney logs --world {state.name}"
             )
         if not announced:
+            # Two different waits, and saying "generating the map" for a world that has
+            # one is how a normal 20-second VoxeLibre start reads like something going
+            # wrong. VoxeLibre loads a few hundred mods every time; that is the wait.
+            why = ("generating its map, which only happens once" if first_start
+                   else "loading the game's mods")
             _say(
                 report,
                 f"Waiting up to {timeout:g} seconds for the Luanti server for "
-                f"'{state.name}' to finish starting. The first start of a world "
-                "generates the map and can take a while.",
+                f"'{state.name}' to finish starting - it is {why}.",
             )
             announced = True
         sleep(interval)
@@ -888,6 +964,14 @@ def ensure_world(
     ensure_game(paths, game, report=report)
     _preload_games(paths, exclude=game, report=report)
     if existing is None:
+        # Said before the world is written, because what follows it is a first start:
+        # the server generates a map and answers minutes later. Without this line that
+        # wait looks like Miney hanging, and the world it was spent on is a surprise.
+        _say(
+            report,
+            f"Creating a new world '{world}' with {contentdb.game_label(game)}. "
+            "Generating its map takes a while the first time.",
+        )
         write_world_mt(world_dir, game)
     write_config(paths.config_file)
     ensure_client_password(paths.client_pw)
@@ -1170,6 +1254,11 @@ def start(
     :raises MineyRunError: If the world, Luanti, the port or the processes could not be
         made ready. Every message names a command that gets the user further.
     """
+    # Asked before ensure_world(), which creates the world and would answer "yes" to
+    # every start afterwards. Only used to explain the wait: a first start generates a
+    # map, every later one only loads the game's mods.
+    first_start = read_world_gameid(paths.world_dir(world)) is None
+
     # ensure_world() completes the environment - downloading a missing Luanti first,
     # then a missing game - and hands back the install to launch.
     install = ensure_world(paths, world, game, report=report)
@@ -1232,6 +1321,7 @@ def start(
         sleep=sleep,
         clock=clock,
         report=report,
+        first_start=first_start,
     )
 
     if with_client:

@@ -1,5 +1,5 @@
-from typing import TYPE_CHECKING, Callable, Optional, Dict, Any
-from .events import Event, create_event, ChatCommandEvent
+from typing import TYPE_CHECKING, Callable, List, Optional, Dict, Any, Tuple
+from .events import EVENT_FIELDS, Event, create_event, ChatCommandEvent
 import json
 import logging
 import queue
@@ -10,6 +10,26 @@ if TYPE_CHECKING:
     from .luanti import Luanti
 
 logger = logging.getLogger(__name__)
+
+
+def _is_comparable(value: Any) -> bool:
+    """
+    Whether a filter value is something an event field can be compared against.
+
+    A filter is answered with ``==`` on the server, so a value has to be a single
+    string, number or boolean, or a list of those. A position - the one table anybody
+    would try - can never equal anything and would silently match nothing.
+
+    :param value: What was written on the right-hand side of a filter field.
+    :return: ``True`` if the server can compare it.
+    """
+    scalars = (str, int, float, bool)
+    if isinstance(value, scalars):
+        return True
+    if isinstance(value, (list, tuple)):
+        return bool(value) and all(isinstance(one, scalars) for one in value)
+    return False
+
 
 class Callback:
     """
@@ -22,15 +42,25 @@ class Callback:
 
     You can access this class via the :attr:`~miney.Luanti.callbacks` property.
     """
-    SUPPORTED_EVENTS = {"chat_message", "player_leaves", "player_joins"}
+    #: Every event a handler can be registered for. The Lua mod knows the same names -
+    #: see ``EVENTS`` in ``mod_data/miney/callbacks.lua`` - and what each one carries is
+    #: the matching class in :mod:`miney.events`.
+    SUPPORTED_EVENTS = {
+        "chat_message", "player_leaves", "player_joins",
+        "node_dug", "node_placed", "node_punched",
+        "player_dies", "player_respawns", "player_punched", "player_hp_changed",
+    }
 
     def __init__(self, luanti: 'Luanti'):
         self.lt = luanti
         self._client = luanti.luanti
         self._client_id: str = str(uuid.uuid4())
+        #: Handlers by event name, then by the id the server knows them under.
         self._event_handlers: Dict[str, Dict[str, Callable[[Event], None]]] = {}
         self._command_handlers: Dict[str, Callable[[Event], None]] = {}
-        self._events_queue: "queue.Queue[Event]" = queue.Queue()
+        #: Each event as it arrived, together with the handler ids the mod addressed it
+        #: to. Chat commands bring None; they are looked up by command name instead.
+        self._events_queue: "queue.Queue[Tuple[Event, Optional[List[str]]]]" = queue.Queue()
         self._running = True
         self._dispatcher = threading.Thread(
             target=self._dispatch_loop, name="miney-callbacks-dispatcher", daemon=True
@@ -80,13 +110,23 @@ class Callback:
         """Deliver events to registered handlers asynchronously."""
         while self._running:
             try:
-                event = self._events_queue.get(timeout=0.5)
+                event, handler_ids = self._events_queue.get(timeout=0.5)
             except queue.Empty:
                 continue
             try:
                 # Use the Event object's attributes
                 if event.name in self.SUPPORTED_EVENTS:
-                    for cb in list((self._event_handlers.get(event.name) or {}).values()):
+                    # The mod applied the filters and named who the event is for, so
+                    # there is nothing left to decide here.
+                    registered = self._event_handlers.get(event.name) or {}
+                    for handler_id in handler_ids or ():
+                        cb = registered.get(handler_id)
+                        if cb is None:
+                            logger.debug(
+                                "Dropped a '%s' event for handler %s, which is gone.",
+                                event.name, handler_id,
+                            )
+                            continue
                         try:
                             cb(event)
                         except Exception as e:
@@ -95,7 +135,11 @@ class Callback:
                     # Access the command name directly from the event object
                     name = event.command_name
                     handler = self._command_handlers.get(name)
-                    if handler:
+                    # Asked against None, not for truth: a callable object may well be
+                    # falsy - an empty collector, a counter at zero - and `if handler`
+                    # would drop its events in silence for as long as it stays empty,
+                    # which is forever if it only fills up by being called.
+                    if handler is not None:
                         try:
                             handler(event)
                         except Exception as e:
@@ -134,7 +178,7 @@ class Callback:
         if "event" in data:
             # Create an Event object and put it in the queue
             event_obj = create_event(data)
-            self._events_queue.put(event_obj)
+            self._events_queue.put((event_obj, data.get("handlers")))
             logger.debug("Queued event %s for dispatch", event_obj.name)
             return
 
@@ -156,9 +200,53 @@ class Callback:
             def on_player_join(event: PlayerJoinsEvent):
                 print(f"Player {event.player_name} joined the game.")
 
+        Pass ``parameters`` when you want some of the events and not all of them. It names
+        fields of the event and the values worth waking up for; a list accepts any one of
+        them. The comparison happens on the server, so everything it rejects never travels
+        at all:
+
+        .. code-block:: python
+
+            @lt.callbacks.on("chat_message", {"sender_name": ["Steve", "Alex"]})
+            def on_friend_speaks(event):
+                print(f"{event.sender_name} said: {event.message}")
+
+        The fields you may filter on are the attributes of the matching event class -
+        :class:`~miney.events.ChatMessageEvent` has ``sender_name`` and ``message``.
+        Anything else raises, rather than matching nothing in silence. Every event and
+        what it carries is listed in :mod:`miney.events`.
+
+        A filter value is compared with ``==`` on the server, so it has to be a string,
+        a number, a boolean, or a list of those. A position cannot be filtered on -
+        ``{"pos": Point(1, 2, 3)}`` raises. Ask for the whole event and decide in your
+        own code:
+
+        .. code-block:: python
+
+            @lt.callbacks.on("node_dug")
+            def deep_dig(event):
+                if event.pos.y < 10:
+                    lt.chat.send_to_all(f"{event.player_name} is digging deep.")
+
+        Every field named has to match, and the filter belongs to the one handler you are
+        registering. Watching the same event twice for different things is fine, and each
+        handler only ever sees what it asked for:
+
+        .. code-block:: python
+
+            @lt.callbacks.on("chat_message", {"sender_name": "Steve"})
+            def steve_said_something(event):
+                print("Steve:", event.message)
+
+            @lt.callbacks.on("chat_message", {"message": "hello"})
+            def someone_said_hello(event):
+                lt.chat.send_to_all(f"Hello yourself, {event.sender_name}!")
+
         :param event: The name of the event to subscribe to.
-        :param parameters: Optional filters for the event subscription.
+        :param parameters: Event fields that have to match before the handler runs.
         :return: The decorator function.
+        :raises ValueError: If the event does not exist, or `parameters` names a field
+            the event does not carry.
         """
         def decorator(func: Callable[[Event], None]) -> Callable[[Event], None]:
             self.register(event, func, parameters)
@@ -215,8 +303,11 @@ class Callback:
 
         :param event: The name of the event to subscribe to.
         :param callback: The function to execute when the event occurs.
-        :param parameters: Optional filters for the event subscription.
+        :param parameters: Event fields that have to match before the handler runs, as
+            described on :meth:`~miney.callback.Callback.on`.
         :return: A unique token for this registration.
+        :raises ValueError: If the event does not exist, or `parameters` names a field
+            the event does not carry.
         """
         if event not in self.SUPPORTED_EVENTS:
             raise ValueError(
@@ -225,21 +316,45 @@ class Callback:
             )
         if not callable(callback):
             raise ValueError("callback must be callable")
+
+        # Checked here rather than only on the server: the mod answers asynchronously on
+        # the same channel the events arrive on, so a rejection over there would reach
+        # this process as a log line long after register() has returned. A misspelt field
+        # has to raise where it was typed.
+        if parameters:
+            unknown = sorted(set(parameters) - EVENT_FIELDS[event])
+            if unknown:
+                raise ValueError(
+                    f"Event '{event}' has no field '{unknown[0]}'. It sends: "
+                    f"{', '.join(sorted(EVENT_FIELDS[event]))}."
+                )
+            for name, wanted in parameters.items():
+                if not _is_comparable(wanted):
+                    raise ValueError(
+                        f"The filter for '{name}' has to be a string, a number, a "
+                        f"boolean or a list of those - a filter is answered with '==' "
+                        f"on the server. A position or any other structure cannot be "
+                        f"compared that way; let the event through and decide in your "
+                        f"own code, e.g. 'if event.pos.y < 10:'."
+                    )
+
+        # The token is the name this handler goes by on both sides. The mod stores the
+        # filter under it and puts it on every event it sends, so an arriving event
+        # already says which function it is for.
         token = str(uuid.uuid4())
         self._event_handlers.setdefault(event, {})[token] = callback
 
-        # Only register with server when this is the first handler for the event
-        if len(self._event_handlers[event]) == 1:
-            payload: Dict[str, Any] = {
-                "action": "register",
-                "events": [event],
-                "client_id": self._client_id,
-            }
-            if parameters:
-                payload["filters"] = parameters
-            self._send(payload)
-            logger.info("Registered event subscription for '%s'", event)
-
+        payload: Dict[str, Any] = {
+            "action": "register",
+            "events": [event],
+            "handler": token,
+            "client_id": self._client_id,
+        }
+        if parameters:
+            payload["filter"] = parameters
+        self._send(payload)
+        logger.info("Registered a handler for '%s'%s", event,
+                    " with a filter" if parameters else "")
         return token
 
     def unregister(self, event: str, token_or_callback: Any) -> None:
@@ -276,16 +391,22 @@ class Callback:
                 if cb is token_or_callback:
                     removed_key = t
                     break
-        if removed_key:
-            handlers.pop(removed_key, None)
-
-        if handlers and len(handlers) > 0:
+        if not removed_key:
             return
 
-        # If no handlers remain, unregister from server
-        self._event_handlers.pop(event, None)
-        self._send({"action": "unregister", "events": [event], "client_id": self._client_id})
-        logger.info("Unregistered event subscription for '%s'", event)
+        handlers.pop(removed_key, None)
+        if not handlers:
+            self._event_handlers.pop(event, None)
+
+        # Named, so the other handlers for this event keep theirs. The mod drops the
+        # subscription for the event once its last handler is gone.
+        self._send({
+            "action": "unregister",
+            "events": [event],
+            "handler": removed_key,
+            "client_id": self._client_id,
+        })
+        logger.info("Unregistered a handler for '%s'", event)
 
     def register_command(self, name: str, callback: Callable[[Event], None],
                          params: str = "", description: str = "",
@@ -368,7 +489,8 @@ class Callback:
                 self._send({"action": "unregister_chatcommand", "name": name, "client_id": self._client_id})
             self._command_handlers.clear()
 
-            # Unregister event subscriptions
+            # Unregister event subscriptions. No handler named, so the mod drops every
+            # one this connection left behind rather than them one at a time.
             for event in list(self._event_handlers.keys()):
                 self._send({"action": "unregister", "events": [event], "client_id": self._client_id})
             self._event_handlers.clear()
