@@ -21,7 +21,13 @@ from .paths import EnvPaths
 logger = logging.getLogger(__name__)
 
 #: Lowest Luanti version the Miney mod supports, mirroring mod_data/miney/mod.conf.
-MIN_VERSION = (5, 7, 0)
+#: 5.9 is where ``core.dynamic_add_media`` learned to take the file contents directly
+#: instead of a path on the server's disk, which is what lets a script send an image it
+#: made in Python to a player. Nothing older is worth carrying for it.
+MIN_VERSION = (5, 9, 0)
+
+#: :data:`MIN_VERSION` as it is written for people, e.g. ``"5.9"``.
+MIN_VERSION_TEXT = ".".join(str(part) for part in MIN_VERSION[:2])
 
 FLATPAK_APP_ID = "org.luanti.luanti"
 

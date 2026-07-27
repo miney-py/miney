@@ -33,6 +33,7 @@ import subprocess
 from pathlib import Path
 
 from ..exceptions import MineyRunError
+from .discover import MIN_VERSION_TEXT
 from .fetch import Fetcher, extract_all, read_url
 from .paths import EnvPaths
 from .upstream import Release, parse_release
@@ -163,8 +164,9 @@ def install_instructions(release: Release | None) -> str:
     Reached only on a Linux machine outside the two architectures the AppImage is built
     for, so it is genuinely rare - but it must still get that user running, and Miney
     never runs a privileged command, so they run it themselves. The message names the
-    version Flathub would give, because a distribution package can be older than the 5.7
-    the Miney mod needs and there is no way to tell from here.
+    version Flathub would give, because a distribution package can be older than the
+    :data:`~miney.env.discover.MIN_VERSION` the Miney mod needs and there is no way to
+    tell from here.
 
     :param release: The current release, if it could be looked up. Without one the
         message drops the version rather than guessing at it.
@@ -179,7 +181,8 @@ def install_instructions(release: Release | None) -> str:
         f"  Flathub, always the current version{current}:\n"
         "    flatpak install flathub org.luanti.luanti\n"
         "\n"
-        "  Your distribution's package, which may be older than the 5.7 the Miney mod\n"
+        f"  Your distribution's package, which may be older than the {MIN_VERSION_TEXT} "
+        "the Miney mod\n"
         "  needs - check with 'luanti --version' afterwards:\n"
         "    sudo apt install luanti        # Debian, Ubuntu\n"
         "    sudo dnf install luanti        # Fedora\n"

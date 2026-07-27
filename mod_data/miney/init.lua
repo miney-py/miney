@@ -37,7 +37,7 @@ local function log(level, message)
 end
 
 local function enforce_min_engine_version(required)
-    -- Ensure engine version is at least required (e.g., {5,7,0})
+    -- Ensure engine version is at least required (e.g., {5,9,0})
     local v = minetest.get_version and minetest.get_version() or {}
     local major, minor, patch
     if type(v.string) == "string" then
@@ -69,7 +69,7 @@ local function enforce_min_engine_version(required)
     end
 end
 
-enforce_min_engine_version({5, 7, 0})
+enforce_min_engine_version({5, 9, 0})
 
 local function is_local_address(addr)
     return addr == "::ffff:127.0.0.1" or addr == "127.0.0.1"

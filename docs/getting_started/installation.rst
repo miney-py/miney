@@ -210,7 +210,7 @@ command needs ``sudo``. Luanti itself publishes no Linux build, so Miney takes t
 ``Luanti`` folder in your home directory and runs it from there like any other program.
 
 Already have Luanti installed, from your package manager or from Flatpak? Miney uses that one and downloads
-nothing, as long as it is version 5.7 or newer.
+nothing, as long as it is version 5.9 or newer.
 
 The one exception is an unusual processor — anything that is not a 64-bit Intel, AMD or ARM chip. There is
 no download for those, and Miney will print the command that installs Luanti on your system, for example:

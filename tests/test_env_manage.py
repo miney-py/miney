@@ -606,7 +606,7 @@ def test_find_luanti_names_an_outdated_install_it_cannot_replace(tmp_path, monke
         manage.find_luanti(paths)
     message = str(excinfo.value)
     assert "5.6.0" in message
-    assert "5.7.0" in message
+    assert "5.9.0" in message
     assert "uv run miney start" in message
 
 

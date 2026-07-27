@@ -7,6 +7,17 @@ The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`
 removed and security sections),
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+Unreleased
+----------
+
+**Changed**
+
+- **Luanti 5.9 or newer is required**, up from 5.7. Both of those are years old by now,
+  and 5.9 is where the engine learned to accept a media file's contents directly rather
+  than a path on the server's own disk - which is what will let a script hand a player
+  an image it made in Python. ``uv run miney start`` installs a current Luanti by
+  itself, so this only matters if you point Miney at a server somebody else runs.
+
 v0.7.0
 ------
 
@@ -352,7 +363,7 @@ no longer means installing and configuring Luanti by hand.
 
 - A normal first login no longer prints a stack trace.
 - The API documentation showed a ``lt.players.list()`` method that never existed. Use
-  ``lt.players`` directly — it iterates, counts and indexes like a list.
+  ``lt.players`` directly â€” it iterates, counts and indexes like a list.
 - Around twenty cross-references in the API documentation pointed at nothing and rendered
   as dead text.
 

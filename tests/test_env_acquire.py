@@ -16,6 +16,7 @@ from miney.env.acquire import (
     install_instructions,
     select_asset,
 )
+from miney.env.discover import MIN_VERSION_TEXT
 from miney.env.paths import EnvPaths
 from miney.env.upstream import Release
 from miney.exceptions import MineyRunError
@@ -127,7 +128,9 @@ def test_instructions_still_work_without_a_version():
 
 
 def test_instructions_warn_that_a_distribution_package_may_be_too_old():
-    assert "5.7" in install_instructions(RELEASE)
+    # Read from MIN_VERSION rather than spelled out, so raising the floor does not
+    # leave the message quietly naming the old one.
+    assert MIN_VERSION_TEXT in install_instructions(RELEASE)
 
 
 def _luanti_zip() -> bytes:

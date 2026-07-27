@@ -145,7 +145,7 @@ def is_pid_alive(pid: int | None) -> bool:
 
 
 #: Every name Luanti has used for "where else to look for games". 5.16.1 accepts all
-#: three; the oldest is kept because Miney supports back to 5.7, which predates the
+#: three; the oldest is kept because Miney supports back to 5.9, which predates the
 #: rename, and three strings cost nothing.
 GAME_PATH_VARS = (
     "LUANTI_GAME_PATH",
