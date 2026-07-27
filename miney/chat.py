@@ -24,7 +24,8 @@ class Chat:
         if not isinstance(message, str):
             logger.warning("Coercing chat message to string; received %s", type(message).__name__)
             message = str(message)
-        self.lt.lua.run(f"minetest.chat_send_all({self.lt.lua.dumps(message)})")
+        self.lt.lua.run(f"minetest.chat_send_all({self.lt.lua.dumps(message)})",
+                        wait=False)
 
     def send_to_player(self, player: Union[str, Player], message: str) -> None:
         """
@@ -40,7 +41,8 @@ class Chat:
             message = str(message)
 
         self.lt.lua.run(
-            f"return minetest.chat_send_player({self.lt.lua.dumps(player)}, {self.lt.lua.dumps(message)})"
+            f"minetest.chat_send_player({self.lt.lua.dumps(player)}, {self.lt.lua.dumps(message)})",
+            wait=False,
         )
 
     def format_message(self, playername: str, message: str) -> str:

@@ -11,70 +11,44 @@ from miney.callback import Callback
 from miney.events import ChatCommandEvent, ChatMessageEvent
 
 
-class MockClientState:
-    def __init__(self, authenticated=True):
-        self.authenticated = authenticated
+from conftest import FakeTransport
 
 
-class MockCommandHandler:
-    def __init__(self):
-        self._handlers = {}
+def _as_handler(transport):
+    """
+    The transport, wrapped so a test can hand it a JSON string.
 
-    def register_formspec_handler(self, formname, handler):
-        self._handlers[formname] = handler
-
-    def get_handler(self, formname):
-        return self._handlers.get(formname)
-
-
-class MockLuantiClient:
-    def __init__(self):
-        self.state = MockClientState()
-        self.command_handler = MockCommandHandler()
-        self.sent_formspec_responses = []
-
-    def send_formspec_response(self, formname, fields):
-        self.sent_formspec_responses.append({"formname": formname, "fields": fields})
-        return True
-
-    def send_chat_message(self, message):
-        return True
+    Answers arrive as decoded dictionaries now, but writing one out as JSON is still
+    the shortest way to say "this is what the mod sent".
+    """
+    return transport.deliver_json
 
 
 @pytest.fixture
-def callback_env(monkeypatch):
-    """Sets up a Callback instance with a mocked LuantiClient."""
-    # Patch away the blocking wait in `_ensure_code_form_open`, which is not
-    # relevant for most callback unit tests and slows down initialization.
-    # This avoids a 2-second delay during test setup.
-    monkeypatch.setattr("miney.callback.Callback._ensure_code_form_open", lambda self: None)
-
-    mock_luanti_client = MockLuantiClient()
+def callback_env():
+    """Sets up a Callback instance on a transport that records everything."""
+    transport = FakeTransport()
     mock_luanti = MagicMock()
-    mock_luanti.luanti = mock_luanti_client
+    mock_luanti.transport = transport
 
     callback = Callback(mock_luanti)
 
-    # We must now manually simulate that the form is ready, since we patched
-    # the method responsible for ensuring this.
-    callback._code_form_shown = True
-
-    yield callback, mock_luanti_client
+    yield callback, transport
 
     callback.shutdown()
 
 
 def test_register_first_handler_sends_to_server(callback_env):
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
     handler = Mock()
 
     # Act
     callback.register("chat_message", handler)
 
     # Assert
-    assert len(mock_client.sent_formspec_responses) == 1
-    payload = json.loads(mock_client.sent_formspec_responses[0]["fields"]["payload"])
+    assert len(transport.sent) == 1
+    payload = json.loads(transport.sent[0]["payload"])
     assert payload["action"] == "register"
     assert payload["events"] == ["chat_message"]
 
@@ -82,32 +56,32 @@ def test_register_first_handler_sends_to_server(callback_env):
 def test_each_handler_is_registered_separately(callback_env):
     """The server knows every handler by name, so a second one is news to it."""
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
     first = callback.register("chat_message", Mock())
-    mock_client.sent_formspec_responses.clear()
+    transport.sent.clear()
 
     # Act
     second = callback.register("chat_message", Mock())
 
     # Assert
-    payload = json.loads(mock_client.sent_formspec_responses[0]["fields"]["payload"])
+    payload = json.loads(transport.sent[0]["payload"])
     assert payload["handler"] == second
     assert second != first
 
 
 def test_unregister_last_handler_sends_to_server(callback_env):
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
     handler = Mock()
     token = callback.register("chat_message", handler)
-    mock_client.sent_formspec_responses.clear()
+    transport.sent.clear()
 
     # Act
     callback.unregister("chat_message", handler)
 
     # Assert
-    assert len(mock_client.sent_formspec_responses) == 1
-    payload = json.loads(mock_client.sent_formspec_responses[0]["fields"]["payload"])
+    assert len(transport.sent) == 1
+    payload = json.loads(transport.sent[0]["payload"])
     assert payload["action"] == "unregister"
     assert payload["events"] == ["chat_message"]
     assert payload["handler"] == token
@@ -115,12 +89,12 @@ def test_unregister_last_handler_sends_to_server(callback_env):
 
 def test_dispatch_loop_calls_handler(callback_env):
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
     handler_mock = Mock()
     token = callback.register("chat_message", handler_mock)
 
     # Simulate receiving data from the server
-    handler = mock_client.command_handler.get_handler("miney:code_form")
+    handler = _as_handler(transport)
     raw_event = {
         "event": "chat_message",
         "payload": {"sender_name": "dev", "message": "testing"},
@@ -160,11 +134,11 @@ class CollectingHandler:
 
 def test_dispatch_loop_calls_a_command_handler(callback_env):
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
     handler_mock = Mock()
     callback.register_command("testcmd", handler_mock)
 
-    handler = mock_client.command_handler.get_handler("miney:code_form")
+    handler = _as_handler(transport)
     raw_event = {
         "event": "chatcommand",
         "payload": {"command_name": "testcmd", "issuer": "dev", "param": "open"},
@@ -193,12 +167,12 @@ def test_a_command_handler_that_is_falsy_is_still_called(callback_env):
     dropped, for the whole run.
     """
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
     collector = CollectingHandler()
     callback.register_command("testcmd", collector)
     assert not collector, "the trap: an empty collector is falsy"
 
-    handler = mock_client.command_handler.get_handler("miney:code_form")
+    handler = _as_handler(transport)
     raw_event = {
         "event": "chatcommand",
         "payload": {"command_name": "testcmd", "issuer": "dev", "param": "open"},
@@ -217,14 +191,14 @@ def test_a_command_handler_that_is_falsy_is_still_called(callback_env):
 
 def test_handler_exception_is_caught(callback_env, caplog):
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
     
     def failing_handler(event):
         raise ValueError("Something went wrong")
 
     token = callback.register("chat_message", failing_handler)
 
-    handler = mock_client.command_handler.get_handler("miney:code_form")
+    handler = _as_handler(transport)
     # Provide a valid payload for ChatMessageEvent
     raw_event = {
         "event": "chat_message",
@@ -245,25 +219,25 @@ def test_handler_exception_is_caught(callback_env, caplog):
 
 def test_shutdown_unregisters_all(callback_env):
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
     callback.register("chat_message", Mock())
     callback.register("player_joins", Mock())
     callback.register_command("testcmd", Mock())
-    mock_client.sent_formspec_responses.clear()
+    transport.sent.clear()
 
     # Act
     callback.shutdown()
 
     # Assert
-    assert len(mock_client.sent_formspec_responses) == 3
-    actions = {json.loads(resp["fields"]["payload"])["action"] for resp in mock_client.sent_formspec_responses}
+    assert len(transport.sent) == 3
+    actions = {json.loads(resp["payload"])["action"] for resp in transport.sent}
     names = {
-        json.loads(resp["fields"]["payload"]).get("name") for resp in mock_client.sent_formspec_responses
-        if json.loads(resp["fields"]["payload"])["action"] == "unregister_chatcommand"
+        json.loads(resp["payload"]).get("name") for resp in transport.sent
+        if json.loads(resp["payload"])["action"] == "unregister_chatcommand"
     }
     events = {
-        json.loads(resp["fields"]["payload"])["events"][0] for resp in mock_client.sent_formspec_responses
-        if json.loads(resp["fields"]["payload"])["action"] == "unregister"
+        json.loads(resp["payload"])["events"][0] for resp in transport.sent
+        if json.loads(resp["payload"])["action"] == "unregister"
     }
     
     assert "unregister_chatcommand" in actions
@@ -291,23 +265,23 @@ def test_register_non_callable_raises_value_error(callback_env):
         callback.register("chat_message", "not_a_function")
 
 
-def test_send_without_authentication_logs_warning(callback_env, caplog):
+def test_send_without_a_transport_logs_warning(callback_env, caplog):
     # Arrange
-    callback, mock_client = callback_env
-    mock_client.state.authenticated = False  # Simulate unauthenticated state
+    callback, transport = callback_env
+    transport._connected = False  # Simulate a transport that is gone
 
     # Act
     with caplog.at_level(logging.WARNING):
         callback.register("chat_message", Mock())
 
     # Assert
-    assert "Cannot send callback registration: client not authenticated." in caplog.text
+    assert "Cannot send a callback registration: not connected." in caplog.text
 
 
 def test_handle_miney_callbacks_handles_server_error(callback_env, caplog):
     # Arrange
-    callback, mock_client = callback_env
-    handler = mock_client.command_handler.get_handler("miney:code_form")
+    callback, transport = callback_env
+    handler = _as_handler(transport)
     error_payload = {
         "error": "Something went wrong on the server",
         "code": "test_error"
@@ -331,7 +305,7 @@ def test_handle_miney_callbacks_ignores_lua_result(callback_env):
 
     # Act
     # This should not raise an exception or put anything in the queue
-    callback._handle_miney_callbacks(json.dumps(lua_result_payload))
+    callback._handle_record(lua_result_payload)
 
     # Assert
     assert callback._events_queue.empty()
@@ -339,26 +313,26 @@ def test_handle_miney_callbacks_ignores_lua_result(callback_env):
 
 def test_register_sends_the_filter_to_the_server(callback_env):
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
 
     # Act
     token = callback.register("chat_message", Mock(), {"sender_name": "Steve"})
 
     # Assert
-    payload = json.loads(mock_client.sent_formspec_responses[0]["fields"]["payload"])
+    payload = json.loads(transport.sent[0]["payload"])
     assert payload["handler"] == token
     assert payload["filter"] == {"sender_name": "Steve"}
 
 
 def test_register_without_a_filter_sends_none(callback_env):
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
 
     # Act
     callback.register("chat_message", Mock())
 
     # Assert
-    payload = json.loads(mock_client.sent_formspec_responses[0]["fields"]["payload"])
+    payload = json.loads(transport.sent[0]["payload"])
     assert "filter" not in payload
 
 
@@ -391,7 +365,7 @@ def test_a_filter_on_a_position_raises(callback_env):
 
 def test_a_filter_may_be_a_value_or_a_list_of_values(callback_env):
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
 
     # Act
     callback.register("node_dug", Mock(), {"node_name": "mcl_core:dirt"})
@@ -400,7 +374,7 @@ def test_a_filter_may_be_a_value_or_a_list_of_values(callback_env):
     callback.register("player_leaves", Mock(), {"timed_out": True})
 
     # Assert
-    assert len(mock_client.sent_formspec_responses) == 4
+    assert len(transport.sent) == 4
 
 
 def test_unknown_filter_field_error_names_the_real_ones(callback_env):
@@ -414,14 +388,14 @@ def test_unknown_filter_field_error_names_the_real_ones(callback_env):
 
 def test_two_handlers_keep_their_own_filters(callback_env):
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
 
     # Act
     for_steve = callback.register("chat_message", Mock(), {"sender_name": "Steve"})
     for_alex = callback.register("chat_message", Mock(), {"sender_name": "Alex"})
 
     # Assert
-    sent = [json.loads(r["fields"]["payload"]) for r in mock_client.sent_formspec_responses]
+    sent = [json.loads(r["payload"]) for r in transport.sent]
     assert {p["handler"]: p["filter"] for p in sent} == {
         for_steve: {"sender_name": "Steve"},
         for_alex: {"sender_name": "Alex"},
@@ -431,11 +405,11 @@ def test_two_handlers_keep_their_own_filters(callback_env):
 def test_only_the_handler_the_event_names_runs(callback_env):
     """The mod applied the filters and said who the event is for."""
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
     for_steve, for_alex = Mock(), Mock()
     steve_token = callback.register("chat_message", for_steve, {"sender_name": "Steve"})
     callback.register("chat_message", for_alex, {"sender_name": "Alex"})
-    handler = mock_client.command_handler.get_handler("miney:code_form")
+    handler = _as_handler(transport)
 
     # Act
     handler(json.dumps({
@@ -453,13 +427,13 @@ def test_only_the_handler_the_event_names_runs(callback_env):
 
 def test_an_event_for_two_handlers_reaches_both(callback_env):
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
     first, second = Mock(), Mock()
     tokens = [
         callback.register("chat_message", first),
         callback.register("chat_message", second),
     ]
-    handler = mock_client.command_handler.get_handler("miney:code_form")
+    handler = _as_handler(transport)
 
     # Act
     handler(json.dumps({
@@ -478,11 +452,11 @@ def test_an_event_for_two_handlers_reaches_both(callback_env):
 def test_an_event_for_a_handler_that_is_gone_is_dropped(callback_env, caplog):
     """Unregistering and an event already on its way can cross in flight."""
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
     handler_mock = Mock()
     token = callback.register("chat_message", handler_mock)
     callback.unregister("chat_message", token)
-    handler = mock_client.command_handler.get_handler("miney:code_form")
+    handler = _as_handler(transport)
 
     # Act
     with caplog.at_level(logging.DEBUG):
@@ -501,12 +475,12 @@ def test_an_event_for_a_handler_that_is_gone_is_dropped(callback_env, caplog):
 
 def test_unregistering_one_handler_leaves_the_other(callback_env):
     # Arrange
-    callback, mock_client = callback_env
+    callback, transport = callback_env
     going, staying = Mock(), Mock()
     callback.register("chat_message", going)
     staying_token = callback.register("chat_message", staying)
     callback.unregister("chat_message", going)
-    handler = mock_client.command_handler.get_handler("miney:code_form")
+    handler = _as_handler(transport)
 
     # Act
     handler(json.dumps({

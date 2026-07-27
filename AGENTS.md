@@ -2,11 +2,13 @@
 
 Python interface to [Luanti](https://www.luanti.org/) (formerly Minetest). Two halves that must stay in sync:
 
-- `miney/luanticlient/` — a from-scratch implementation of the Luanti **client** network protocol (UDP, SRP auth, packet builders). Miney logs into the server as a real player account.
-- `mod_data/miney/` — the server-side Lua mod that receives commands and fires callbacks. It lives at the repo root, not inside the `miney/` Python package, but ships in the wheel as its own top-level `mod_data` package so an installed Miney always carries a matching copy. Requires Luanti 5.9+.
+- `miney/channel.py` + `mod_data/miney/channel.lua` — the transport. Two append-only files in Luanti's own `mod_data` directory, one pair per world: `c2s` for requests, `s2c` for answers, one JSON record per line, moved across on the server step. There is no network protocol and no player account; Miney has to run on the same machine as the server.
+- `mod_data/miney/` (rest) — the server-side Lua mod that receives commands and fires callbacks. It lives at the repo root, not inside the `miney/` Python package, but ships in the wheel as its own top-level `mod_data` package so an installed Miney always carries a matching copy. Requires Luanti 5.9+.
 - `miney/` (rest) — the user-facing API: `Luanti`, `Player`, `Nodes`, `Chat`, `Lua`, `Callback`, `Point`/`Vector`.
 
 Changing a wire message, command name or callback payload usually means touching **both** the Python side and the Lua mod.
+
+**Latency is the server step, and it cannot be removed.** A mod only runs inside `AsyncRunStep` (`server.cpp:152-158`), so a round trip costs one step — 31 ms on a world `miney start` launched, 17 ms in a game you are playing. Throughput is not bounded: the mod runs every complete line it finds in one step, which is why `Lua.run(wait=False)` and the automatic barrier exist. Optimising Miney means removing *answers*, never chasing the step.
 
 ## Look it up in `luanti-src/`
 
@@ -17,7 +19,7 @@ there, **read it instead of recalling what the engine does**:
 - `luanti-src/doc/lua_api.md` — the modding API. The authority on every field name,
   every default and every "added in 5.x" note the mod half depends on.
 - `luanti-src/src/` — the C++ engine. Where to go when the Lua docs describe *what* but
-  the question is *what actually happens*: packet layout for `miney/luanticlient/`,
+  the question is *what actually happens*: when a mod is actually allowed to run,
   limits the docs do not name, whether a file survives a restart.
 - `luanti-src/src/defaultsettings.cpp` — what a setting really defaults to.
 
@@ -117,7 +119,7 @@ The published documentation is generated from the code (`docs/`, autodoc + `view
   uv run --group docs sphinx-build -E -n -b html docs docs/_build/html
   ```
 
-  Twenty dead references accumulated behind a clean `-W` build before anyone noticed. Two get reported that cannot be fixed from prose (`callable`, `LuantiClient` in type annotations) — everything beyond those two is a real broken link.
+  Twenty dead references accumulated behind a clean `-W` build before anyone noticed. One gets reported that cannot be fixed from prose (`callable` in a type annotation) — everything beyond that one is a real broken link.
 
 ## How the docs read
 

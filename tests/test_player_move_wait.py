@@ -19,7 +19,7 @@ class _FakeLua:
         self.busy_left = busy_answers
         self.calls: list[str] = []
 
-    def run(self, code, timeout=None):
+    def run(self, code, timeout=None, execution_id=None, wait=True):
         self.calls.append(code)
         if "miney_task_busy" in code:
             if self.busy_left > 0:

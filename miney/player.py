@@ -1,5 +1,5 @@
 import time
-from typing import Union, Iterable, List, TYPE_CHECKING, Optional
+from typing import Iterable, List, TYPE_CHECKING, Optional
 from .exceptions import PlayerNotFoundError, PlayerOffline, LuaError
 from .point import Point
 from .vector import Vector
@@ -145,9 +145,15 @@ class Player:
         """
         Returns the online status of this player.
 
+        Asked of the server rather than read from a list the client keeps, because
+        Miney does not always have a client: connected to a world on this computer it
+        is not in the game at all, and there is no player list of its own to consult.
+
         :return: True or False
         """
-        return self.name in self.lt.luanti.state._connected_players
+        return bool(self.lt.lua.run(
+            f"return minetest.get_player_by_name({self.lt.lua.dumps(self.name)}) ~= nil"
+        ))
 
     @property
     def position(self) -> Point:
@@ -174,12 +180,13 @@ class Player:
         :return: None
         """
         self.lt.lua.run(
-            "return minetest.get_player_by_name('{}'):set_pos({{x = {}, y = {}, z = {}}})".format(
+            "minetest.get_player_by_name('{}'):set_pos({{x = {}, y = {}, z = {}}})".format(
                 self.name,
                 values.x,
                 values.y,
                 values.z
-            )
+            ),
+            wait=False,
         )
 
     def move(
@@ -309,7 +316,7 @@ class Player:
                 smooth_move(player, {params_lua})
             end
             """
-            self.lt.lua.run(lua_code)
+            self.lt.lua.run(lua_code, wait=False)
             if wait:
                 self._wait_for_animation()
         else:
@@ -387,7 +394,8 @@ class Player:
     @speed.setter
     def speed(self, value: int):
         self.lt.lua.run(
-            "return minetest.get_player_by_name('{}'):set_physics_override({{speed = {}}})".format(self.name, value))
+            "return minetest.get_player_by_name('{}'):set_physics_override({{speed = {}}})".format(self.name, value),
+            wait=False)
 
     @property
     def jump(self):
@@ -402,7 +410,8 @@ class Player:
     @jump.setter
     def jump(self, value):
         self.lt.lua.run(
-            "return minetest.get_player_by_name('{}'):set_physics_override({{jump = {}}})".format(self.name, value))
+            "return minetest.get_player_by_name('{}'):set_physics_override({{jump = {}}})".format(self.name, value),
+            wait=False)
 
     @property
     def gravity(self):
@@ -417,7 +426,8 @@ class Player:
     @gravity.setter
     def gravity(self, value):
         self.lt.lua.run(
-            "return minetest.get_player_by_name('{}'):set_physics_override({{gravity = {}}})".format(self.name, value))
+            "return minetest.get_player_by_name('{}'):set_physics_override({{gravity = {}}})".format(self.name, value),
+            wait=False)
 
     @property
     def look(self) -> dict:
@@ -530,7 +540,8 @@ class Player:
     def hp(self, value: int):
         if type(value) is int and value in range(0, 21):
             self.lt.lua.run(
-                f"return minetest.get_player_by_name('{self.name}'):set_hp({value}, {{type=\"set_hp\"}})")
+                f"minetest.get_player_by_name('{self.name}'):set_hp({value}, {{type=\"set_hp\"}})",
+                wait=False)
         else:
             raise ValueError("HP has to be between 0 and 20.")
 
@@ -598,7 +609,8 @@ class Player:
         self.lt.lua.run(
             f"""
             minetest.set_player_privs("{self.name}", {self.lt.lua.dumps(priv_table)})
-            """
+            """,
+            wait=False,
         )
 
     @property
@@ -609,7 +621,8 @@ class Player:
     def breath(self, value: int):
         if type(value) is int and value in range(0, 21):
             self.lt.lua.run(
-                f"return minetest.get_player_by_name('{self.name}'):set_breath({value}, {{type=\"set_hp\"}})")
+                f"minetest.get_player_by_name('{self.name}'):set_breath({value}, {{type=\"set_hp\"}})",
+                wait=False)
         else:
             raise ValueError("HP has to be between 0 and 20.")
 
@@ -673,9 +686,7 @@ class Player:
         Get or set the player's visibility.
 
         When set to ``True``, the player model, nametag and minimap marker are hidden,
-        and nothing can point at them any more - no hitbox, no selection box. Miney's own
-        player is invisible from the moment it connects, unless you say
-        ``miney.Luanti(invisible=False)``.
+        and nothing can point at them any more - no hitbox, no selection box.
 
         Setting it back to ``False`` puts back what the player looked like before,
         including the skin this game gave them. That is remembered in the player's
@@ -684,9 +695,9 @@ class Player:
 
         .. code-block:: python
 
-            bot = lt.players[lt.playername]
-            bot.invisible = False       # now it can be seen, and hit
-            bot.invisible = True        # out of the way again
+            ghost = lt.players["Steve"]
+            ghost.invisible = True      # out of the way, and out of reach
+            ghost.invisible = False     # back, with the same skin as before
 
         .. note::
             This feature may not work for mobs in some games, so they may still attack the player. Maybe it's better to
@@ -858,13 +869,16 @@ class Player:
 class PlayerIterable:
     """Player, implemented as iterable for easy autocomplete in the interactive shell"""
     def __init__(self, luanti: 'Luanti', online_players: list = None):
-        if online_players:
-            self.__online_players = online_players
-            self.__mt = luanti
+        # Set even when nobody is online, which used to be impossible and is now the
+        # normal case: Miney reaches a world on this computer through its files and
+        # does not join it, so an empty world really is empty. Guarding the assignment
+        # left the attributes missing entirely, and `list(lt.players)` answered with
+        # AttributeError instead of an empty list.
+        self.__online_players = list(online_players or [])
+        self.__mt = luanti
 
-            # update list
-            for player in online_players:
-                self.__setattr__(player, Player(luanti, player))
+        for player in self.__online_players:
+            self.__setattr__(player, Player(luanti, player))
 
     def __iter__(self):
         player_object = []

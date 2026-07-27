@@ -1,8 +1,8 @@
-"""Tests for miney.luanticlient.probe."""
+"""Tests for miney.env.probe."""
 import socket
 import struct
 
-from miney.luanticlient.probe import PROTOCOL_ID, probe_server
+from miney.env.probe import PROTOCOL_ID, probe_server
 
 
 class _FakeSocket:

@@ -16,14 +16,13 @@ using the Miney library. It showcases several key features:
 How to Run:
 1. Make sure the `miney` mod is installed and enabled on your Luanti server. This game is optimized for the minetest
    game, and there is a very high chance it will not work in other games.
-2. Run this script from your terminal, providing connection details if needed:
-   python examples/treasure_hunt.py [server] [port] [playername] [password]
+2. Run this script from your terminal:
+   uv run python examples/treasure_hunt.py
 3. The game will start immediately for all online players. The first to find the
    chest wins.
 """
 import logging
 import random
-import sys
 import time
 from typing import Optional, List
 
@@ -161,25 +160,18 @@ def hide_treasure(lt: Luanti, players: List[Player]) -> tuple[Optional[Point], l
 
 
 if __name__ == "__main__":
-    # --- Connection Details ---
-    server = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
-    port = int(sys.argv[2]) if len(sys.argv) > 2 else 30000
-    username = sys.argv[3] if len(sys.argv) > 3 else "miney"
-    password = sys.argv[4] if len(sys.argv) > 4 else "ChangeThePassword!"
-
-    logger.info(f"Connecting to {server}:{port} as '{username}'...")
+    logger.info("Connecting to the Luanti server on this computer...")
 
     try:
-        with Luanti(server, username, password, port) as lt:
+        with Luanti() as lt:
             logger.info("Connection successful. Starting treasure hunt loop.")
-
-            lt.players[lt.playername].invisible = True
 
             while True:  # Main loop to run the game continuously
                 original_blocks = []
                 try:
-                    # 1. Get all online players and filter out the script's own player
-                    game_players = [p for p in list(lt.players) if p.name != username]
+                    # 1. Everyone in the world is playing. Nothing of Miney's own is
+                    #    standing in it, so there is nobody to filter out.
+                    game_players = list(lt.players)
 
                     if not game_players:
                         logger.info("No players online. Waiting for players to join...")
@@ -215,7 +207,7 @@ if __name__ == "__main__":
                             lt.chat.send_to_all(f"The treasure was at {treasure_location}.")
                             break
 
-                        current_players = [p for p in list(lt.players) if p.name != username]
+                        current_players = list(lt.players)
                         if not current_players:
                             logger.warning("All players have logged out. Ending current round.")
                             break

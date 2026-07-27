@@ -1,7 +1,6 @@
 """Tests for miney.env.check."""
 from pathlib import Path
 
-import pytest
 
 from miney.env import check
 from miney.env.paths import EnvPaths
@@ -11,24 +10,16 @@ from miney.exceptions import MineyRunError
 WORLD = "testworld"
 
 
-class FakePlayer:
-    def __init__(self, name: str, privileges: list[str]):
-        self.name = name
-        self.privileges = privileges
-
-
 class FakeConnection:
     """
     Stands in for a connected :class:`~miney.luanti.Luanti`.
 
     Only the handful of members the checks actually read, so a test never needs a
-    server, a socket or the client protocol.
+    server or a world.
     """
 
-    def __init__(self, *, version="5.16.1", privileges=("miney",), nodes=400, tools=30):
+    def __init__(self, *, version="5.16.1", nodes=400, tools=30):
         self.version = version
-        self.playername = "miney"
-        self.players = [FakePlayer("miney", list(privileges))]
         self.nodes = type("N", (), {"names": ["node"] * nodes})()
         self.tool = ["tool"] * tools
         self.closed = False
@@ -198,25 +189,19 @@ def test_a_refused_connection_fails_without_an_offer(tmp_path):
     assert "Access denied" in report.failure.detail
 
 
-# --- the two steps that only ever warn ----------------------------------------------
+# --- the steps that only ever warn --------------------------------------------------
 
 
-def test_a_missing_privilege_is_only_a_warning_on_a_local_server(tmp_path):
-    # mod_data/miney/init.lua lets a client on a local address run code without the
-    # privilege, so the normal Miney setup does not need it at all.
-    report = _run(_env(tmp_path), connect=lambda w: FakeConnection(privileges=()))
+def test_the_chain_asks_about_nobody_privileges(tmp_path):
+    """
+    Nothing is granted to anyone any more: the channel is a file in the server's own
+    directory, so whoever can write it already has what a privilege would have gated.
+    """
+    report = _run(_env(tmp_path), connect=lambda w: FakeConnection())
 
-    step = _step(report, "Privilege")
-    assert step.state == check.WARNING
-    assert report.ok
-
-
-def test_a_missing_privilege_names_the_grant_command(tmp_path):
-    report = _run(_env(tmp_path), connect=lambda w: FakeConnection(privileges=()))
-    step = _step(report, "Privilege")
-    assert "/grant miney miney" in step.hint
-    # Granting it goes through the very code execution it gates, so Miney cannot do it.
-    assert step.remedy is None
+    assert [step.name for step in report.steps] == [
+        "Miney", "Luanti", "World", "Miney mod", "Server", "Connection", "Content"
+    ]
 
 
 def test_an_almost_empty_world_warns_about_its_content(tmp_path):

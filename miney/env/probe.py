@@ -14,9 +14,8 @@ import struct
 
 logger = logging.getLogger(__name__)
 
-#: Luanti's fixed protocol magic number, the first four bytes of every packet, also set
-#: in :class:`~miney.luanticlient.client.Client`. It identifies the wire protocol and is
-#: constant across Luanti versions.
+#: Luanti's fixed protocol magic number, the first four bytes of every packet. It
+#: identifies the wire protocol and is constant across Luanti versions.
 PROTOCOL_ID = 0x4F457403
 
 
@@ -25,8 +24,14 @@ def probe_server(host: str, port: int, timeout: float = 1.0) -> bool:
     Whether a Luanti server answers on a UDP port.
 
     Sends the connection handshake's first packet - the protocol id, peer id 0 and
-    channel 0, the exact bytes Miney's own client opens a connection with - and waits
-    for the server's reply, which begins with the protocol id echoed back.
+    channel 0, the bytes any Luanti client opens a connection with - and waits for the
+    server's reply, which begins with the protocol id echoed back.
+
+    This is the one piece of the network protocol Miney still speaks. It is not a
+    connection: nothing is negotiated, nothing joins, and the server treats it as a
+    peer that gave up. ``uv run miney status`` and ``miney stop`` need to know whether
+    a process is really serving that port, and this is the only answer that holds on
+    every platform.
 
     :param host: Host to probe, normally ``127.0.0.1``.
     :param port: UDP port to probe.

@@ -42,7 +42,7 @@ class FakeHud:
         self.hotbar = {"slots": 8, "image": "", "selected_image": ""}
         self.online = online
 
-    def run(self, code: str):
+    def run(self, code: str, timeout=None, execution_id=None, wait=True):
         self.calls.append(code)
         if not self.online:
             return None

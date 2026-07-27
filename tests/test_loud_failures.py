@@ -18,7 +18,7 @@ class _FakeLua:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    def run(self, code, timeout=None):
+    def run(self, code, timeout=None, execution_id=None, wait=True):
         self.calls.append(code)
         return []
 

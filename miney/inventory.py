@@ -71,7 +71,8 @@ class Inventory:
             f'local inv = {getter}\n'
             f'if inv then\n'
             f'    inv:add_item("main", ItemStack({self.lt.lua.dumps(f"{item} {amount}")}))\n'
-            f'end'
+            f'end',
+            wait=False,
         )
 
     def remove(self, item: str, amount: int = 1) -> None:
@@ -88,7 +89,8 @@ class Inventory:
             f'local inv = {getter}\n'
             f'if inv then\n'
             f'    inv:remove_item("main", ItemStack({self.lt.lua.dumps(f"{item} {amount}")}))\n'
-            f'end'
+            f'end',
+            wait=False,
         )
 
     def get_lists(self) -> list[str]:

@@ -12,6 +12,36 @@ Unreleased
 
 **Added**
 
+- **A world you started yourself in Luanti now works.** ``miney.Luanti()`` finds the
+  server on your computer whoever started it - a world from ``uv run miney start``, or
+  a singleplayer world you opened from the Luanti menu, which Miney could not reach at
+  all before. No account, no password, no port, and nothing joins your world: Miney and
+  the mod pass messages through two files in Luanti's own data directory. Running
+  several worlds at once is the one case that still needs a word from you, and the error
+  message lists them: ``miney.Luanti(world="myworld")``.
+- **Loops are hundreds of times faster, and nothing about them changes.** A command that
+  has no answer to give - placing a node, sending a chat message, setting a position -
+  no longer waits for the server before your next line runs. The server picks up
+  everything that has arrived in one go, so a whole loop costs one server step instead
+  of one step per iteration. Measured on a real server, a plain ``for`` loop placing 400
+  nodes one at a time: **12.2 s before, 0.06 s now**; 2500 nodes take 0.36 s.
+
+  .. code-block:: python
+
+      for x in range(50):
+          for z in range(50):
+              lt.nodes.set(Node(x, 20, z, lt.nodes.names.default.wood))
+
+  Anything that reads waits for the world to catch up first, so ``lt.nodes.get()`` after
+  a loop sees the blocks. Nothing is lost when a script simply ends, either. An error
+  from a command Miney had already sent on is raised at the next line that waits, and
+  the message names the line it really came from. :meth:`lt.lua.flush()
+  <miney.Lua.flush>` waits on demand, and :meth:`lt.lua.run() <miney.Lua.run>` takes
+  ``wait=False`` for Lua of your own.
+- ``uv run miney start`` asks the server for a step every 0.03 seconds instead of the
+  default 0.09 - what a game hosted from the Luanti menu runs at anyway. That is the
+  whole of the delay on a command that does wait for an answer, so it cuts it by two
+  thirds: 90 ms to 30, measured on a real server.
 - ``player.hud`` - the screen. A chat message scrolls away; this stays.
   :meth:`player.hud.text() <miney.Hud.text>` puts a line on a player's screen and gives
   back a handle to change it later, ``score.text = "Score: 7"``. Waypoints, images,
@@ -29,12 +59,11 @@ Unreleased
   the client, so the next line can use it. ``player=`` sends it to one player and
   forgets it again, ``keep=True`` keeps it across server restarts. Neither Pillow nor
   matplotlib is needed to install Miney; they are recognised by the methods they carry.
-- :meth:`~miney.Lua.run` no longer has a length limit worth thinking about. A formspec
-  submit carries less than 640 KB and the server drops anything larger without a word,
-  so long code used to be refused outright; it is now sent in several pieces and put
-  back together on the other side. v0.7.0 turned the silent timeout into an error
-  message, and this makes the error unnecessary. Code above 16 MB is still refused,
-  which no script written by a person will ever reach.
+- :meth:`~miney.Lua.run` no longer has a length limit worth thinking about. The old
+  route carried less than 640 KB per request and the server dropped anything larger
+  without a word, so long code was refused outright. 8 MB now crosses in a single server
+  step, indistinguishable from a kilobyte. Code above 16 MB is still refused, which no
+  script written by a person will ever reach.
 - :class:`~miney.Point` can be compared and used as a key. ``Point(1, 2, 3) ==
   Point(1, 2, 3)`` is ``True``, and a point now goes into a ``set`` or a ``dict`` like
   any other value. Note the trap: ``point += other`` changes the point in place, and a
@@ -47,13 +76,51 @@ Unreleased
 
 **Changed**
 
-- **The Lua mod on the server has to be updated** for the change above. Miney checks on
-  the first call and says so.
+- **The Lua mod on the server has to be updated** for the changes above. Miney checks
+  while it connects and says so.
+- **One command takes longer than it did in v0.7.0**, and that is the price of the line
+  above. Logging in as a player let the server answer the moment the request arrived;
+  reaching it through its files means waiting for the server's next step, because that
+  is when a mod is allowed to run at all. Measured on the same server: 1.6 ms before,
+  30 ms now. Loops are not affected - see above, they got much faster - so this is only
+  noticeable when a script waits for one answer after another.
 - **Luanti 5.9 or newer is required**, up from 5.7. Both of those are years old by now,
   and 5.9 is where the engine learned to accept a media file's contents directly rather
   than a path on the server's own disk - which is what will let a script hand a player
   an image it made in Python. ``uv run miney start`` installs a current Luanti by
   itself, so this only matters if you point Miney at a server somebody else runs.
+
+**Removed**
+
+- **A Luanti on another computer is out of reach.** Miney used to carry a Luanti client
+  of its own - the network protocol, the login, the packets - so that it could reach a
+  server anywhere and drive it through a player account. That is gone. Everything now
+  goes through the two files, which means the server has to be one this machine can see
+  on disk.
+
+  It bought 30 ms per command and cost an account, a password, a port, a player standing
+  in the world, a 640 KB ceiling per request and about 1800 lines of hand-written UDP and
+  SRP code. What a script waits for is answers, not commands, and 30 ms is not what makes
+  a script slow - the number of answers it asks for is, and that is what the loop work
+  above fixes. Reaching somebody else's server is worth doing properly some day; it is
+  not worth a second transport in the meantime.
+
+  ``miney.Luanti()`` is unchanged. ``server``, ``playername``, ``password`` and
+  ``invisible`` are gone from it, and a script that passed them raises ``TypeError``
+  instead of quietly connecting to the wrong thing. ``lt.luanti``, ``lt.server``,
+  ``lt.playername`` and ``miney.LuantiClient`` are gone with them.
+- ``miney.LuantiPermissionError``, ``miney.LuantiTimeoutError``,
+  ``miney.AuthenticationError`` and ``miney.SessionReconnected`` are gone. Nothing could
+  raise them once the login went. ``miney.LuantiConnectionError`` stays and still means
+  what it did: Miney cannot reach the server, or the mod on it is too old.
+- **The** ``miney`` **privilege is gone**, and so is ``/miney form``, the in-game Lua
+  console. The privilege guarded a network client, and there is no longer one; the
+  channel is a file inside the server's own data directory, so whoever can write it
+  already has everything the privilege gated. ``uv run miney check`` no longer has a
+  Privilege line. A world where you had run ``/grant somebody miney`` keeps working -
+  the grant is simply ignored.
+- ``examples/choreography.py`` is gone. It flew several Miney player accounts around in
+  formation, and there are no Miney players any more.
 
 v0.7.0
 ------

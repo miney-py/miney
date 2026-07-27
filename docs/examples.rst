@@ -70,18 +70,3 @@ the best place to see how the pieces fit together.
    .. literalinclude:: ../examples/treasure_hunt.py
       :language: python
       :linenos:
-
-
-🪐 Choreography Showcase (`choreography.py`)
----------------------------------------------
-
-The ambitious one: several Luanti clients at once, moved like a solar system.
-
-The clients connect as ``dancer_1`` up to ``dancer_<N>``, so your server has to be running before you start
-it. The first time each dancer connects, grant it the ``miney`` and ``noclip`` privileges.
-
-.. dropdown:: View Code
-
-   .. literalinclude:: ../examples/choreography.py
-      :language: python
-      :linenos:

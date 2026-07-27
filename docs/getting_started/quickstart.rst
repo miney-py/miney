@@ -144,7 +144,7 @@ connect, then tell the world what to do.
 
 If no world is running yet, ``miney.Luanti()`` starts one for you — the same as ``miney start`` — and then
 connects. So even the shortest script gets you a world; ``miney start`` just lets you open it first and watch
-what your code does to it.
+what your code does to it. Miney does not join your game, so you stay the only one in it.
 
 
 🗺️ Where to go next

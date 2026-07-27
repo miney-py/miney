@@ -2,11 +2,10 @@
 Answering one question: can Python drive this Luanti right now?
 
 The check is a chain, deliberately, and it is read from the bottom up. Miney, then
-Luanti, then the world, the mod, the server, the connection, the privilege and finally
-the world's content - each step only makes sense once the one below it holds. A single
-"it does not work" tells a beginner nothing; a chain tells them *which* layer is
-broken, which is the whole reason this exists as a command instead of a paragraph in
-the docs.
+Luanti, then the world, the mod, the server, the connection and finally the world's
+content - each step only makes sense once the one below it holds. A single "it does not
+work" tells a beginner nothing; a chain tells them *which* layer is broken, which is
+the whole reason this exists as a command instead of a paragraph in the docs.
 
 Two rules keep it honest:
 
@@ -21,8 +20,8 @@ Two rules keep it honest:
 
 The chain stops at the first step that makes the rest meaningless: with no Luanti
 there is nothing to say about the server, and with a stopped server there is nothing
-to connect to. Steps that only ever warn - an outdated mod, a missing privilege, a
-sparse world - never stop it, because none of them keeps a learner from writing code.
+to connect to. Steps that only ever warn - an outdated mod, a sparse world - never
+stop it, because neither keeps a learner from writing code.
 """
 from __future__ import annotations
 
@@ -31,11 +30,11 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from .. import __version__
-from ..exceptions import LuaError, LuaResultTimeout, MineyRunError
-from ..luanticlient.exceptions import (
+from ..exceptions import (
+    LuaError,
     LuantiConnectionError,
-    LuantiPermissionError,
-    LuantiTimeoutError,
+    LuaResultTimeout,
+    MineyRunError,
 )
 from . import manage
 from .discover import LuantiInstall, discover as discover_luanti
@@ -54,10 +53,6 @@ WARNING = "warning"
 #: A step that has to be fixed before the next one can even be tried.
 FAILED = "failed"
 
-#: The privilege the Miney mod gates code execution behind, for clients that are not
-#: on a local address (see ``mod_data/miney/init.lua``).
-MINEY_PRIVILEGE = "miney"
-
 #: Below this many registered node types, a world is not carrying a real game. Ten is
 #: low enough that no working game trips it and high enough to catch a game that failed
 #: to load, which reports a handful of engine built-ins and nothing else.
@@ -74,8 +69,6 @@ Connector = Callable[[str], Any]
 CONNECTION_ERRORS = (
     MineyRunError,
     LuantiConnectionError,
-    LuantiPermissionError,
-    LuantiTimeoutError,
     LuaError,
     LuaResultTimeout,
 )
@@ -156,11 +149,10 @@ def _connect(world: str) -> Any:
     """
     Open a connection exactly the way a learner's own script does.
 
-    Same defaults as a bare ``miney.Luanti()`` - including ``invisible``, which is what
-    everybody gets - so this proves the thing that is about to happen rather than a
-    tidier version of it. ``autostart`` is the one exception: a check must never bring
-    a server up behind the user's back, and the caller has already established that the
-    server answers.
+    Same defaults as a bare ``miney.Luanti()``, so this proves the thing that is about
+    to happen rather than a tidier version of it. ``autostart`` is the one exception: a
+    check must never bring a server up behind the user's back, and the caller has
+    already established that the server answers.
 
     Imported here rather than at module level because :mod:`miney.luanti` imports
     :mod:`~miney.env.manage`, so a module-level import would close a cycle.
@@ -364,44 +356,6 @@ def _server_step(
     )
 
 
-def _privilege_step(connection: Any) -> CheckStep:
-    """
-    Whether the Miney player holds the ``miney`` privilege.
-
-    Only ever a warning, and that is not a softened failure: ``mod_data/miney/init.lua``
-    lets a client on a local address execute code without the privilege, which is every
-    world ``miney start`` creates. It matters on a server reached over the network - and
-    there Miney cannot grant it either, because granting runs through the very code
-    execution the privilege gates. So this step explains and names ``/grant``, and
-    carries no offer.
-
-    :param connection: The connected Luanti.
-    :return: The step.
-    """
-    name = getattr(connection, "playername", MINEY_PRIVILEGE)
-    for player in connection.players:
-        if player.name != name:
-            continue
-        if MINEY_PRIVILEGE in player.privileges:
-            return CheckStep(
-                name="Privilege",
-                state=OK,
-                detail=f"'{name}' has the '{MINEY_PRIVILEGE}' privilege",
-            )
-        break
-
-    return CheckStep(
-        name="Privilege",
-        state=WARNING,
-        detail=f"'{name}' does not have the '{MINEY_PRIVILEGE}' privilege",
-        hint=(
-            "Not needed here - the Miney mod lets a client on this machine run code "
-            "without it. On a Luanti server somewhere else it is required, and only "
-            f"that server can grant it: /grant {name} {MINEY_PRIVILEGE}"
-        ),
-    )
-
-
 def _content_step(connection: Any) -> CheckStep:
     """
     Whether the world actually has a game loaded, seen through Miney's own eyes.
@@ -486,12 +440,11 @@ def run_checks(
                     detail=f"talking to Luanti {connection.version}",
                 )
             )
-            steps.append(_privilege_step(connection))
             steps.append(_content_step(connection))
     except CONNECTION_ERRORS as error:
-        # Every Miney-level failure, from a refused handshake to a mod that is installed
-        # but not enabled, arrives here. There is nothing to offer: no command Miney can
-        # run turns a server that rejects it into one that does not.
+        # Every Miney-level failure, from a channel that never answered to a mod that is
+        # installed but not enabled, arrives here. There is nothing to offer: no command
+        # Miney can run turns a server that stays silent into one that does not.
         logger.debug("The check could not connect: %s", error)
         steps.append(
             CheckStep(
@@ -500,8 +453,8 @@ def run_checks(
                 detail=str(error),
                 hint=(
                     "Usually one of: the Miney mod is installed but not enabled for "
-                    "this world, another client is already connected under this name, "
-                    "or the server is still starting up."
+                    "this world, the game is paused with the ESC menu open, or the "
+                    "server is still starting up."
                 ),
             )
         )

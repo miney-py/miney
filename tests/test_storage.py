@@ -23,7 +23,7 @@ class FakeStorage:
         self.fields = dict(fields or {})
         self.calls: list[str] = []
 
-    def run(self, code: str):
+    def run(self, code: str, timeout=None, execution_id=None, wait=True):
         self.calls.append(code)
         if code == "return storage:to_table().fields":
             return dict(self.fields) or None

@@ -11,7 +11,7 @@ class _FakeLua:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    def run(self, code, timeout=None):
+    def run(self, code, timeout=None, execution_id=None, wait=True):
         self.calls.append(code)
         # The real Lua returns how many blocks it wrote; the box is in the source.
         p1 = [int(code.split(f"{axis} = ")[1].split(",")[0].split("}")[0])

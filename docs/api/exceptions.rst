@@ -15,11 +15,3 @@ All of these are importable straight from ``miney``, for example ``miney.LuaErro
 
 .. automodule:: miney.exceptions
    :members:
-
-.. rubric:: Connection errors
-
-Raised by the network client underneath, when the problem is the connection to the server rather than
-anything you asked it to do.
-
-.. automodule:: miney.luanticlient.exceptions
-   :members:

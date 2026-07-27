@@ -36,7 +36,7 @@ def test_send_to_player_with_player_object(chat_instance):
 
     # Assert
     chat_instance.lt.lua.run.assert_called_once_with(
-        'return minetest.chat_send_player("testplayer", "hello")'
+        'minetest.chat_send_player("testplayer", "hello")', wait=False
     )
 
 
@@ -50,7 +50,8 @@ def test_send_to_all_coerces_to_string(chat_instance, caplog):
 
     # Assert
     assert "Coercing chat message to string" in caplog.text
-    chat_instance.lt.lua.run.assert_called_once_with('minetest.chat_send_all("12345")')
+    chat_instance.lt.lua.run.assert_called_once_with('minetest.chat_send_all("12345")',
+                                                     wait=False)
 
 
 def test_send_to_player_raises_for_invalid_type(chat_instance):

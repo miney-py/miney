@@ -15,7 +15,7 @@ def print_welcome():
     """Prints the welcome message and instructions."""
     print("Miney Lua Console")
     print("=================")
-    print("Usage: python luaconsole.py [<server> <port> <playername> <password>]")
+    print("Usage: uv run python luaconsole.py [<world>]")
     print("\nClient-side commands:")
     print("  !help          - Show this help message.")
     print("  !clear         - Clear the console screen.")
@@ -71,18 +71,14 @@ def handle_client_command(cmd: str, lt: Luanti, pp: pprint.PrettyPrinter) -> boo
 
 def main():
     """Main function to run the Lua console."""
-    # --- Connection Details ---
-    server = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
-    port = int(sys.argv[2]) if len(sys.argv) > 2 else 30000
-    playername = sys.argv[3] if len(sys.argv) > 3 else "miney"
-    password = sys.argv[4] if len(sys.argv) > 4 else "ChangeThePassword!"
+    world = sys.argv[1] if len(sys.argv) > 1 else None
 
-    # --- Connect to Server ---
+    # --- Connect to the Luanti on this computer ---
     try:
-        lt = Luanti(server, playername, password, port)
-        print(f"Successfully connected to {server}:{port} as '{playername}'.")
-    except (exceptions.LuantiConnectionError, socket.timeout) as e:
-        print(f"Error: Could not connect to server. {e}", file=sys.stderr)
+        lt = Luanti(world=world)
+        print(f"Connected to {lt!r}.")
+    except (exceptions.LuantiConnectionError, exceptions.MineyRunError) as e:
+        print(f"Error: Could not reach a Luanti server. {e}", file=sys.stderr)
         sys.exit(1)
 
     print_welcome()

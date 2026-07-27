@@ -15,7 +15,7 @@ class _RecordingLua:
         self.calls: list[str] = []
         self.answer = answer
 
-    def run(self, code, timeout=None):
+    def run(self, code, timeout=None, execution_id=None, wait=True):
         self.calls.append(code)
         return self.answer
 

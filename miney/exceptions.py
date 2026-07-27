@@ -77,16 +77,13 @@ class DataError(Exception):
     pass
 
 
-class AuthenticationError(Exception):
+class LuantiConnectionError(Exception):
     """
-    Authentication error.
-    """
-    pass
+    Miney cannot reach the Luanti server, or cannot talk to what it found.
 
-
-class SessionReconnected(Exception):
-    """
-    We had to reconnect and reauthenticate.
+    Two cases end up here: the channel to the server is not usable at all, and the
+    ``miney`` mod on the other end is older than this version of Miney speaks. Both
+    messages name the command that fixes them.
     """
     pass
 

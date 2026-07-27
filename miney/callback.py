@@ -4,7 +4,6 @@ import json
 import logging
 import queue
 import threading
-import time
 import uuid
 if TYPE_CHECKING:
     from .luanti import Luanti
@@ -53,7 +52,7 @@ class Callback:
 
     def __init__(self, luanti: 'Luanti'):
         self.lt = luanti
-        self._client = luanti.luanti
+        self._transport = luanti.transport
         self._client_id: str = str(uuid.uuid4())
         #: Handlers by event name, then by the id the server knows them under.
         self._event_handlers: Dict[str, Dict[str, Callable[[Event], None]]] = {}
@@ -66,44 +65,20 @@ class Callback:
             target=self._dispatch_loop, name="miney-callbacks-dispatcher", daemon=True
         )
         self._dispatcher.start()
-        self._code_form_shown: bool = False
-        self._code_form_warmup_sent: bool = False
-        if self._client and self._client.command_handler:
-            self._client.command_handler.register_formspec_handler(
-                "miney:code_form", self._handle_miney_callbacks
-            )
-        if self._client and self._client.state.authenticated:
-            self._ensure_code_form_open()
+        self._transport.add_listener(self._handle_record)
         logger.debug("Callback manager initialized with client_id=%s", self._client_id)
 
     def _send(self, payload: Dict[str, Any]) -> bool:
-        """Send a JSON payload via the 'miney:code_form' channel."""
-        if not self._client or not self._client.state.authenticated:
-            logger.warning("Cannot send callback registration: client not authenticated.")
-            return False
-        # Ensure the code form has been shown at least once
-        self._ensure_code_form_open()
-        fields = {"payload": json.dumps(payload, ensure_ascii=False)}
-        return self._client.send_formspec_response("miney:code_form", fields)
+        """
+        Send one registration or unregistration to the mod.
 
-    def _ensure_code_form_open(self) -> None:
+        :param payload: What the mod's callback half should do.
+        :return: True if it went out.
         """
-        Ensure the server has shown the 'miney:code_form' once.
-        This uses a chat command and a Miney-local readiness flag to avoid
-        relying on Lua component initialization order.
-        """
-        if not self._client or not self._client.state.authenticated:
-            return
-        if self._code_form_shown:
-            return
-        if not self._code_form_warmup_sent:
-            ok = self._client.send_chat_message("/miney form")
-            if ok:
-                logger.debug("Requested code form warm-up via chat command.")
-            self._code_form_warmup_sent = True
-        deadline = time.time() + 2.0
-        while not self._code_form_shown and time.time() < deadline:
-            time.sleep(0.05)
+        if not self._transport.connected:
+            logger.warning("Cannot send a callback registration: not connected.")
+            return False
+        return self._transport.send({"payload": json.dumps(payload, ensure_ascii=False)})
 
 
     def _dispatch_loop(self) -> None:
@@ -147,22 +122,17 @@ class Callback:
             finally:
                 self._events_queue.task_done()
 
-    def _handle_miney_callbacks(self, formspec: str) -> None:
-        """Handle incoming JSON from the miney:callbacks channel."""
-        self._code_form_shown = True
+    def _handle_record(self, data: Dict[str, Any]) -> None:
+        """
+        Take one record off the transport and queue it if it is an event.
 
-        try:
-            data = json.loads(formspec)
-        except json.JSONDecodeError:
-            logger.warning("Received non-JSON callbacks formspec payload.")
-            return
+        Both halves of Miney listen on the same stream, so most of what arrives here
+        belongs to :class:`~miney.lua.Lua` and is left alone.
 
-        # Ignore Lua execution results routed on the same form
-        if isinstance(data, dict) and ("execution_id" in data or "result" in data):
-            return
-
-        if data is None:
-            logger.debug("Received initial/empty callbacks message; marking ready and ignoring.")
+        :param data: What the mod sent, already decoded.
+        """
+        # Ignore Lua execution results travelling on the same channel
+        if "execution_id" in data or "result" in data:
             return
 
         if "error" in data:

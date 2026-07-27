@@ -332,7 +332,7 @@ class Nodes:
             lua += (f"minetest.set_node("
                     f"{self.lt.lua.dumps({'x': n.x, 'y': n.y, 'z': n.z})}, "
                     f"{self.lt.lua.dumps({'name': n.name})})\n")
-        self.lt.lua.run(lua)
+        self.lt.lua.run(lua, wait=False)
 
     def fill(self, start: Point, end: Point, name: str) -> int:
         """

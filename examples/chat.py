@@ -33,7 +33,7 @@ def main() -> int:
     setup_logging()
     logger.info("Starting non-blocking callbacks example")
 
-    lt = Luanti(server="127.0.0.1", playername="miney", password="ChangeThePassword!", port=30000)
+    lt = Luanti()
 
     # Use the flattened event attributes
     @lt.chat.on(event="chat_message")

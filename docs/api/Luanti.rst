@@ -7,6 +7,11 @@ running, it starts one for you.
 
 It also carries the settings that belong to the world as a whole, like the time of day.
 
+It takes no arguments. Miney finds the running Luanti by itself — one your project started, or one you
+opened from the Luanti menu, singleplayer included — and it does not join the game, so nobody appears in
+your world. The one thing it cannot do is reach a Luanti on **another** computer: it talks to the mod
+through two files in Luanti's own directory, and a file on your disk is not on somebody else's machine.
+
 :Example:
 
     >>> import miney

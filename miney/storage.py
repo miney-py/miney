@@ -137,8 +137,8 @@ class Storage(MutableMapping):
                 f'set to "". Use "del lt.storage[{key!r}]" if that is what you mean.'
             )
         self.lt.lua.run(
-            f"storage:set_string({self.lt.lua.dumps(key)}, {self.lt.lua.dumps(value)}) "
-            f"return true"
+            f"storage:set_string({self.lt.lua.dumps(key)}, {self.lt.lua.dumps(value)})",
+            wait=False,
         )
 
     def __delitem__(self, key: str) -> None:

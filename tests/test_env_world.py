@@ -65,6 +65,14 @@ def test_config_binds_the_server_to_loopback_only(tmp_path: Path):
     assert "bind_address = 127.0.0.1" in target.read_text(encoding="utf-8").splitlines()
 
 
+def test_config_shortens_the_server_step(tmp_path: Path):
+    # Every Miney command is answered on the step after the one that picked it up, so
+    # the default 0.09 is the whole of the latency in the REPL.
+    target = tmp_path / "luanti.conf"
+    write_config(target)
+    assert "dedicated_server_step = 0.03" in target.read_text(encoding="utf-8").splitlines()
+
+
 def test_config_creates_parent_directories(tmp_path: Path):
     target = tmp_path / "deep" / "luanti.conf"
     write_config(target)

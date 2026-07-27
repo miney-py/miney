@@ -17,11 +17,8 @@ So we need something like an interface that is accessible by Python.
 🔌 The interface
 ------------------------------
 
-Miney implements a native Luanti client in Python. This client connects to the Luanti server just like a regular player would.
-This approach allows Miney to interact with the game world directly.
-
 To bridge the gap between Python and Lua, Miney relies on a companion mod, the `miney` mod, which must be installed on the Luanti server.
-This mod provides the necessary server-side functions to receive Lua code from the Miney client, execute it, and send back the results.
+This mod provides the necessary server-side functions to receive Lua code from Miney, execute it, and send back the results.
 The most important function is the one that executes arbitrary Lua code.
 
 Miney uses this capability to execute Lua code inside Luanti, effectively giving you control over the game via Python.
@@ -30,21 +27,58 @@ Miney uses this capability to execute Lua code inside Luanti, effectively giving
 
    **And you can use Miney without knowing any Lua or even seeing a single line of Lua code.**
 
-.. dropdown:: Data Transfer via Formspecs
+Miney and the mod pass messages through two files. Nothing joins your game, so there is no account and no
+port, and a singleplayer world works as well as a hosted one. The one thing this cannot do is reach a Luanti
+on somebody else's computer — a file on your disk is not on their machine.
 
-   The communication between the Python client and the Lua mod is built upon Luanti's formspec system. Formspecs are typically used to create graphical user interface (GUI) forms for players, such as inventory screens or dialog boxes. Miney repurposes this system for programmatic data exchange.
+.. dropdown:: How the file channel works
 
-   Here's how it works:
+   The mod keeps two files in Luanti's own ``mod_data`` directory, one per world: ``c2s`` for what Miney
+   sends and ``s2c`` for what comes back. Each holds one JSON record per line, and each side only ever
+   appends to the file it writes.
 
-   #. **Sending Code to the Server**: When you execute a command in Python that requires interaction with the game world, the Miney client constructs a Lua code snippet. It then sends this code to the server by programmatically "submitting" a form with the form name ``miney:code_form``. The Lua code is embedded within one of the form's fields.
+   #. **Sending code to the server**: Miney appends one line to ``c2s`` and carries on.
 
-   #. **Execution on the Server**: The ``miney`` mod on the server has a listener registered for this specific form. When it receives the submission, it extracts the Lua code from the form fields and executes it within a sandboxed environment.
+   #. **Execution on the server**: the mod reads that file once per server step, from wherever it stopped
+      last time, and runs every complete line it finds inside a sandbox. A line without its final newline
+      is not a short record — it is not a record yet, so a request caught half-written is simply read whole
+      on the next step. That is what makes a torn read impossible rather than merely unlikely.
 
-   #. **Returning Results to the Client**: After execution, the Lua script gathers the results (e.g., a node's properties, a list of players). The ``miney`` mod then sends a *new* formspec back to the client. This new formspec contains the execution results, typically serialized as a JSON string, in a result field.
+   #. **Returning results**: the mod appends the answer to ``s2c`` and flushes once at the end of the step.
+      Flushing is not a disk write: it moves the bytes out of the mod's buffer into the operating system,
+      which is what lets another program see them.
 
-   #. **Receiving Results in Python**: The Miney client, which is listening for incoming formspecs, receives this new form. It parses the fields, extracts the JSON result string, deserializes it back into a Python object, and returns it to the calling function.
+   #. **Receiving results in Python**: a background thread watches ``s2c`` from its own offset and hands
+      each complete line to whichever call is waiting for it.
 
-   This clever use of the formspec system allows for a robust, bidirectional communication channel without requiring any changes to the core Luanti engine. It effectively turns a GUI mechanism into a remote procedure call (RPC) system.
+   Both file handles are opened once when the server starts and kept, because opening a file inside Luanti's
+   security sandbox costs a thousand times more than reading from one that is already open. An idle channel
+   costs the server a single check per step.
+
+   The one thing this cannot get around is the server step. A mod only ever runs as part of one, so a
+   request is picked up on the next step and answered there: about 17 ms in a game you are playing, 30 ms
+   on a world ``miney start`` launched. It is also why a paused singleplayer game answers nothing at all —
+   with the ESC menu open the server does not step, so no mod code runs either.
+
+   A network client would not pay that. The server spends most of each step waiting for packets
+   (``server.cpp:152-158``), and a packet that arrives is handled immediately, mod callback included — so a
+   client is answered in the middle of a step rather than at the start of the next one. Measured against the
+   same server, before that route was dropped: 1.6 ms over a player account, 31 ms over the files.
+
+   What the files give back is throughput, and that is what a loop actually needs. The mod runs *every*
+   complete line it finds in one step, so requests sent without waiting for each answer cost one step
+   between them all rather than one step each — measured, 1000 commands within a single server tick.
+
+   Miney uses that by itself. A call with nothing to return does not wait, and the next call that needs an
+   answer waits for the lot; a plain ``for`` loop placing 400 nodes one at a time went from 12.2 s to
+   0.06 s. Because the mod answers in the order it was asked, an answer arriving is proof that everything
+   sent before it is done, so no extra message is needed to synchronise — and an error from a command Miney
+   had already moved past is raised at that next call, carrying the line it really came from.
+
+   That trade is why the network route is gone. It bought 30 ms per round trip and cost an account, a
+   password, a port, a player standing in the world, a 640 KB ceiling per request, and roughly 1800 lines of
+   hand-written UDP, SRP and packet code. Neither the shape of a beginner's script nor a fleet of agents
+   driving entities is bounded by that 30 ms — both are bounded by how many answers they ask for.
 
 
 📦 What you need to get started

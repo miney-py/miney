@@ -15,35 +15,17 @@ local function log(level, message)
     end
 end
 
-local function is_local_address(addr)
-    return addr == "::ffff:127.0.0.1" or addr == "127.0.0.1"
+-- miney_reply lives in channel.lua, which init.lua loads before this file for exactly
+-- that reason.
+local function send_cb_ack(session, action, client_id)
+    miney_reply(session, { ok = true, action = tostring(action), client_id = client_id })
 end
 
-local function chat_send_to_priv(priv_name, message)
-    local priv_table = { [priv_name] = true }
-    for _, player in ipairs(minetest.get_connected_players()) do
-        if minetest.check_player_privs(player:get_player_name(), priv_table) then
-            minetest.chat_send_player(player:get_player_name(), message)
-        end
-    end
-end
-
-local function send_callbacks_json(player_name, tbl)
-    local client_info = minetest.get_player_information(player_name) or {}
-    if client_info and client_info.version_string == "miney_v1.0" then
-        minetest.show_formspec(player_name, "miney:code_form", minetest.write_json(tbl))
-    end
-end
-
-local function send_cb_ack(player_name, action, client_id)
-    send_callbacks_json(player_name, { ok = true, action = tostring(action), client_id = client_id })
-end
-
-local function send_cb_error(player_name, message, client_id, code)
+local function send_cb_error(session, message, client_id, code)
     local payload = { error = tostring(message) }
     if client_id then payload.client_id = client_id end
     if code then payload.code = code end
-    send_callbacks_json(player_name, payload)
+    miney_reply(session, payload)
 end
 
 local function valid_chatcommand_name(name)
@@ -175,7 +157,7 @@ local EVENTS = {
     },
 }
 
--- [client_id] = { player = "<name>", subs = { chat_message = { [handler_id] = {filter = {...}} } }, cmds = { [name] = true } }
+-- [client_id] = { session = "@<uuid>", subs = { chat_message = { [handler_id] = {filter = {...}} } }, cmds = { [name] = true } }
 local miney_cb = {
     clients = {},
     -- [public_name] = { client_id = "<uuid>", def = { ... } }
@@ -301,8 +283,8 @@ end
 -- side is told which of its functions this event is meant for and does not have to work
 -- it out a second time from the filters it once sent.
 --
--- Still one message however many handlers match. Every event costs a formspec, and that
--- channel carries the results of lua.run as well.
+-- Still one message however many handlers match. Every event is a line in the answer
+-- log, and that log carries the results of lua.run as well.
 local function broadcast(event_name, payload)
     for client_id, rec in pairs(miney_cb.clients) do
         local subs = rec.subs and rec.subs[event_name]
@@ -314,7 +296,7 @@ local function broadcast(event_name, payload)
                 end
             end
             if #handlers > 0 then
-                send_callbacks_json(rec.player, {
+                miney_reply(rec.session, {
                     event = event_name,
                     payload = payload,
                     ts = os.time(),
@@ -346,11 +328,11 @@ local function register_events()
     end
 end
 
-local function cleanup_player_callbacks(player_name)
+local function cleanup_player_callbacks(session)
     local to_unregister = {}
     local removed_clients, unreg_cmds = 0, 0
     for client_id, rec in pairs(miney_cb.clients) do
-        if rec.player == player_name then
+        if rec.session == session then
             if rec.cmds then
                 for cmd_name, _ in pairs(rec.cmds) do
                     to_unregister[cmd_name] = true
@@ -367,37 +349,23 @@ local function cleanup_player_callbacks(player_name)
             unreg_cmds = unreg_cmds + 1
         end
     end
-    log("info", ("cleanup_player_callbacks: player=%s, removed_clients=%d, unregistered_cmds=%d")
-        :format(player_name, removed_clients, unreg_cmds))
+    log("info", ("cleanup_player_callbacks: session=%s, removed_clients=%d, unregistered_cmds=%d")
+        :format(session, removed_clients, unreg_cmds))
 end
 
-local function handle_receive_fields(player, fields)
-    local player_name = player:get_player_name()
-    local client_info = minetest.get_player_information(player_name) or {}
-    local client_ip = client_info.address
+local function handle_receive_fields(session, fields)
     local payload_len = (fields.payload and #fields.payload) or 0
-    log("action", ("handle_receive_fields: player=%s, payload_len=%d"):format(player_name, payload_len))
-
-    if not is_local_address(client_ip) and not minetest.check_player_privs(player_name, { miney = true }) then
-        local msg = "Permission denied: You lack the 'miney' privilege to manage callbacks."
-        chat_send_to_priv("privs",
-            "Player '" .. player_name .. "' tried to manage callbacks but lacks the 'miney' privilege. " ..
-            "To grant access, use: /grant " .. player_name .. " miney"
-        )
-        log("warning", ("Permission denied for %s (ip=%s)"):format(player_name, tostring(client_ip)))
-        send_cb_error(player_name, msg, nil, "forbidden")
-        return true
-    end
+    log("action", ("handle_receive_fields: session=%s, payload_len=%d"):format(session, payload_len))
 
     local payload_json = fields.payload
     if not payload_json or payload_json == "" then
-        send_cb_error(player_name, "Missing JSON payload in 'payload' field.", nil, "bad_request")
+        send_cb_error(session, "Missing JSON payload in 'payload' field.", nil, "bad_request")
         return true
     end
 
     local ok, req = pcall(minetest.parse_json, payload_json)
     if not ok or type(req) ~= "table" then
-        send_cb_error(player_name, "Invalid JSON payload.", nil, "bad_request")
+        send_cb_error(session, "Invalid JSON payload.", nil, "bad_request")
         return true
     end
     log("info", ("request parsed: action=%s, client_id=%s"):format(tostring(req and req.action), tostring(req and req.client_id)))
@@ -405,40 +373,40 @@ local function handle_receive_fields(player, fields)
     local action = req.action
     local client_id = req.client_id
     if type(client_id) ~= "string" or client_id == "" then
-        send_cb_error(player_name, "Missing 'client_id' in request.", nil, "bad_request")
+        send_cb_error(session, "Missing 'client_id' in request.", nil, "bad_request")
         return true
     end
 
     local rec = miney_cb.clients[client_id]
     if not rec then
-        rec = { player = player_name, subs = {}, cmds = {} }
+        rec = { session = session, subs = {}, cmds = {} }
         miney_cb.clients[client_id] = rec
     else
-        rec.player = player_name
+        rec.session = session
     end
 
     if action == "register" then
         local events = req.events or {}
         if type(events) ~= "table" then
-            send_cb_error(player_name, "Field 'events' must be a list.", client_id, "bad_request")
+            send_cb_error(session, "Field 'events' must be a list.", client_id, "bad_request")
             return true
         end
         local handler_id = req.handler
         if type(handler_id) ~= "string" or handler_id == "" then
-            send_cb_error(player_name, "Missing 'handler' in request.", client_id, "bad_request")
+            send_cb_error(session, "Missing 'handler' in request.", client_id, "bad_request")
             return true
         end
         -- Everything is checked before anything is stored, so a rejected request leaves
         -- no half-finished subscription behind.
         for _, ev in ipairs(events) do
             if not EVENTS[ev] then
-                send_cb_error(player_name, ("Unknown event '%s'. Available: %s."):format(
+                send_cb_error(session, ("Unknown event '%s'. Available: %s."):format(
                     tostring(ev), event_names()), client_id, "bad_request")
                 return true
             end
             local filter_ok, why = valid_filter(ev, req.filter)
             if not filter_ok then
-                send_cb_error(player_name, why, client_id, "bad_request")
+                send_cb_error(session, why, client_id, "bad_request")
                 return true
             end
         end
@@ -448,13 +416,13 @@ local function handle_receive_fields(player, fields)
         end
         log("action", ("register: client_id=%s, handler=%s, events_count=%d, filtered=%s"):format(
             client_id, handler_id, #(req.events or {}), tostring(req.filter ~= nil)))
-        send_cb_ack(player_name, action, client_id)
+        send_cb_ack(session, action, client_id)
         return true
 
     elseif action == "unregister" then
         local events = req.events or {}
         if type(events) ~= "table" then
-            send_cb_error(player_name, "Field 'events' must be a list.", client_id, "bad_request")
+            send_cb_error(session, "Field 'events' must be a list.", client_id, "bad_request")
             return true
         end
         -- Without a handler this drops every subscription for the event, which is what
@@ -474,18 +442,18 @@ local function handle_receive_fields(player, fields)
         end
         log("action", ("unregister: client_id=%s, handler=%s, events_count=%d"):format(
             client_id, tostring(handler_id), #(req.events or {})))
-        send_cb_ack(player_name, action, client_id)
+        send_cb_ack(session, action, client_id)
         return true
 
     elseif action == "register_chatcommand" then
         local name = req.name
         local def = req.definition or {}
         if not valid_chatcommand_name(name) then
-            send_cb_error(player_name, "Invalid chat command name.", client_id, "bad_request")
+            send_cb_error(session, "Invalid chat command name.", client_id, "bad_request")
             return true
         end
         if miney_cb.commands[name] and miney_cb.commands[name].client_id ~= client_id then
-            send_cb_error(player_name, "Chat command already registered: " .. name, client_id, "conflict")
+            send_cb_error(session, "Chat command already registered: " .. name, client_id, "conflict")
             return true
         end
 
@@ -506,7 +474,7 @@ local function handle_receive_fields(player, fields)
                     ts = os.time(),
                     client_id = client_id,
                 }
-                send_callbacks_json(rec.player, event)
+                miney_reply(rec.session, event)
                 return true
             end
         })
@@ -514,43 +482,38 @@ local function handle_receive_fields(player, fields)
         miney_cb.commands[name] = { client_id = client_id, def = def }
         log("info", ("chatcommand registered: name=%s"):format(name))
         rec.cmds[name] = true
-        send_cb_ack(player_name, action, client_id)
+        send_cb_ack(session, action, client_id)
         return true
 
     elseif action == "unregister_chatcommand" then
         local name = req.name
         if type(name) ~= "string" or name == "" then
-            send_cb_error(player_name, "Missing or invalid 'name' for unregister_chatcommand.", client_id, "bad_request")
+            send_cb_error(session, "Missing or invalid 'name' for unregister_chatcommand.", client_id, "bad_request")
             return true
         end
         local meta = miney_cb.commands[name]
         if not meta or meta.client_id ~= client_id then
-            send_cb_error(player_name, "Chat command not owned or not found: " .. name, client_id, "not_found")
+            send_cb_error(session, "Chat command not owned or not found: " .. name, client_id, "not_found")
             return true
         end
         log("action", ("unregister_chatcommand: name=%s, client_id=%s"):format(name, client_id))
         minetest.unregister_chatcommand(name)
         miney_cb.commands[name] = nil
         rec.cmds[name] = nil
-        send_cb_ack(player_name, action, client_id)
+        send_cb_ack(session, action, client_id)
         return true
     else
         log("warning", ("Unknown action received: %s"):format(tostring(action)))
-        send_cb_error(player_name, "Unknown action: " .. tostring(action), client_id, "bad_request")
+        send_cb_error(session, "Unknown action: " .. tostring(action), client_id, "bad_request")
         return true
     end
 end
 
 register_events()
 
--- After register_events(), and that is not cosmetic: Luanti runs leave handlers in
--- registration order, so the player_leaves event goes out while the leaving client's
--- subscriptions still exist. Tearing them down first would drop the last event.
-minetest.register_on_leaveplayer(function(player, timed_out)
-    local player_name = player:get_player_name()
-    log("action", ("on_leaveplayer: player=%s, timed_out=%s"):format(player_name, tostring(timed_out)))
-    cleanup_player_callbacks(player_name)
-end)
+-- A session outlives the players in the world it watches, so nothing here reacts to
+-- one leaving. cleanup_player_callbacks is called by init.lua's forget_session, when
+-- the Python side says goodbye or stops answering.
 
 -- Cleanup on shutdown
 minetest.register_on_shutdown(function()

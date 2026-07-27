@@ -2,80 +2,104 @@
 This module provides an interface for executing Lua code on the Luanti server. The miney mod on the server is required for this functionality to work.
 """
 
+import linecache
+import os
 import re
 import logging
-import typing
+import sys
 import uuid
 import time
-import json
 import textwrap
-from typing import Any
+from typing import Any, NamedTuple
 
-from .exceptions import LuaResultTimeout, LuaError
-from .luanticlient.exceptions import LuantiConnectionError, LuantiPermissionError
-from .luanticlient.constants import ClientState
-if typing.TYPE_CHECKING:
-    from .luanticlient import LuantiClient
+from .exceptions import LuaResultTimeout, LuaError, LuantiConnectionError
 
 
 logger = logging.getLogger(__name__)
 
 LUA_IDENTIFIER_REGEX = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
-#: How much a formspec submit may carry, names and values of every field added up.
-#: The server drops anything larger without a word to the client
-#: (``pkt_read_formspec_fields`` in ``serverpackethandler.cpp``), so the request has to
-#: be measured here or it ends as a timeout with no reason given.
-FORMSPEC_FIELD_LIMIT = 640 * 1024
-
-#: What one submit may carry of the Lua source itself. The rest of
-#: :data:`FORMSPEC_FIELD_LIMIT` pays for the other fields and their names, which come to
-#: well under a hundred bytes - the kilobyte is slack, not arithmetic.
-_PART_LIMIT = FORMSPEC_FIELD_LIMIT - 1024
-
-#: The largest request Miney will assemble out of several submits. Mirrors
-#: ``MAX_ASSEMBLED`` in ``mod_data/miney/init.lua``: the mod refuses to collect more than
-#: this, so refusing it here turns a timeout into a sentence that names the problem.
+#: The largest single request Miney will send. Mirrors ``MAX_REQUEST`` in
+#: ``mod_data/miney/init.lua``: the mod refuses a longer line, so refusing it here turns
+#: a silent drop into a sentence that names the problem.
 #:
-#: Nothing a person writes comes near it. It is there because the pieces sit in the
-#: server's memory until the last one arrives, and a runaway generator should not be able
-#: to fill it.
+#: Nothing a person writes comes near it. It is there because a runaway generator
+#: building Lua source in a loop should hit an error rather than a full disk.
 MAX_LUA_SOURCE = 16 * 1024 * 1024
 
-#: The oldest Lua mod this version of Miney can talk to. The mod sends its own number
-#: with every answer (``MOD_API`` in ``mod_data/miney/init.lua``); anything lower, or a
-#: mod old enough not to send one at all, is refused with an error that says how to
-#: update instead of failing later on a name the mod does not have yet.
+#: The oldest Lua mod this version of Miney can talk to. The mod names its own number
+#: (``MOD_API`` in ``mod_data/miney/init.lua``) in its beacon and in every answer, and
+#: anything lower, or a mod old enough not to say at all, is refused with an error that
+#: explains how to update instead of failing later on a name the mod does not have yet.
 #:
 #: This is not the Miney version and does not move with a release. Raise it only
 #: together with ``MOD_API``, when the two halves stop understanding each other.
-REQUIRED_MOD_API = 6
+REQUIRED_MOD_API = 8
+
+#: How many commands may be in flight before Miney waits for them whether or not
+#: anything needs their answer.
+#:
+#: Sending without waiting is what makes a loop fast, and a loop with no end would
+#: otherwise queue for ever: memory here, and an ever-growing request log on the server.
+#: The cost of the cap is one extra server step per this many commands, which against
+#: the thousands they save is nothing.
+MAX_IN_FLIGHT = 500
+
+#: Directory of the Miney package, so a frame inside it can be told from a frame in
+#: somebody's own script. Used to point an error at the line that caused it.
+_MINEY_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def _split_for_transport(text: str, limit: int) -> list[str]:
+class _Origin(NamedTuple):
     """
-    Cut Lua source into pieces that each fit into one formspec submit.
+    Where in the user's own code a command was sent from.
 
-    The limit counts bytes while the source is text, so the cut is made in the encoded
-    bytes - one character can be four of them. A cut that lands inside a character would
-    arrive as two broken ones, so it backs off onto the nearest character boundary: in
-    UTF-8 every byte that continues a character has its top bits set to ``10``, which
-    makes the boundary three steps away at the very most.
+    Kept for every command that was sent without waiting, because the error it may
+    produce is raised much later, at whatever call happens to be the next one to wait.
+    Without this the traceback points at that innocent line instead.
 
-    :param text: The source to send.
-    :param limit: How many bytes one piece may take.
-    :return: The pieces, in order. ``"".join()`` of them is ``text`` again.
+    Captured as three cheap fields rather than a real traceback: a loop can go through
+    here a thousand times, and reading the source line is left until an error actually
+    needs it.
+
+    :param filename: The file the call was made in.
+    :param lineno: The line it was on.
+    :param function: The name of the function it was in.
     """
-    data = text.encode()
-    pieces = []
-    start = 0
-    while start < len(data):
-        end = min(start + limit, len(data))
-        while end < len(data) and (data[end] & 0xC0) == 0x80:
-            end -= 1
-        pieces.append(data[start:end].decode())
-        start = end
-    return pieces
+
+    filename: str
+    lineno: int
+    function: str
+
+    def describe(self) -> str:
+        """
+        Name the place, with the line of source if it can still be read.
+
+        :return: One or two lines, ready to append to an error message.
+        """
+        where = f'  File "{self.filename}", line {self.lineno}, in {self.function}'
+        source = linecache.getline(self.filename, self.lineno).strip()
+        return f"{where}\n    {source}" if source else where
+
+
+def _caller_origin() -> _Origin | None:
+    """
+    The first frame outside Miney itself.
+
+    Everything between the user's line and here is library plumbing - ``nodes.set``
+    calling ``lua.run``, and so on - so the frames are walked until one is in a file
+    that is not part of the package.
+
+    :return: Where the call came from, or None if the whole stack is inside Miney.
+    """
+    frame = sys._getframe(1)
+    while frame is not None:
+        filename = frame.f_code.co_filename
+        if not os.path.abspath(filename).startswith(_MINEY_DIR):
+            return _Origin(filename, frame.f_lineno, frame.f_code.co_name)
+        frame = frame.f_back
+    return None
+
 
 #: Lua's own escapes for the characters that have one. Everything else below a space
 #: becomes a numeric escape - see :func:`_lua_string`.
@@ -101,9 +125,10 @@ def _lua_string(value: str) -> str:
     the server answered ``chat.send_to_all("hello\\x00world")`` with *invalid escape
     sequence* - a Lua syntax error, at somebody who never wrote any Lua.
 
-    Control characters also may not travel unescaped: the server runs every incoming
-    formspec field through ``sanitize_untrusted()``, which truncates the code at the
-    first NUL and drops carriage returns.
+    Control characters may not travel unescaped either. A newline inside a Lua string
+    literal is a syntax error, and the request survives the trip whole: Python's
+    ``json.dumps`` escapes it on the way out and the mod's ``parse_json`` puts the real
+    byte back before ``loadstring`` ever sees it.
 
     Numeric escapes are always padded to three digits. ``"\\7"`` followed by a literal
     ``8`` would otherwise read as ``"\\78"``.
@@ -128,132 +153,46 @@ class Lua:
     """
     Provides an interface for executing Lua code on the Luanti server.
 
-    This functionality is dependent on the 'miney' mod being installed and
-    running on the server. The mod provides the necessary formspec
-    ('miney:code_form') and server-side logic to receive, execute, and
-    return results from Lua code snippets. Without this mod, any attempts
-    to execute code will fail.
+    This functionality is dependent on the 'miney' mod being installed and running on
+    the server. Reached as :attr:`~miney.Luanti.lua`, never built by hand.
     """
-    def __init__(self, luanti: 'LuantiClient'):
-        self.luanti = luanti
-        self.form_ready: bool = False
-        #: Which contract version the Lua mod on the server answered with, or None while
-        #: nothing has answered yet. Compared against ``REQUIRED_MOD_API``.
-        self.mod_api: int | None = None
+    def __init__(self, transport):
+        #: The channel to the server. Everything below only asks it to carry a field
+        #: table and to say what came back.
+        self.transport = transport
         self.pending_lua_results: dict[str, dict | None] = {}
-        self._register_handlers()
+        #: Commands that were sent without waiting for their answer, in the order they
+        #: went out, each with the line of user code it came from.
+        self._in_flight: list[tuple[str, _Origin | None]] = []
+        transport.add_listener(self._handle_answer)
 
-    def _register_handlers(self):
-        """Register miney-specific handlers with the client's command handler."""
-        if self.luanti.command_handler:
-            self.luanti.command_handler.register_formspec_handler(
-                "miney:code_form", self._handle_miney_code_form
+    @property
+    def mod_api(self) -> int | None:
+        """
+        Which contract version the Lua mod on the server speaks.
+
+        None while nothing has said. Compared against ``REQUIRED_MOD_API``.
+        """
+        return self.transport.mod_api
+
+    def _handle_answer(self, record: dict) -> None:
+        """
+        Take one answer off the transport and give it to whoever is waiting for it.
+
+        :param record: What the mod sent, already decoded.
+        """
+        execution_id = record.get("execution_id")
+        if not execution_id:
+            # An event or an acknowledgement, not an answer to a lua.run.
+            return
+        if execution_id in self.pending_lua_results:
+            self.pending_lua_results[execution_id] = record
+            logger.debug("Stored the result for %s.", execution_id)
+        else:
+            logger.warning(
+                "Received a Lua result for an unknown or already processed id: '%s'.",
+                execution_id,
             )
-            logger.debug("Luanti-specific handlers registered for Lua execution.")
-
-    def _handle_miney_code_form(self, formspec: str):
-        """
-        Processes the `miney:code_form` response from the server.
-
-        For this client, the formspec is a raw JSON string.
-
-        :param formspec: The formspec string received from the server.
-        """
-        self.form_ready = True
-        logger.debug(f"Received miney_code_form response: {formspec}")
-
-        if formspec.startswith("formspec_version["):
-            formspec = self._parse_legacy_formspec_result(formspec)
-            if not formspec:
-                logger.warning("Legacy formspec detected but no result JSON found; ignoring.")
-                return
-        try:
-            # The server sends a raw JSON string as the formspec content for our client.
-            response_data = json.loads(formspec)
-
-            # The initial form call might result in a null JSON object, which is fine.
-            if response_data is None:
-                logger.debug("Received null JSON response. Likely an initial form. Ignoring.")
-                return
-
-            # Read before anything else returns early: the warm-up answer carries this
-            # and nothing else, and it is what run() waits for.
-            if isinstance(response_data, dict) and "mod_api" in response_data:
-                self.mod_api = response_data["mod_api"]
-
-            execution_id = response_data.get("execution_id")
-
-            if not execution_id:
-                logger.debug("Received formspec without an execution_id. Likely an initial form. Ignoring.")
-                return
-
-            if execution_id in self.pending_lua_results:
-                # Store the entire parsed JSON object as the result
-                self.pending_lua_results[execution_id] = response_data
-                logger.debug(f"Stored matching Lua result for ID {execution_id}.")
-            else:
-                logger.warning(f"Received Lua result for unknown or already processed ID: '{execution_id}'.")
-        except json.JSONDecodeError:
-            logger.warning(f"Failed to parse formspec as JSON. Content: {formspec}")
-        except Exception as e:
-            logger.error(f"Error processing miney_code_form response: {e}", exc_info=True)
-
-
-    def _parse_legacy_formspec_result(self, formspec: str) -> str | None:
-        """
-        Extract JSON from the legacy formspec's 'textarea' named 'result'.
-        The server now embeds the full response_data JSON here.
-        Returns the result as string if found; otherwise None.
-        """
-        marker = ";result;"
-        idx = formspec.find(marker)
-        if idx == -1:
-            return None
-        try:
-            pos_after_marker = idx + len(marker)
-            # Skip the label (until next unescaped ';')
-            _, pos_semicolon = self._read_until_unescaped(formspec, pos_after_marker, ';')
-            # Default text starts after that semicolon, ends at next unescaped ']'
-            default_raw, _ = self._read_until_unescaped(formspec, pos_semicolon + 1, ']')
-            default_text = self._unescape_formspec(default_raw).strip()
-            if not default_text:
-                return None
-            else:
-                return default_text
-        except Exception as e:
-            logger.debug(f"Legacy formspec parse failed: {e}", exc_info=True)
-            return None
-
-    def _read_until_unescaped(self, text: str, start: int, end_char: str) -> tuple[str, int]:
-        """
-        Read from 'start' until the next unescaped 'end_char'.
-        Returns (substring, index_of_end_char).
-        """
-        i = start
-        buf: list[str] = []
-        while i < len(text):
-            ch = text[i]
-            if ch == end_char:
-                bs = 0
-                j = i - 1
-                while j >= 0 and text[j] == '\\':
-                    bs += 1
-                    j -= 1
-                if bs % 2 == 0:
-                    return "".join(buf), i
-            buf.append(ch)
-            i += 1
-        return "".join(buf), i
-
-    def _unescape_formspec(self, s: str) -> str:
-        """
-        Reverse formspec_escape:
-          '\\]' -> ']', '\\[' -> '[', '\\;' -> ';', '\\,' -> ',', '\\$' -> '$', '\\\\' -> '\\'
-        Order matters: unescape specific tokens first, then backslashes.
-        """
-        s = s.replace(r'\]', ']').replace(r'\[', '[').replace(r'\;', ';').replace(r'\,', ',').replace(r'\$', '$')
-        s = s.replace(r'\\', '\\')
-        return s
 
     def _check_mod_api(self) -> None:
         """
@@ -280,16 +219,8 @@ class Lua:
             f"https://content.luanti.org/packages/Miney/miney/"
         )
 
-    def send_command(self, command: str) -> bool:
-        """
-        Sends a chat command prefixed with /miney to the server.
-
-        :param command: The command string to send after '/miney'.
-        :return: True if the message was sent, False otherwise.
-        """
-        return self.luanti.send_chat_message(f"/miney {command}")
-
-    def run(self, lua_code: str, timeout: int = 10, execution_id: str = None) -> Any:
+    def run(self, lua_code: str, timeout: int = 10, execution_id: str = None,
+            wait: bool = True) -> Any:
         """
         Execute Lua code on the server and return the result.
 
@@ -324,13 +255,29 @@ class Lua:
         ``StorageRef``, so ``set_string``, ``get_string``, ``set_int``, ``get_int``,
         ``to_table`` and ``from_table`` all work.
 
+        ``wait=False`` sends the code and returns straight away, without waiting for the
+        server to run it. This is how Miney makes a loop fast - the server picks up
+        everything that has arrived in one go, so a thousand commands cost one server
+        step instead of a thousand - and it is what every method that has nothing to
+        return already does for you. Reach for it directly only for Lua of your own that
+        answers with nothing::
+
+            for i in range(1000):
+                lt.lua.run(f"minetest.log('action', 'line {i}')", wait=False)
+            lt.lua.flush()      # not needed before another Miney call, which waits anyway
+
+        The answer still comes; nobody is listening for it yet. The next call that does
+        need an answer looks at it first, so an error is never lost - it is raised there
+        instead, with the line it really came from named in the message.
+
         :param lua_code: The Lua code to execute.
         :param timeout: Maximum wait time in seconds for the result.
         :param execution_id: A unique ID for this execution. If None, one will be generated.
+        :param wait: Whether to wait for the result. With ``False`` the return value is
+            always None.
         :return: The result of the Lua execution. Can be None if the script returns no value.
         :raises LuaResultTimeout: When the timeout is reached.
         :raises LuantiConnectionError: When there is no connection to the server or the required 'miney' mod is missing.
-        :raises LuantiPermissionError: When the user lacks the required 'miney' privilege on the server.
         :raises LuaError: When the Lua code execution results in an error on the server.
         """
         if not lua_code or lua_code.isspace() or lua_code.strip() == "":
@@ -340,26 +287,8 @@ class Lua:
         # Dedent to allow for nicely formatted multiline strings
         lua_code = textwrap.dedent(lua_code)
 
-        if not self.luanti.state.connected or self.luanti.state.state < ClientState.JOINED:
-            logger.warning(f"Cannot execute Lua code: not fully connected (state: {self.luanti.state.state})")
-            raise LuantiConnectionError("Not fully connected to the server")
-
-        # Ensure the code form is ready before proceeding. The same answer carries the
-        # mod's API number, so ask again when only the form is known - that happens when
-        # a callback event arrived before the first run().
-        if not self.form_ready or self.mod_api is None:
-            logger.debug("Code form is not ready, requesting it now...")
-            self.send_command("form")
-
-            # Wait for the form to become ready
-            form_timeout = time.time() + 5
-            while (not self.form_ready or self.mod_api is None) and time.time() < form_timeout:
-                time.sleep(0.1)
-
-            if not self.form_ready:
-                logger.error("Failed to receive code form from the server after request.")
-                raise LuantiConnectionError("Cannot execute Lua code: 'miney:code_form' is not available. "
-                                      "Ensure the 'miney' mod is installed on the server.")
+        if not self.transport.connected:
+            raise LuantiConnectionError("Not connected to the server")
 
         self._check_mod_api()
 
@@ -371,7 +300,7 @@ class Lua:
         if source_size > MAX_LUA_SOURCE:
             raise LuaError(
                 f"This Lua code is too long to send: {source_size} bytes, and the mod "
-                f"collects at most {MAX_LUA_SOURCE}. Send it in several smaller calls, "
+                f"takes at most {MAX_LUA_SOURCE}. Send it in several smaller calls, "
                 f"or replace a long list of values in the code with a loop that builds "
                 f"it."
             )
@@ -379,34 +308,14 @@ class Lua:
         # Register the execution ID as pending
         self.pending_lua_results[execution_id] = None
 
-        # Send Lua code through the form with execution ID
         logger.debug(f"Sending Lua code with ID {execution_id}: {lua_code}")
 
-        pieces = _split_for_transport(lua_code, _PART_LIMIT)
-        if len(pieces) == 1:
-            submits = [{
+        try:
+            self.transport.send({
                 "lua": lua_code,
                 "execute": "true",
                 "execution_id": execution_id,
-            }]
-        else:
-            # Numbered so the mod can put them back together whatever order they arrive
-            # in, and told the total so it knows when it has them all.
-            logger.debug(f"Sending {execution_id} in {len(pieces)} parts")
-            submits = [
-                {
-                    "lua": piece,
-                    "execute": "true",
-                    "execution_id": execution_id,
-                    "part": str(number),
-                    "parts": str(len(pieces)),
-                }
-                for number, piece in enumerate(pieces, start=1)
-            ]
-
-        try:
-            for fields in submits:
-                self.luanti.send_formspec_response("miney:code_form", fields)
+            })
         except ValueError as e:
             logger.error(f"Failed to send Lua code: {e}")
             return None
@@ -414,65 +323,126 @@ class Lua:
             logger.error(f"Unexpected error sending Lua code: {e}")
             return f"Error: {str(e)}"
 
-        # Wait for the result with polling
-        start_time = time.time()
-        last_log_time = start_time
+        if not wait:
+            self._in_flight.append((execution_id, _caller_origin()))
+            if len(self._in_flight) >= MAX_IN_FLIGHT:
+                self.flush(timeout)
+            return None
 
-        result = None
-        while time.time() - start_time < timeout:
-            result = self.pending_lua_results.get(execution_id)
-            if result is not None:
+        parsed_response = self._await(execution_id, timeout)
+
+        # Everything sent earlier is answered by now: the mod runs the requests in the
+        # order they arrived and answers them in that order, so an answer to this one
+        # is proof that the ones before it are in. Checked first, because an error that
+        # happened earlier is the one worth raising.
+        self._collect_in_flight()
+
+        return self._unpack(parsed_response)
+
+    def flush(self, timeout: float = 10) -> None:
+        """
+        Wait for every command that was sent without waiting for its answer.
+
+        Called for you: by the next command that needs an answer, and when the
+        connection closes. Worth calling by hand only when a script has to know that
+        the world really has caught up before it does something outside Miney - taking
+        a screenshot, say, or writing a file.
+
+        :param timeout: Seconds to wait.
+        :raises LuaError: If one of those commands failed. The message names the line
+            it was sent from.
+        :raises LuaResultTimeout: If the server stopped answering.
+        """
+        if not self._in_flight:
+            return
+        last_id = self._in_flight[-1][0]
+        self._await(last_id, timeout, keep=True)
+        self._collect_in_flight()
+
+    def _await(self, execution_id: str, timeout: float, keep: bool = False) -> dict:
+        """
+        Wait for one answer.
+
+        :param execution_id: What to wait for.
+        :param timeout: Seconds to wait.
+        :param keep: Leave the answer in place instead of taking it, for a caller that
+            reads it again afterwards.
+        :return: The answer.
+        :raises LuaResultTimeout: If it never came.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.pending_lua_results.get(execution_id) is not None:
                 break
-
-            # Output status message every 2 seconds
-            current_time = time.time()
-            if current_time - last_log_time >= 2:
-                elapsed = current_time - start_time
-                logger.debug(f"Waiting for Lua result (ID: {execution_id}), elapsed: {elapsed:.1f}s/{timeout}s")
-                last_log_time = current_time
-
             time.sleep(0.001)
 
-        # Clean up the pending result entry and get the final result
-        parsed_response = self.pending_lua_results.pop(execution_id, None)
+        if keep:
+            answer = self.pending_lua_results.get(execution_id)
+        else:
+            answer = self.pending_lua_results.pop(execution_id, None)
 
-        if parsed_response is None:
-            logger.error(f"Timeout waiting for Lua execution result (ID: {execution_id})")
-            raise LuaResultTimeout(f"Timeout waiting for Lua execution result (ID: {execution_id})")
+        if answer is None:
+            # Whatever else was on its way is now of unknown fate, and holding on to it
+            # would blame the next call for this one's silence.
+            self._forget_in_flight()
+            raise LuaResultTimeout(
+                f"The server did not answer within {timeout} seconds.\n"
+                f"{self.transport.timeout_hint()}"
+            )
+        return answer
 
-        logger.debug(f"Received Lua execution response for ID {execution_id}: {parsed_response}")
+    def _collect_in_flight(self) -> None:
+        """
+        Take the answers to everything that was sent without waiting, and raise the
+        first failure among them.
 
-        # The response is already a parsed dictionary from _handle_miney_code_form
+        :raises LuaError: If one of them failed, naming where it was sent from.
+        """
+        outstanding, self._in_flight = self._in_flight, []
+        for execution_id, origin in outstanding:
+            answer = self.pending_lua_results.pop(execution_id, None)
+            if answer is None:
+                # Cannot happen while the mod answers in order; not worth an exception
+                # if it ever does, because the command itself did run.
+                logger.debug("No answer arrived for %s.", execution_id)
+                continue
+            if "error" in answer:
+                self._forget_in_flight()
+                self._unpack(answer, origin)
+
+    def _forget_in_flight(self) -> None:
+        """Drop everything still outstanding, without waiting for it."""
+        for execution_id, _ in self._in_flight:
+            self.pending_lua_results.pop(execution_id, None)
+        self._in_flight = []
+
+    def _unpack(self, parsed_response: dict, origin: "_Origin | None" = None) -> Any:
+        """
+        Turn one answer into a return value, or into the exception it deserves.
+
+        :param parsed_response: What the mod sent.
+        :param origin: Where the command was sent from, when that is not simply the
+            line the caller is standing on.
+        :return: What the Lua code returned, or None if it returned nothing.
+        :raises LuaError: If the Lua itself failed.
+        """
         if "error" in parsed_response:
-            # Check if it's a permission error (indicated by the 'admins' key)
-            if "admins" in parsed_response:
-                admins = parsed_response.get("admins", [])
-                command_to_grant = f"/grant {self.luanti.playername} miney"
-
-                if admins:
-                    helpful_players = ", ".join(admins)
-                    who_can_help = f"The following players can grant this privilege: {helpful_players}"
-                else:
-                    who_can_help = "No players with the required 'privs' privilege were found on the server."
-
-                error_message = (
-                    f"{parsed_response['error']}\n"
-                    f"{who_can_help}\n"
-                    f"Command to grant privilege: {command_to_grant}"
+            message = parsed_response["error"]
+            if origin is not None:
+                # This command was sent without waiting, so Python had already moved on
+                # by the time it failed and the traceback below points at whatever line
+                # happened to need an answer next. Say where it really came from.
+                message = (
+                    f"{message}\n"
+                    f"This came from a command Miney had already sent on:\n"
+                    f"{origin.describe()}"
                 )
-                raise LuantiPermissionError(error_message)
-
-            # It's a regular Lua execution error
-            raise LuaError(parsed_response["error"])
+            raise LuaError(message)
 
         if "result" in parsed_response:
-            final_result = parsed_response["result"]
-            logger.debug(f"Successfully processed Lua result for ID {execution_id}")
-            return final_result
+            return parsed_response["result"]
 
-        # If there's no error and no result, the execution completed without returning a value.
-        # This is a valid outcome, so we return None.
-        logger.debug(f"Lua execution for ID {execution_id} completed without a return value.")
+        # No error and no result: the code ran and returned nothing, which is fine.
         return None
 
     def run_file(self, filename: str) -> Any:

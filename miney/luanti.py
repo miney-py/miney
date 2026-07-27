@@ -1,30 +1,29 @@
 import atexit
 import logging
+import time
 import weakref
 from dataclasses import dataclass
 from functools import cached_property
+from pathlib import Path
 from typing import Any, Dict, Optional, Callable
 
 from .assets import Assets
+from .channel import Beacon, FileChannel, find_beacons
 from .chat import Chat
 from .events import Event
 from .lua import Lua
 from .callback import Callback
-from .luanticlient import LuantiClient
-from .luanticlient.exceptions import LuantiConnectionError
 from .nodes import Nodes
 from .player import PlayerIterable
 from .storage import Storage
 from .tool import ToolIterable
 from .env import manage
-from .env.paths import EnvPaths, find_env
+from .env.paths import EnvPaths, find_env, syncing_service
 from .env.state import WorldState, list_states, load_state
 from .exceptions import MineyRunError
 
 
 logger = logging.getLogger(__name__)
-
-default_playername = "miney"
 
 
 def _log_progress(progress: manage.Progress) -> None:
@@ -104,6 +103,139 @@ def _resolve_env_world(world: str | None,
     )
 
 
+def _pick_beacons(world: str | None) -> list[Beacon]:
+    """
+    The channels of every Luanti server running on this computer, filtered by world.
+
+    :param world: The world that was asked for, or None for all of them.
+    :return: The matching beacons, most recently started first.
+    :raises MineyRunError: If a world was named and no server is running it.
+    """
+    beacons = find_beacons()
+    if world is None:
+        return beacons
+    matching = [one for one in beacons if one.world_name == world]
+    if not matching and beacons:
+        running = ", ".join(f"'{one.world_name}'" for one in beacons)
+        raise MineyRunError(
+            f"No Luanti server is running the world '{world}'. Running: {running}."
+        )
+    return matching
+
+
+def _open_file_channel(world: str | None, port: int | None,
+                       autostart: bool) -> FileChannel:
+    """
+    Attach to a Luanti server on this computer, starting one if that is wanted.
+
+    Every server with the Miney mod leaves a beacon in Luanti's own ``mod_data``
+    directory saying where its channel is, whoever started it - a world this project
+    manages, or one the user opened from the Luanti menu. So this looks for a beacon
+    first and only falls back to the project's own environment when nothing answers.
+
+    :param world: The world to connect to, or None to work it out.
+    :param port: The port of the world to start, if one has to be started.
+    :param autostart: Whether starting a server is allowed.
+    :return: The attached channel.
+    :raises MineyRunError: If no server could be reached and none could be started.
+    """
+    candidates = _pick_beacons(world)
+    if len(candidates) > 1:
+        names = "\n".join(f"    {one.world_name}" for one in candidates)
+        raise MineyRunError(
+            f"Several Luanti servers are running, so Miney cannot tell which one you "
+            f"mean:\n{names}\n"
+            f'Say which one: miney.Luanti(world="{candidates[0].world_name}")'
+        )
+
+    for beacon in candidates:
+        service = syncing_service(beacon.directory)
+        if service:
+            logger.warning(
+                "This world's Miney channel is inside a folder that %s is syncing (%s). "
+                "Every command is a file write, so expect the sync client to be busy.",
+                service, beacon.directory,
+            )
+        try:
+            return FileChannel(beacon.directory, timeout=5.0)
+        except MineyRunError as error:
+            # A beacon left behind by a server that was killed looks exactly like one
+            # from a server that is up, and there is no process id in it to tell them
+            # apart. So the only way to find out is to ask and see.
+            logger.info("A server left its mark in %s but did not answer: %s",
+                        beacon.directory, error)
+
+    return _start_and_attach(world, port, autostart, tried=bool(candidates))
+
+
+def _start_and_attach(world: str | None, port: int | None, autostart: bool,
+                      tried: bool) -> FileChannel:
+    """
+    Start this project's world and attach to it once its mod is up.
+
+    :param world: The world to start, or None to work it out.
+    :param port: The port to prefer.
+    :param autostart: Whether starting is allowed at all.
+    :param tried: Whether a beacon was found and failed to answer, which changes what
+        the error message should say.
+    :return: The attached channel.
+    :raises MineyRunError: If there is nothing to start, or it never came up.
+    """
+    selection = _resolve_env_world(world, port)
+    if selection is None:
+        if tried:
+            raise MineyRunError(
+                "A Luanti server left its mark on this computer but is not answering, "
+                "and this project has no world of its own to start.\n"
+                "Start Luanti again, or create a world here: uv run miney start"
+            )
+        raise MineyRunError(
+            "No Luanti server with the Miney mod is running on this computer.\n"
+            "Start one: uv run miney start\n"
+            "Or open a world in Luanti yourself - Miney finds it either way, as long "
+            "as the 'miney' mod is enabled for it."
+        )
+
+    paths, state = selection
+    if manage.is_server_up(state) and not tried:
+        raise MineyRunError(
+            f"The server for world '{state.name}' is running, but it has no Miney "
+            f"channel. That means its 'miney' mod is missing or too old.\n"
+            f"Update it: uv run miney upgrade"
+        )
+    if not manage.is_server_up(state):
+        if not autostart:
+            raise MineyRunError(
+                f"The Luanti server for world '{state.name}' is not running.\n"
+                f"Start it first: uv run miney start --world {state.name}"
+            )
+        # The only line Miney prints. Starting a world takes a while, and a minute of
+        # silence looks like a hang to somebody in the REPL.
+        print(
+            f"Starting the Luanti server for world '{state.name}' and opening "
+            "a Luanti window connected to it. The first start of a world "
+            "generates the map and can take a while."
+        )
+        state = manage.start(paths, state.name, state.gameid, report=_log_progress).state
+
+    wanted = paths.world_dir(state.name).resolve()
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        for beacon in find_beacons(paths.luanti_dir):
+            try:
+                same = Path(beacon.world).resolve() == wanted
+            except OSError:
+                same = False
+            if same:
+                return FileChannel(beacon.directory, timeout=10.0)
+        time.sleep(0.5)
+
+    raise MineyRunError(
+        f"The server for world '{state.name}' started, but its Miney mod never opened "
+        f"a channel. Check the server log: {paths.log_file(state.name)}"
+    )
+
+
 def _make_atexit_disconnect(luanti_ref: "weakref.ReferenceType[Luanti]") -> Callable[[], None]:
     """
     Build the handler that disconnects one :class:`Luanti` when the script ends.
@@ -113,12 +245,11 @@ def _make_atexit_disconnect(luanti_ref: "weakref.ReferenceType[Luanti]") -> Call
     object is only ever reachable in a cycle and only the cyclic collector could free
     it. CPython does not promise to run that collector at interpreter shutdown, and in
     practice it does not: a script that ends without ``with`` never disconnected at all.
-    The server then held the session until it timed out, and running the same script
-    again a moment later was refused with *"Another client is already connected with
-    this name."* - which reads like the user's own fault and is not.
+    The server then held the session until it timed out, keeping its chat commands and
+    its timers alive for half a minute after the script had gone.
 
-    ``atexit`` runs while the interpreter is still whole, so the disconnect packet goes
-    out and the name is free immediately.
+    ``atexit`` runs while the interpreter is still whole, so the goodbye goes out, the
+    last commands are flushed and the server cleans up straight away.
 
     The handler holds a weak reference on purpose. ``atexit`` keeps whatever it is given
     alive until the process ends, and a strong reference here would keep the connection
@@ -159,51 +290,45 @@ class GameInfo:
 
 
 class Luanti:
-    """__init__([server, playername, password, port, invisible, world, autostart])
-    The Miney server object. All other objects are accessable from here. By creating an object you connect to Luanti.
+    """__init__([world, autostart, port])
+    The Miney server object. Everything else hangs off it, and creating one connects.
 
-    **Parameters aren't required, if you run miney and Luanti on the same computer.**
-
-    Miney connects as player with the playername you provided and also registers this player to the server with the password.
-
-    If you connect with miney the first time to the luanti server outside your computer (something else than 127.0.0.1),
-    you need to give the miney player the "miney" priviledge.
-    Do that by opening the chat (with the T key) and type `/priv miney miney` (`/priv <player_name> <privledge>`).
-
-    *If you connect over LAN or Internet to a Luanti server with installed miney mod, you should use a strong password!
-    The miney mod allows this player to run commands and scripts; this could be abused if you choose a weak password!*
+    **It takes no arguments:**
 
     ::
 
-        >>> lt = Luanti("luantiserver.in.the.internet.com", "ChatBot", "SuperSecretPasswordNobodyWouldKnowCauseItsRandom!")
+        >>> lt = Luanti()
 
-    Account creation is done by starting Luanti and connect to a server with a playername
-    and password. https://docs.luanti.org/for-players/getting-started/#play-online
+    Miney finds the Luanti server itself. It works for a world this project started and
+    for one you opened in Luanti yourself, singleplayer included - the mod leaves a note
+    saying where to reach it, and Miney reads that note. No account, no password, no
+    port, and nobody joins your world.
 
-    :param str server: IP or DNS name of an Luanti server with installed miney mod
-    :param str playername: A name to identify yourself to the server. Default is "Miney".
-    :param str password: Your password
-    :param int port: The apisocket port, defaults to 30000
-    :param str world: Name of the world in the local ``.miney`` environment to connect to.
-        Only needed when several exist. Ignored when an explicit ``server`` is given.
-    :param bool autostart: Start the local Luanti server if it is not running, **and open a
-        Luanti game window** connected to it. Ignored when an explicit server is given.
+    The one thing this cannot do is reach a Luanti on **another computer**: Miney talks
+    to the mod through two files in Luanti's own directory, and a file on your disk is
+    not on somebody else's machine.
+
+    :param str world: Name of the world to connect to. Only needed when several servers
+        are running at once; the error message lists them.
+    :param bool autostart: Start this project's Luanti server if nothing is running,
+        **and open a Luanti game window** connected to it.
+    :param int port: Which world to start, by port, when more than one could be meant.
     """
 
-    def __init__(self, server: str | None = None, playername: str | None = None,
-                 password: str = "ChangeThePassword!", port: int | None = None,
-                 invisible: bool = True, world: str | None = None, autostart: bool = True):
+    def __init__(self, world: str | None = None, autostart: bool = True,
+                 port: int | None = None):
         """
-        Connect to the Luanti server.
+        Connect to the Luanti server on this computer.
 
-        If no ``server`` is given and this project has a local ``.miney`` environment
-        (created by running ``uv run miney start`` once), Miney connects to that
-        environment's world instead of guessing a host. Give an explicit ``server`` to
-        bypass this entirely and connect to somebody else's server.
+        Every server with the miney mod writes down where it can be reached, so this
+        finds a world this project started and a world you opened from the Luanti menu
+        equally well - including a singleplayer game, which no network client can reach
+        at all.
 
-        When that world's server is not up, ``autostart`` starts it and then waits
-        until it really accepts connections - a cold start generates the map and can
-        take a while, so this prints one line saying what it is waiting for.
+        When nothing is running and this project has a ``.miney`` environment (created
+        by ``uv run miney start`` once), ``autostart`` starts that world and then waits
+        until its mod is up - a cold start generates the map and can take a while, so
+        this prints one line saying what it is waiting for.
 
         **Autostart opens a Luanti window.** It does not only start a server process:
         it also launches the game client and logs it in, so a window appears on screen
@@ -212,96 +337,21 @@ class Luanti:
         run a script from an editor, a notebook or a cron job. Pass ``autostart=False``
         to connect to an already running world and never launch anything.
 
-        :param server: IP or DNS name of an Luanti server with installed miney mod
-        :param port: The apisocket port, defaults to 30000
-        :param invisible: If True, makes the Miney player invisible and grants creative privilege to be safe from mobs.
-        :param world: Name of the world in the local ``.miney`` environment to connect to.
-            Only needed when it cannot be worked out: with one world that one is used,
-            and with several the one whose server is running - so a second world next to
-            the one you work in changes nothing while it is shut down. Naming a ``port``
-            picks the world on that port. Ignored when an explicit ``server`` is given.
-        :param autostart: Start the local Luanti server if it is not running, and open a
-            Luanti game window connected to it. Ignored when an explicit server is given.
-        :raises MineyRunError: If the environment has no matching world, several worlds
-            exist and none was named, or autostarting the world's server failed.
+        :param world: Which world to connect to, named by its directory. Only needed
+            when several servers are running at once; the error message lists them.
+        :param autostart: Start this project's Luanti server when nothing is running,
+            and open a Luanti game window connected to it.
+        :param port: Which world to start, by port, when more than one could be meant.
+        :raises MineyRunError: If no server could be reached and none could be started,
+            or if several are running and none was named.
         """
-        env_selection = None
-        if server is None:
-            env_selection = _resolve_env_world(world, port)
+        #: The channel to the server: two append-only files in Luanti's own directory.
+        self.transport = _open_file_channel(world, port, autostart)
 
-        if env_selection is not None:
-            paths, state = env_selection
-            if not manage.is_server_up(state):
-                if not autostart:
-                    raise MineyRunError(
-                        f"The Luanti server for world '{state.name}' is not running.\n"
-                        f"Start it first: uv run miney start --world {state.name}"
-                    )
-                # The only line Miney prints. Starting a world takes a while, and a
-                # minute of silence looks like a hang to somebody in the REPL.
-                print(
-                    f"Starting the Luanti server for world '{state.name}' and opening "
-                    "a Luanti window connected to it. The first start of a world "
-                    "generates the map and can take a while."
-                )
-                state = manage.start(
-                    paths, state.name, state.gameid, report=_log_progress
-                ).state
-            if port is None:
-                port = state.port
-
-        if server is None:
-            server = "127.0.0.1"
-        if port is None:
-            port = 30000
-
-        self.server = server
-        self.port = port
-        if playername:
-            self.playername = playername
-        else:
-            self.playername = default_playername
-        self.password = password
-
-        # setup connection
-        self.luanti = LuantiClient(playername=self.playername, password=self.password, host=self.server, port=self.port)
-        try:
-            self.luanti.connect()
-        except LuantiConnectionError as e:
-            if e.reason_code == 1:
-                # Info, not warning: this is what every first connect looks like, and a
-                # script that never configured logging would otherwise have logging's
-                # last-resort handler print it to stderr as if something had gone wrong.
-                logger.info(f"No account for '{self.playername}' yet. Registering one.")
-                self.luanti.disconnect()  # Ensure clean state
-
-                # Re-initialize and attempt to register
-                self.luanti = LuantiClient(playername=self.playername, password=self.password, host=self.server,
-                                                 port=self.port)
-                try:
-                    self.luanti.connect(register=True)
-                    logger.info(f"Successfully registered and connected as '{self.playername}'.")
-                    # Only true for a server reached over the network: the Miney mod
-                    # lets a client on a local address run code without the privilege,
-                    # which is every world "miney start" creates. "uv run miney check"
-                    # reports the real answer for the server actually in use.
-                    logger.info(
-                        f"On a remote server '{self.playername}' also needs the 'miney' "
-                        f"privilege: /grant {self.playername} miney"
-                    )
-                except LuantiConnectionError as e2:
-                    logger.error(f"Automatic registration failed: {e2}")
-                    logger.error("This probably means the user already exists and the initial password was incorrect, or the server does not allow registration.")
-                    raise e2  # Re-raise the registration error
-            else:
-                # For any other connection error, just re-raise it.
-                raise e
-
-        self.result_queue = {}  # List for unprocessed results
         self._callbacks: Callback = Callback(self)
 
         # objects representing local properties
-        self._lua: Lua = Lua(self.luanti)
+        self._lua: Lua = Lua(self.transport)
         self._chat: Chat = Chat(self)
         self._nodes: Nodes = Nodes(self)
         self._storage: Storage = Storage(self)
@@ -321,52 +371,6 @@ class Luanti:
         # nothing behind to run at exit.
         self._atexit_disconnect = _make_atexit_disconnect(weakref.ref(self))
         atexit.register(self._atexit_disconnect)
-
-        # Without this, Miney's own player stays dead for the rest of the session: a
-        # corpse standing in the world that answers every command with the position it
-        # died at. See _get_up_again for why the client's own answer is not enough.
-        self._invisible = invisible
-        self._callbacks.register("player_dies", self._get_up_again,
-                                 {"player_name": self.playername})
-
-        # Optionally make player invisible and grant creative privilege
-        if invisible:
-            try:
-                player_obj = self.players[self.playername]
-                player_obj.invisible = True
-                player_obj.creative = True
-            except Exception as e:
-                logger.error(f"Failed to set invisible/creative for player '{self.playername}': {e}")
-
-    def _get_up_again(self, event) -> None:
-        """
-        Send Miney's own player back into the world after it died.
-
-        Registered for every session, and never for anybody else's player - yours keeps
-        the death screen it is supposed to get.
-
-        The client does answer that screen by itself, but the answer is usually thrown
-        away: the server only accepts a form it is still expecting, and the mod shows
-        ``miney:code_form`` again for every command answer and every event - including
-        the one that says the player just died. The server then logs *"submitted
-        formspec ('__builtin:death') ... possible exploitation attempt"* and the player
-        stays dead. Asking for the respawn from Lua goes through the channel that is
-        always open anyway.
-
-        Invisibility is put back on afterwards, because a game that gives players a skin
-        gives them a fresh one when they respawn.
-
-        :param event: The :class:`~miney.events.PlayerDiesEvent` that arrived.
-        """
-        try:
-            self.lua.run(
-                f"local player = minetest.get_player_by_name({self.lua.dumps(self.playername)})\n"
-                f"if player then player:respawn() end"
-            )
-            if self._invisible:
-                self.players[self.playername].invisible = True
-        except Exception as error:  # noqa: BLE001 - a dead bot is not worth a traceback
-            logger.error("Could not respawn '%s' after it died: %s", self.playername, error)
 
     def __enter__(self):
         """
@@ -485,7 +489,9 @@ class Luanti:
         :param line: The log line
         :return: None
         """
-        return self.lua.run('minetest.log("action", "{}")'.format(line))
+        self.lua.run(
+            f'minetest.log("action", {self.lua.dumps(line)})', wait=False
+        )
 
     @property
     def players(self) -> 'PlayerIterable':
@@ -545,7 +551,7 @@ class Luanti:
     @time_of_day.setter
     def time_of_day(self, value: float):
         if 0 <= value <= 1:
-            self.lua.run("return minetest.set_timeofday({})".format(value))
+            self.lua.run("minetest.set_timeofday({})".format(value), wait=False)
         else:
             raise ValueError("Time value has to be between 0 and 1.")
 
@@ -625,6 +631,16 @@ class Luanti:
             atexit.unregister(handler)
             self._atexit_disconnect = None
 
+        # Anything sent without waiting has to land before the connection goes. A script
+        # whose last line is lt.nodes.set() would otherwise end, disconnect, and leave
+        # the command unread in a file - the block never appears, and nothing says why.
+        lua = getattr(self, "_lua", None)
+        if lua is not None:
+            try:
+                lua.flush()
+            except Exception as error:  # noqa: BLE001 - closing down, nowhere to raise
+                logger.error("A command Miney had sent on failed: %s", error)
+
         # Best-effort cleanup of registered callbacks before dropping the connection
         if hasattr(self, "_callbacks") and self._callbacks:
             try:
@@ -632,9 +648,9 @@ class Luanti:
             except Exception as e:
                 logger.error(f"Error during callback shutdown: {e}")
 
-        if self.luanti:
-            self.luanti.disconnect()
-            self.luanti = None
+        transport = getattr(self, "transport", None)
+        if transport is not None:
+            transport.close()
 
     def __del__(self) -> None:
         """
@@ -645,9 +661,9 @@ class Luanti:
             a clean disconnection, as calling disconnect during interpreter
             shutdown is not reliable.
         """
-        # Only attempt to disconnect if the connection seems to be active.
-        if hasattr(self, 'luanti') and self.luanti and self.luanti.connection and self.luanti.connection.running:
-            self.luanti.disconnect()
+        transport = getattr(self, "transport", None)
+        if transport is not None:
+            transport.close()
 
     def __repr__(self):
-        return '<Luanti server "{}:{}">'.format(self.server, self.port)
+        return '<Luanti server "{}">'.format(self.transport.directory.name)

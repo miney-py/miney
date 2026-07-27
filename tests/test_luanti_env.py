@@ -6,9 +6,10 @@ import pytest
 
 import miney.cli as cli_module
 import miney.luanti as luanti_module
+from miney.channel import Beacon
 from miney.env import manage
 from miney.env.paths import EnvPaths
-from miney.env.state import WorldState, load_state, save_state
+from miney.env.state import WorldState, save_state
 from miney.exceptions import MineyRunError
 
 
@@ -29,28 +30,44 @@ def no_real_connection(monkeypatch):
     """
     Replace everything Luanti.__init__ reaches for.
 
-    The constructor does more than connect: it builds Callback, Lua, Chat and Nodes, runs
-    Lua to cache the tool list, and tries to make the bot invisible. Every one of those
-    has to be stubbed or the constructor never returns.
+    The constructor does more than attach: it builds Callback, Lua, Chat and Nodes and
+    runs Lua to cache the tool list. Every one of those has to be stubbed or the
+    constructor never returns.
+
+    Yields ``(running, attached)``: put a beacon in ``running`` to say a server is up,
+    and read ``attached`` to see which channel directory Miney went for.
     """
+    running: list[Beacon] = []
+    attached: list[Path] = []
 
-    class FakeClient:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
-            self.command_handler = None
-            self.connection = None
+    class FakeChannel:
+        mod_api = 7
+        connected = True
 
-        def connect(self, register: bool = False):
+        def __init__(self, directory, timeout=10.0):
+            self.directory = Path(directory)
+            attached.append(self.directory)
+
+        def add_listener(self, listener):
             return None
 
-        def disconnect(self):
+        def send(self, fields):
+            return True
+
+        def answered(self):
+            return None
+
+        def timeout_hint(self):
+            return "hint"
+
+        def close(self):
             return None
 
     class FakeLua:
         def __init__(self, *args, **kwargs):
             pass
 
-        def run(self, code, timeout=10, execution_id=None):
+        def run(self, code, timeout=10, execution_id=None, wait=True):
             return []
 
         def dumps(self, data):
@@ -70,71 +87,105 @@ def no_real_connection(monkeypatch):
         def __init__(self, *args, **kwargs):
             pass
 
-    monkeypatch.setattr(luanti_module, "LuantiClient", FakeClient)
+    monkeypatch.setattr(luanti_module, "find_beacons",
+                        lambda luanti_dir=None: sorted(running, key=lambda b: -b.started))
+    monkeypatch.setattr(luanti_module, "FileChannel", FakeChannel)
     monkeypatch.setattr(luanti_module, "Lua", FakeLua)
     monkeypatch.setattr(luanti_module, "Callback", FakeCallback)
     monkeypatch.setattr(luanti_module, "Chat", FakeSimple)
     monkeypatch.setattr(luanti_module, "Nodes", FakeSimple)
     monkeypatch.setattr(luanti_module, "ToolIterable", FakeSimple)
-    return None
+    return running, attached
 
 
-def test_uses_the_only_world_in_the_environment(tmp_path, monkeypatch, no_real_connection):
+def a_server_on(world_dir: Path, started: int = 100) -> Beacon:
+    """
+    A beacon for a world, as a running server would have left it.
+
+    :param world_dir: The world directory the server is running.
+    :param started: Unix time it came up, which decides the order.
+    """
+    return Beacon(
+        directory=world_dir.parent / f"channel-{world_dir.name}",
+        mod_api=8,
+        engine="5.16.1",
+        world=str(world_dir),
+        world_name=world_dir.name,
+        singleplayer=False,
+        started=started,
+    )
+
+
+def test_attaches_to_the_only_server_that_is_running(tmp_path, no_real_connection):
+    running, attached = no_real_connection
+    running.append(a_server_on(tmp_path / "worlds" / "minetest_game"))
+
+    luanti_module.Luanti(autostart=False)
+
+    assert attached == [tmp_path / "worlds" / "channel-minetest_game"]
+
+
+def test_a_world_the_user_started_themselves_is_found(tmp_path, monkeypatch,
+                                                      no_real_connection):
+    """
+    The point of the whole transport: no project, no environment, nothing configured.
+
+    Somebody opened a singleplayer world from the Luanti menu, and that is the world
+    a script written next to it means.
+    """
     monkeypatch.chdir(tmp_path)
-    paths = EnvPaths(root=tmp_path / ".miney")
-    save_state(paths.state_file("minetest_game"),
-               WorldState("minetest_game", "minetest_game", 30007, server_pid=1))
-    monkeypatch.setattr(manage, "is_server_up", lambda state: True)
+    running, attached = no_real_connection
+    running.append(a_server_on(tmp_path / "Luanti" / "worlds" / "mine"))
 
-    lt = luanti_module.Luanti(autostart=False)
+    luanti_module.Luanti()
 
-    assert lt.port == 30007
+    assert attached and attached[0].name == "channel-mine"
 
 
-def test_explicit_server_ignores_the_environment(tmp_path, monkeypatch, no_real_connection):
-    monkeypatch.chdir(tmp_path)
-    paths = EnvPaths(root=tmp_path / ".miney")
-    save_state(paths.state_file("minetest_game"),
-               WorldState("minetest_game", "minetest_game", 30007))
-
-    lt = luanti_module.Luanti("elsewhere.example")
-
-    assert lt.server == "elsewhere.example"
-    assert lt.port == 30000
-
-
-def test_several_worlds_require_naming_one(tmp_path, monkeypatch, no_real_connection):
-    monkeypatch.chdir(tmp_path)
-    paths = EnvPaths(root=tmp_path / ".miney")
-    save_state(paths.state_file("alpha"), WorldState("alpha", "minetest_game", 30000))
-    save_state(paths.state_file("beta"), WorldState("beta", "mineclone2", 30001))
-    monkeypatch.setattr(manage, "is_server_up", lambda state: False)
+def test_several_running_servers_require_naming_one(tmp_path, no_real_connection):
+    running, _ = no_real_connection
+    running.append(a_server_on(tmp_path / "alpha", started=1))
+    running.append(a_server_on(tmp_path / "beta", started=2))
 
     with pytest.raises(MineyRunError) as error:
         luanti_module.Luanti(autostart=False)
 
-    assert "alpha" in str(error.value)
-    assert "beta" in str(error.value)
+    message = str(error.value)
+    assert "alpha" in message and "beta" in message
+    assert 'miney.Luanti(world="beta")' in message
 
 
-def test_the_running_world_is_the_one_that_is_meant(tmp_path, monkeypatch,
-                                                    no_real_connection):
-    """
-    A second world must not take the answer away from a script that worked yesterday.
+def test_a_named_world_picks_its_server(tmp_path, no_real_connection):
+    running, attached = no_real_connection
+    running.append(a_server_on(tmp_path / "alpha", started=1))
+    running.append(a_server_on(tmp_path / "beta", started=2))
 
-    This is the whole point of the rule: a test world, a tutorial world or a world left
-    over from an experiment sits on disk beside the one being worked in, and the one
-    that is *running* is obviously the one meant.
-    """
+    luanti_module.Luanti(world="alpha", autostart=False)
+
+    assert attached == [tmp_path / "channel-alpha"]
+
+
+def test_a_named_world_that_is_not_running_says_what_is(tmp_path, no_real_connection):
+    running, _ = no_real_connection
+    running.append(a_server_on(tmp_path / "alpha"))
+
+    with pytest.raises(MineyRunError) as error:
+        luanti_module.Luanti(world="beta", autostart=False)
+
+    assert "'beta'" in str(error.value)
+    assert "'alpha'" in str(error.value)
+
+
+def test_no_server_and_no_environment_says_how_to_get_one(tmp_path, monkeypatch,
+                                                          no_real_connection):
     monkeypatch.chdir(tmp_path)
-    paths = EnvPaths(root=tmp_path / ".miney")
-    save_state(paths.state_file("alpha"), WorldState("alpha", "minetest_game", 30000))
-    save_state(paths.state_file("beta"), WorldState("beta", "mineclone2", 30001))
-    monkeypatch.setattr(manage, "is_server_up", lambda state: state.name == "beta")
 
-    lt = luanti_module.Luanti(autostart=False)
+    with pytest.raises(MineyRunError) as error:
+        luanti_module.Luanti()
 
-    assert lt.port == 30001
+    message = str(error.value)
+    assert "miney start" in message
+    assert "miney" in message.lower()
 
 
 def test_a_bare_start_reuses_a_world_instead_of_inventing_one(tmp_path, monkeypatch):
@@ -165,34 +216,6 @@ def test_a_bare_start_reuses_a_world_instead_of_inventing_one(tmp_path, monkeypa
     assert (world, game) == ("beta", "mineclone2")
 
 
-def test_a_named_port_picks_the_world_on_it(tmp_path, monkeypatch, no_real_connection):
-    monkeypatch.chdir(tmp_path)
-    paths = EnvPaths(root=tmp_path / ".miney")
-    save_state(paths.state_file("alpha"), WorldState("alpha", "minetest_game", 30000))
-    save_state(paths.state_file("beta"), WorldState("beta", "mineclone2", 30001))
-    monkeypatch.setattr(manage, "is_server_up", lambda state: True)
-
-    lt = luanti_module.Luanti(port=30001, autostart=False)
-
-    assert lt.port == 30001
-
-
-def test_several_running_worlds_are_all_named_in_the_error(tmp_path, monkeypatch,
-                                                           no_real_connection):
-    monkeypatch.chdir(tmp_path)
-    paths = EnvPaths(root=tmp_path / ".miney")
-    save_state(paths.state_file("alpha"), WorldState("alpha", "minetest_game", 30000))
-    save_state(paths.state_file("beta"), WorldState("beta", "mineclone2", 30001))
-    monkeypatch.setattr(manage, "is_server_up", lambda state: True)
-
-    with pytest.raises(MineyRunError) as error:
-        luanti_module.Luanti(autostart=False)
-
-    message = str(error.value)
-    assert "running" in message
-    assert "alpha" in message and "beta" in message
-
-
 def test_the_error_suggests_the_world_used_last(tmp_path, monkeypatch,
                                                 no_real_connection):
     """Not the first one alphabetically - that is the throwaway world often enough."""
@@ -213,19 +236,8 @@ def test_the_error_suggests_the_world_used_last(tmp_path, monkeypatch,
     assert "miney start --world beta" in str(error.value)
 
 
-def test_named_world_is_selected(tmp_path, monkeypatch, no_real_connection):
-    monkeypatch.chdir(tmp_path)
-    paths = EnvPaths(root=tmp_path / ".miney")
-    save_state(paths.state_file("alpha"), WorldState("alpha", "minetest_game", 30000))
-    save_state(paths.state_file("beta"), WorldState("beta", "mineclone2", 30001))
-    monkeypatch.setattr(manage, "is_server_up", lambda state: True)
-
-    lt = luanti_module.Luanti(world="beta", autostart=False)
-
-    assert lt.port == 30001
-
-
-def test_autostart_disabled_reports_how_to_start(tmp_path, monkeypatch, no_real_connection):
+def test_autostart_disabled_reports_how_to_start(tmp_path, monkeypatch,
+                                                 no_real_connection):
     monkeypatch.chdir(tmp_path)
     paths = EnvPaths(root=tmp_path / ".miney")
     save_state(paths.state_file("w"), WorldState("w", "minetest_game", 30000))
@@ -237,7 +249,27 @@ def test_autostart_disabled_reports_how_to_start(tmp_path, monkeypatch, no_real_
     assert "miney start" in str(error.value)
 
 
-def test_failed_autostart_raises_instead_of_connecting(tmp_path, monkeypatch, no_real_connection):
+def test_a_running_world_without_a_channel_says_the_mod_is_too_old(tmp_path, monkeypatch,
+                                                                   no_real_connection):
+    """
+    The server is up and answering on its port, but it left no beacon.
+
+    That can only mean its 'miney' mod is missing or from before the file channel, and
+    saying so beats waiting for a timeout that names nothing.
+    """
+    monkeypatch.chdir(tmp_path)
+    paths = EnvPaths(root=tmp_path / ".miney")
+    save_state(paths.state_file("w"), WorldState("w", "minetest_game", 30000, server_pid=1))
+    monkeypatch.setattr(manage, "is_server_up", lambda state: True)
+
+    with pytest.raises(MineyRunError) as error:
+        luanti_module.Luanti()
+
+    assert "miney upgrade" in str(error.value)
+
+
+def test_failed_autostart_raises_instead_of_attaching(tmp_path, monkeypatch,
+                                                      no_real_connection):
     monkeypatch.chdir(tmp_path)
     paths = EnvPaths(root=tmp_path / ".miney")
     save_state(paths.state_file("w"), WorldState("w", "minetest_game", 30000))
@@ -258,8 +290,10 @@ def test_failed_autostart_raises_instead_of_connecting(tmp_path, monkeypatch, no
     assert str(paths.log_file("w")) in str(error.value)
 
 
-def test_successful_autostart_connects_with_the_new_port(tmp_path, monkeypatch, no_real_connection):
+def test_successful_autostart_attaches_to_the_world_it_started(tmp_path, monkeypatch,
+                                                               no_real_connection):
     monkeypatch.chdir(tmp_path)
+    running, attached = no_real_connection
     paths = EnvPaths(root=tmp_path / ".miney")
     save_state(paths.state_file("w"), WorldState("w", "minetest_game", 30000))
     monkeypatch.setattr(manage, "is_server_up", lambda state: False)
@@ -267,21 +301,25 @@ def test_successful_autostart_connects_with_the_new_port(tmp_path, monkeypatch, 
     def fake_start(paths, world, game, **kwargs):
         state = WorldState(world, game, 30555, server_pid=4242, client_pid=4243)
         save_state(paths.state_file(world), state)
+        # What a server does once its mod has loaded.
+        running.append(a_server_on(paths.world_dir(world)))
         return manage.StartResult(state=state)
 
     monkeypatch.setattr(manage, "start", fake_start)
 
-    lt = luanti_module.Luanti()  # autostart defaults to True
+    luanti_module.Luanti()  # autostart defaults to True
 
-    assert lt.port == 30555
+    assert attached == [paths.worlds_dir / "channel-w"]
 
 
-def test_autostart_does_not_go_through_the_command_line(tmp_path, monkeypatch, no_real_connection):
+def test_autostart_does_not_go_through_the_command_line(tmp_path, monkeypatch,
+                                                        no_real_connection):
     """
     The library must not route through argparse: that inherited the command's
     printing, its exit-code-as-error-channel and all of its side effects.
     """
     monkeypatch.chdir(tmp_path)
+    running, _ = no_real_connection
     paths = EnvPaths(root=tmp_path / ".miney")
     save_state(paths.state_file("w"), WorldState("w", "mineclone2", 30000))
     monkeypatch.setattr(manage, "is_server_up", lambda state: False)
@@ -294,6 +332,7 @@ def test_autostart_does_not_go_through_the_command_line(tmp_path, monkeypatch, n
 
     def fake_start(paths, world, game, **kwargs):
         calls.append((world, game))
+        running.append(a_server_on(paths.world_dir(world)))
         return manage.StartResult(state=WorldState(world, game, 30000, server_pid=4242))
 
     monkeypatch.setattr(manage, "start", fake_start)
@@ -303,59 +342,57 @@ def test_autostart_does_not_go_through_the_command_line(tmp_path, monkeypatch, n
     assert calls == [("w", "mineclone2")]
 
 
-def test_an_explicit_port_still_wins_over_the_worlds_own(tmp_path, monkeypatch, no_real_connection):
-    monkeypatch.chdir(tmp_path)
-    paths = EnvPaths(root=tmp_path / ".miney")
-    save_state(paths.state_file("w"), WorldState("w", "minetest_game", 30007, server_pid=1))
-    monkeypatch.setattr(manage, "is_server_up", lambda state: True)
-
-    lt = luanti_module.Luanti(port=31000)
-
-    assert lt.port == 31000
-
-
 def test_a_running_world_is_not_started_again(tmp_path, monkeypatch, no_real_connection):
     monkeypatch.chdir(tmp_path)
+    running, attached = no_real_connection
     paths = EnvPaths(root=tmp_path / ".miney")
     save_state(paths.state_file("w"), WorldState("w", "minetest_game", 30007, server_pid=1))
-    monkeypatch.setattr(manage, "is_server_up", lambda state: True)
+    running.append(a_server_on(paths.world_dir("w")))
 
     def refuse(*args, **kwargs):
         raise AssertionError("started a world that was already up")
 
     monkeypatch.setattr(manage, "start", refuse)
 
-    assert luanti_module.Luanti().port == 30007
+    luanti_module.Luanti()
+
+    assert attached == [paths.worlds_dir / "channel-w"]
 
 
-def test_autostart_does_not_start_a_second_server_next_to_a_foreground_one(
+def test_a_beacon_from_a_server_that_is_gone_falls_through_to_autostart(
     tmp_path, monkeypatch, no_real_connection
 ):
     """
-    A server run by 'miney start --foreground' records its pid like any other, so the
-    real is_server_up sees it. Without that, autostart started a second server on the
-    same port and world directory, which died on the port bind and reported itself as
-    "stopped while starting up".
+    A killed server leaves its beacon behind and there is no pid in it to check.
+
+    So the only way to tell a live server from a corpse is to ask one and see, and
+    Miney has to carry on sensibly when nothing answers.
     """
     monkeypatch.chdir(tmp_path)
+    running, attached = no_real_connection
     paths = EnvPaths(root=tmp_path / ".miney")
-    save_state(paths.state_file("w"), WorldState("w", "minetest_game", 30007))
-    manage.record_foreground_server(paths, "w", 4711)
-    monkeypatch.setattr("miney.env.manage.is_pid_alive", lambda pid: pid == 4711)
-    monkeypatch.setattr("miney.env.manage.probe_server", lambda host, port: True)
+    save_state(paths.state_file("w"), WorldState("w", "minetest_game", 30000))
+    monkeypatch.setattr(manage, "is_server_up", lambda state: False)
 
-    def refuse(*args, **kwargs):
-        raise AssertionError("started a second server next to the foreground one")
+    stale = a_server_on(tmp_path / "gone", started=1)
+    running.append(stale)
 
-    monkeypatch.setattr(manage, "start", refuse)
+    real = luanti_module.FileChannel
 
-    assert luanti_module.Luanti().port == 30007
+    class RefusesTheStaleOne(real):
+        def __init__(self, directory, timeout=10.0):
+            if Path(directory) == stale.directory:
+                raise MineyRunError("did not answer")
+            super().__init__(directory, timeout)
 
+    monkeypatch.setattr(luanti_module, "FileChannel", RefusesTheStaleOne)
 
-def test_without_an_environment_nothing_changes(tmp_path, monkeypatch, no_real_connection):
-    monkeypatch.chdir(tmp_path)
+    def fake_start(paths, world, game, **kwargs):
+        running.append(a_server_on(paths.world_dir(world), started=9))
+        return manage.StartResult(state=WorldState(world, game, 30000, server_pid=1))
 
-    lt = luanti_module.Luanti()
+    monkeypatch.setattr(manage, "start", fake_start)
 
-    assert lt.server == "127.0.0.1"
-    assert lt.port == 30000
+    luanti_module.Luanti()
+
+    assert attached == [paths.worlds_dir / "channel-w"]

@@ -99,6 +99,16 @@ def write_config(config_file: Path) -> None:
                 # process binds 0.0.0.0, and an open port on a school or home network is
                 # an exposure a learning server has no reason to carry.
                 "bind_address = 127.0.0.1",
+                # The server step is the floor for everything Miney does: a command is
+                # picked up on one step and answered on the next, so the default 0.09
+                # makes every single call in the REPL cost 90 ms whatever it does.
+                # Measured on this exact setup, that is the whole of the latency.
+                #
+                # 0.03 is what a game hosted from the Luanti menu runs at anyway
+                # (game.cpp:2120-2124 caps the hosted server at 1/60 s), so a world with
+                # one learner in it is not being asked for anything unusual. The cost is
+                # server CPU on an otherwise idle process.
+                "dedicated_server_step = 0.03",
                 "enable_rollback_recording = false",
                 "server_announce = false",
                 "enable_remote_media_server = false",

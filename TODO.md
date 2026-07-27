@@ -15,11 +15,38 @@ Feel free to contribute!
   * Each one documents the equivalent `move()` call, so the alias teaches the general function
 * [ ] Callbacks
   * [x] Basic API and some callbacks implemented
-  * [ ] Implement more "register_on_..." functions
+  * [x] Implement more "register_on_..." functions
   * [ ] `player_near` - fire when a player comes within a radius of a position (see below)
 * [ ] Asyncio
-* [ ] Miney Proxy
-  * funnel all functions/commands through a single client connection
+* [x] Miney Proxy
+  * Solved differently, and better: a world on this computer is reached through two
+    append-only files in Luanti's `mod_data` directory instead of a player account.
+    No account, no port, no password, and it works in a singleplayer world started
+    from the Luanti menu - which no client connection can reach at all.
+* [x] Drop `miney/luanticlient/`
+  * ~1800 lines of UDP, SRP and packet code, gone with the `miney` privilege, the
+    formspec transport and the split-request assembly. It bought 30 ms per command;
+    what a script waits for is answers, not commands.
+* [ ] Reach a server on another machine again, properly
+  * The file channel needs the server on this disk. A small relay - a process next to
+    the server that speaks the same JSON lines over a socket - would restore it without
+    bringing a hand-written client protocol back.
+  * Not urgent. Nobody has asked, and every use Miney has today is local.
+* [ ] Batch reads
+  * Every read is its own round trip, so 50 entities × 2 properties is 100 server steps.
+    One Lua chunk could gather all of it in one. The writing half already pipelines;
+    this is the other half, and it is what an agent driving many entities needs.
+  * Has to stay off the beginner's path: no new concept in `lt.players[...]`.
+* [ ] Compact the channel logs during a session
+  * Both are emptied only when the server starts, so a long-running session grows them
+    without bound - fine for a lesson, not for a research run generating events for
+    days. Needs a two-way handshake; either side truncating a file the other is reading
+    is a race a poll interval only usually wins. See the `ponytail:` note in
+    `mod_data/miney/channel.lua`.
+* [x] Send without waiting
+  * Calls with nothing to return do not wait; the next call that needs an answer is the
+    barrier, and `disconnect()` flushes. 400 nodes in a plain `for` loop: 12.2 s → 0.06 s.
+    No new concept on the surface, `lua.run(wait=False)` and `lua.flush()` underneath.
 * [ ] Mesecons: Add a python script processor that executes python code.
 * Python driven mobs?
 
@@ -32,7 +59,7 @@ the workaround for all of it; the goal is to delete that file.
 Each entry is one class, reached through a property, never constructed by the user.
 Per-player things hang off `Player`, world-wide things off `Luanti`.
 
-* [ ] `Hud` - `player.hud`, wraps `player:hud_add/hud_change/hud_remove`
+* [x] `Hud` - `player.hud`, wraps `player:hud_add/hud_change/hud_remove`
   * A message on screen is the missing half of `chat.send_to_player()`: chat scrolls away,
     a HUD element stays until you take it down
   * `player.hud.text("Welcome!", position=...)` returns a handle with `.change()` / `.remove()`;
@@ -70,9 +97,6 @@ Per-player things hang off `Player`, world-wide things off `Luanti`.
     solid before giving physics back**, or it is a fall from wherever the camera stopped
   * `immortal` is the half that matters on its own - a script that darkens the sky has
     summoned mobs whether it meant to or not
-* [ ] Miney's own player is immortal from login
-  * It is not a person and has no reason to take damage. A dead Miney player is a session
-    that behaves oddly until it is back on its feet
 * [ ] `move(destination=...)` warns when the destination has nothing under it and the
   player is not held
   * Silently arranging a fatal fall is a poor answer to a correct-looking call
@@ -110,12 +134,22 @@ def welcome(event):
 A `player_leaves_area` twin is deliberately left out until somebody wants it - the state
 to fire it is already there, so it stays cheap to add later.
 
-## Native client
+## AI and simulation
 
-* [ ] Get chunks, blocks and positions of surrounding entities like a normal client
-  * Could be interesting for machine learning and bots to make them aware of their surroundings
-* [ ] Normal player movement without using lua
-* [ ] Player interactions like punching and interacting with blocks and entities
+Miney's second audience: agents driving many entities, and game logic written in Python
+that Luanti has no way to express.
+
+* [ ] Read the world around a point in one call - blocks, entities, players
+  * Not "like a client would": the mod can already see all of it, and one Lua chunk
+    beats fifty round trips. `Batch reads` above is the mechanism
+* [ ] Say what an outer loop can and cannot do, in the docs
+  * A reactive handler costs two server steps (~60 ms). A callback whose return value
+    the engine reads - `on_punchplayer` returning `true`, `on_player_hpchange` as a
+    modifier, `allow_player_inventory_action` - can **never** be answered from Python,
+    over any transport. Worth one paragraph so nobody looks for it
+* [ ] A named pattern for "policy in Python, tick in Lua"
+  * `lt.lua.run` with a `globalstep` already does it. What is missing is the shape, and
+    the docs page that says this is how you drive a hundred entities
 
 ## Documentation
 

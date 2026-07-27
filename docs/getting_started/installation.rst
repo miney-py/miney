@@ -122,13 +122,12 @@ With a world open, confirm that Python and Luanti really talk to each other:
 
 .. code-block:: text
 
-   ✅ Miney       0.6.0 on Python 3.12.3
+   ✅ Miney       0.7.0 on Python 3.12.3
    ✅ Luanti      5.16.1 (bundled)
    ✅ World       'minetest_game' (Minetest Game)
    ✅ Miney mod   installed and up to date
    ✅ Server      running on port 30000
    ✅ Connection  talking to Luanti 5.16.1
-   ✅ Privilege   'miney' has the 'miney' privilege
    ✅ Content     412 node types, 34 tool types
 
    Everything is ready. Your Python scripts can drive this world.
@@ -230,10 +229,30 @@ You do not have to let Miney manage Luanti. If you run a server yourself, instal
 Miney connects to it instead:
 
 * Start Luanti, click **Content**, then **Browse online content**, search for **miney** and install it.
-* Create a world, enable the **miney** mod under **Select Mods**, turn on **Host Server**, and press
-  **Host Game**.
-* Point Miney at it with ``miney.Luanti("127.0.0.1")`` (see :doc:`../api/Luanti`), or set ``autostart=False``
-  so Miney never starts a server of its own.
+* Create a world and enable the **miney** mod under **Select Mods**. Then just **Play Game** — you do not
+  need **Host Server**.
+* Run your script. ``miney.Luanti()`` finds that world by itself, whether you are playing it on your own or
+  hosting it for others.
+
+.. important::
+
+   Miney reaches a world on your own computer through Luanti's own files, so it never joins your game.
+   That is why singleplayer works, and why nobody shows up in your player list.
+
+If two worlds are running at once, Miney cannot tell which one you mean and says so, listing them. Name the
+one you want:
+
+.. code-block:: python
+
+   lt = miney.Luanti(world="myworld")
+
+Pass ``autostart=False`` if Miney should never start a server of its own.
+
+.. note::
+
+   A Luanti on **another** computer is out of reach. Miney talks to the mod through two files in Luanti's
+   own directory, so the server has to be one this machine can see on disk. Run your script on the machine
+   the server is on.
 
 
 ⚡ One command from nothing at all

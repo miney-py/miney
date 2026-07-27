@@ -2,17 +2,72 @@
 Shared pytest fixtures for Miney tests.
 """
 from __future__ import annotations
+
+import json
+
 import pytest
-from miney.lua import Lua
+from miney.lua import Lua, REQUIRED_MOD_API
 
 
-class _DummyClient:
+class FakeTransport:
     """
-    Minimal client stub so Lua() can be instantiated without a live connection.
-    Only attributes that Lua.__init__ accesses are provided.
+    A transport that keeps everything in a list instead of sending it anywhere.
+
+    This is the whole reason the file channel was worth building for the test suite as
+    well: the old transport was a UDP state machine and had to be emulated packet by
+    packet, while this one is "here is a dict, there is a dict". It offers exactly what
+    :class:`~miney.channel.FileChannel` does, which is the list below and nothing else.
+
+    :param mod_api: What the server's mod claims to speak.
+    :param connected: Whether the transport reports itself usable.
     """
-    def __init__(self) -> None:
-        self.command_handler = None
+
+    def __init__(self, mod_api: int | None = REQUIRED_MOD_API, connected: bool = True):
+        self.mod_api = mod_api
+        self.sent: list[dict] = []
+        self.listeners: list = []
+        self.closed = False
+        self._connected = connected
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
+
+    def add_listener(self, listener) -> None:
+        self.listeners.append(listener)
+
+    def send(self, fields: dict) -> bool:
+        self.sent.append(fields)
+        return True
+
+    def timeout_hint(self) -> str:
+        return "The server did not answer."
+
+    def close(self) -> None:
+        self.closed = True
+
+    def deliver(self, record: dict) -> None:
+        """
+        Hand one record to everything listening, the way a real answer arrives.
+
+        :param record: What the mod would have sent.
+        """
+        for listener in list(self.listeners):
+            listener(record)
+
+    def deliver_json(self, text: str) -> None:
+        """
+        The same, for a test that has the record as JSON.
+
+        :param text: One record, encoded.
+        """
+        self.deliver(json.loads(text))
+
+
+@pytest.fixture
+def fake_transport() -> FakeTransport:
+    """A transport that records what was sent and replays what it is given."""
+    return FakeTransport()
 
 
 @pytest.fixture
@@ -20,7 +75,7 @@ def lua_for_dumps() -> Lua:
     """
     Provides a Lua instance only for testing Lua.dumps (no server interaction).
     """
-    return Lua(_DummyClient())
+    return Lua(FakeTransport())
 
 
 @pytest.fixture(autouse=True)

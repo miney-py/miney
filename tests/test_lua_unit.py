@@ -1,82 +1,38 @@
 from __future__ import annotations
-import json
 import pytest
+
+from conftest import FakeTransport
 from miney.lua import Lua
 
 
-class DummyLuantiMinimal:
-    def __init__(self) -> None:
-        self.command_handler = None
-        self.sent_messages: list[str] = []
-
-    def send_chat_message(self, message: str) -> bool:
-        self.sent_messages.append(message)
-        return True
-
-
-def test_send_command_calls_client():
-    client = DummyLuantiMinimal()
-    lua = Lua(client)
-    ok = lua.send_command("status")
-    assert ok is True
-    assert client.sent_messages == ["/miney status"]
-
-
 def test_run_early_return_on_blank():
-    client = DummyLuantiMinimal()
-    lua = Lua(client)
+    lua = Lua(FakeTransport())
     assert lua.run("   ") is None
 
 
-def test_handle_formspec_json_store():
-    client = DummyLuantiMinimal()
-    lua = Lua(client)
-    exec_id = "123"
-    lua.pending_lua_results[exec_id] = None
-    payload = json.dumps({"execution_id": exec_id, "result": 42})
-    lua._handle_miney_code_form(payload)
-    assert lua.form_ready is True
-    assert lua.pending_lua_results[exec_id] == {"execution_id": exec_id, "result": 42}
+def test_an_answer_reaches_the_call_that_is_waiting():
+    transport = FakeTransport()
+    lua = Lua(transport)
+    lua.pending_lua_results["123"] = None
+
+    transport.deliver({"execution_id": "123", "result": 42})
+
+    assert lua.pending_lua_results["123"] == {"execution_id": "123", "result": 42}
 
 
-def test_handle_formspec_null_is_ignored():
-    client = DummyLuantiMinimal()
-    lua = Lua(client)
-    lua._handle_miney_code_form("null")
-    assert lua.form_ready is True  # still marks form as ready
-    assert lua.pending_lua_results == {}  # no exec id registered, nothing stored
+def test_a_record_without_an_execution_id_is_not_ours():
+    """Events and acknowledgements travel on the same stream and belong to Callback."""
+    transport = FakeTransport()
+    lua = Lua(transport)
+
+    transport.deliver({"event": "chat_message", "payload": {}})
+
+    assert lua.pending_lua_results == {}
 
 
-def test_parse_legacy_formspec_result_and_handle():
-    client = DummyLuantiMinimal()
-    lua = Lua(client)
-
-    formspec = (
-        'formspec_version[5]'
-        'textarea[0,0;10,10;result;Label;'
-        '{"execution_id":"abc","result":123}]'
-    )
-    # Direct parse
-    extracted = lua._parse_legacy_formspec_result(formspec)
-    assert extracted == '{"execution_id":"abc","result":123}'
-
-    # Full handling storing result (register pending first)
-    lua.pending_lua_results["abc"] = None
-    lua._handle_miney_code_form(formspec)
-    assert lua.pending_lua_results["abc"]["result"] == 123
-
-
-def test_unescape_and_read_until_helpers():
-    client = DummyLuantiMinimal()
-    lua = Lua(client)
-
-    text = r'abc\;def;ghi'
-    sub, pos = lua._read_until_unescaped(text, 0, ';')
-    assert sub == r'abc\;def'
-    assert text[pos] == ';'
-
-    s = r'\[a\;\]'
-    assert lua._unescape_formspec(s) == '[a;]'
+def test_mod_api_comes_from_the_transport():
+    transport = FakeTransport(mod_api=11)
+    assert Lua(transport).mod_api == 11
 
 
 def test_get_node_info_builds_correct_lua(monkeypatch):
@@ -88,9 +44,7 @@ def test_get_node_info_builds_correct_lua(monkeypatch):
 
     monkeypatch.setattr(Lua, "run", fake_run, raising=False)
 
-    client = DummyLuantiMinimal()
-    lua = Lua(client)
-
+    lua = Lua(FakeTransport())
     lua.get_node_info("default:stone")
     lua.get_node_info()
 
@@ -109,14 +63,10 @@ def test_run_file_reads_and_passes_code(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Lua, "run", fake_run, raising=False)
 
-    p = tmp_path / "script.lua"
-    p.write_text("return 5", encoding="utf-8")
+    script = tmp_path / "script.lua"
+    script.write_text("return 5", encoding="utf-8")
 
-    client = DummyLuantiMinimal()
-    lua = Lua(client)
-    result = lua.run_file(str(p))
-
-    assert result == "RAN"
+    assert Lua(FakeTransport()).run_file(str(script)) == "RAN"
     assert captured == ["return 5"]
 
 

@@ -44,7 +44,7 @@ from typing import Callable
 
 from ..exceptions import MineyRunError
 from . import acquire, contentdb, upgrade, upstream
-from ..luanticlient.probe import probe_server
+from .probe import probe_server
 from .discover import MIN_VERSION, LuantiInstall, discover, outdated_version
 from .paths import ENV_DIR_NAME, EnvPaths, find_env
 from .process import (
