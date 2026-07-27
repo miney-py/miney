@@ -49,6 +49,69 @@ POLL_INTERVAL = 0.005
 #: chat commands, so this has to be comfortably inside that.
 PING_INTERVAL = 5.0
 
+
+# One world has one request log, so two Miney scripts on the same world append to the
+# same file. Linux makes that safe on its own: an `O_APPEND` write to a regular file
+# picks its offset and writes under the same lock, so it cannot be split or landed on.
+# Windows only pretends to - its C runtime implements append as a seek to the end
+# followed by a write, and nothing holds those two together. Two processes can therefore
+# choose the same offset and the second one writes over the first.
+#
+# What that costs was measured with the test below, 300 requests of 20 KB from two
+# processes: on Linux 300 arrive with this lock removed, three runs out of three. On
+# Windows 282 arrive and 18 are simply gone - not damaged, not short, absent, along with
+# every byte of them. The script that sent them waits out its timeout for an answer to a
+# request the server never saw, and the seam where the overwrite lands leaves one line
+# the mod cannot parse either.
+#
+# Hence a real lock, taken around every write. It lives on a file of its own and never
+# on `c2s`: Windows file locks are mandatory rather than advisory, so a range locked on
+# the request log would make the mod's own read of it fail - the opposite of the point.
+if sys.platform == "win32":
+    import msvcrt
+
+    def _lock(handle) -> None:
+        """
+        Take the channel's write lock, waiting for whoever has it.
+
+        :param handle: The open lock file.
+        """
+        handle.seek(0)
+        # LK_LOCK retries for ten seconds and then raises, which is the right shape:
+        # the lock is held for the length of one write, so anything near that long is
+        # a stuck process rather than contention, and the caller turns it into a
+        # logged failure instead of writing into the middle of somebody else's line.
+        msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+
+    def _unlock(handle) -> None:
+        """
+        Give the write lock back.
+
+        :param handle: The open lock file.
+        """
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+
+else:
+    import fcntl
+
+    def _lock(handle) -> None:
+        """
+        Take the channel's write lock, waiting for whoever has it.
+
+        :param handle: The open lock file.
+        """
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+
+    def _unlock(handle) -> None:
+        """
+        Give the write lock back.
+
+        :param handle: The open lock file.
+        """
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def _platform_user_path() -> Path | None:
     """
     Where a system-wide Luanti keeps its user directory on this platform.
@@ -220,6 +283,9 @@ class FileChannel:
             s2c.touch(exist_ok=True)
             self._out = open(c2s, "ab", buffering=0)
             self._in = open(s2c, "rb")
+            # Never read or written, only locked. It exists so that the lock has
+            # somewhere to live that the mod does not touch.
+            self._lock_file = open(self.directory / "lock", "ab", buffering=0)
         except OSError as error:
             raise MineyRunError(
                 f"Miney found a Luanti server at {self.directory} but cannot write to "
@@ -259,8 +325,7 @@ class FileChannel:
         )
         self._reader.start()
 
-        with self._send_lock:
-            self._out.write(b"\n")
+        self._raw_write(b"\n")
         self._raw_send({"session": self._session, "op": "hello"})
 
         if not acknowledged.wait(timeout):
@@ -333,7 +398,7 @@ class FileChannel:
         self._running = False
         if self._reader is not None and self._reader.is_alive():
             self._reader.join(timeout=1.0)
-        for handle in (self._out, self._in):
+        for handle in (self._out, self._in, self._lock_file):
             try:
                 handle.close()
             except OSError:
@@ -348,10 +413,29 @@ class FileChannel:
         :param record: What to send.
         :return: True if it was written.
         """
-        line = json.dumps(record, ensure_ascii=False).encode("utf-8") + b"\n"
+        return self._raw_write(
+            json.dumps(record, ensure_ascii=False).encode("utf-8") + b"\n"
+        )
+
+    def _raw_write(self, blob: bytes) -> bool:
+        """
+        Put bytes on the request log, whoever else is writing to it.
+
+        Two locks, and both are needed. The threading one keeps this process's own
+        threads apart - the reader sends pings from its own thread while the main one
+        sends commands. The file lock keeps *other* Miney processes apart, which is a
+        different problem with a different answer; see the comment on :func:`_lock`.
+
+        :param blob: The bytes to append, terminator included.
+        :return: True if they were written.
+        """
         try:
             with self._send_lock:
-                self._out.write(line)
+                _lock(self._lock_file)
+                try:
+                    self._out.write(blob)
+                finally:
+                    _unlock(self._lock_file)
         except OSError as error:
             logger.error("Could not write to the Miney channel: %s", error)
             return False

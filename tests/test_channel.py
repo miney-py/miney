@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -79,6 +81,11 @@ class FakeMod:
         self.offset += used
 
     def _record(self, line: bytes) -> None:
+        # What a client sends when it attaches, to close off a record some earlier
+        # process died halfway through. Nothing arrived and nothing is wrong, and the
+        # real mod skips it for the same reason (``channel.lua:142``).
+        if not line.strip():
+            return
         try:
             record = json.loads(line)
         except ValueError:
@@ -265,6 +272,75 @@ def test_an_answer_log_that_was_emptied_is_read_from_the_beginning(served):
         assert seen[1]["execution_id"] == "after"
     finally:
         channel.close()
+
+
+#: A second Miney process, sending large requests to the same channel as fast as it can.
+#: Large on purpose: a write of a few hundred bytes is atomic everywhere, and the whole
+#: question is what happens above that.
+WRITER = """
+import sys, time
+from pathlib import Path
+from miney.channel import FileChannel
+
+directory, tag, count = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+channel = FileChannel(directory, timeout=15)
+
+# Attaching takes a moment, and two processes that never overlap prove nothing. Both
+# say they are ready and wait for the same starting gun, so they are inside the write
+# loop at the same time whatever the machine was doing when they started.
+(directory / ("ready-" + tag)).touch()
+while not (directory / "go").exists():
+    time.sleep(0.005)
+
+payload = tag * 20000
+for number in range(count):
+    channel.send({
+        "lua": payload, "execute": "true", "execution_id": tag + str(number),
+    })
+channel.close()
+"""
+
+
+def test_two_processes_can_write_to_one_channel(served):
+    """
+    Two scripts on one world, and neither one's request comes out damaged.
+
+    One world has one ``c2s``, so a second script appends to the same file as the
+    first. On Linux that is safe by itself - ``O_APPEND`` picks the offset and writes
+    under one lock - but Windows appends by seeking to the end and then writing, and
+    two processes can pick the same end. Without the lock this loses 18 of the 300
+    requests below on Windows and none of them on Linux.
+
+    So the failure this guards against is silent on the sending side - the request
+    never reaches the server and the script waits out its timeout - which is why it
+    is worth two subprocesses to catch. ``mod.seen`` is the real assertion: a request
+    that was written over is missing from it rather than damaged.
+    """
+    directory, mod = served
+    each = 150
+    processes = [
+        subprocess.Popen(
+            [sys.executable, "-c", WRITER, str(directory), tag, str(each)],
+            cwd=str(Path(__file__).resolve().parent.parent),
+        )
+        for tag in ("a", "b")
+    ]
+    deadline = time.time() + 60
+    while not all((directory / f"ready-{tag}").exists() for tag in "ab"):
+        assert time.time() < deadline, "a writer never attached to the channel"
+        time.sleep(0.01)
+    (directory / "go").touch()
+
+    for process in processes:
+        assert process.wait(timeout=120) == 0
+
+    deadline = time.time() + 10
+    while len(mod.seen) < 2 * each and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert mod.bad == 0, f"{mod.bad} requests came out of the channel damaged"
+    assert len(mod.seen) == 2 * each
+    assert {record["fields"]["execution_id"][0] for record in mod.seen} == {"a", "b"}
 
 
 def test_attach_to_a_dead_server_says_what_to_check(tmp_path):

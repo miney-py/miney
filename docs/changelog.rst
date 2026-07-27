@@ -255,6 +255,15 @@ section covers everything since then, 0.6.0 included.
 
 **Fixed**
 
+- **Two scripts can drive one world at the same time.** Each ``miney.Luanti()`` already
+  got a world of its own to work in - separate variables, separate callbacks, separate
+  chat commands - but both send through the same file, and on Windows two scripts
+  writing at the same moment could land on top of each other, so one of the two commands
+  vanished before the server ever saw it and the script that sent it waited for an
+  answer that was never coming. Measured with 300 commands from two scripts at once, 18
+  of them disappeared. Miney now takes a lock while it writes, so whichever script gets
+  there second waits its turn. Linux was never affected.
+
 - Miney's own player gets up again after it dies. It used to stay dead for the rest of
   the session - a corpse standing where it fell, reporting that position for every
   :attr:`~miney.Player.position` read and refusing to be moved anywhere useful. The
