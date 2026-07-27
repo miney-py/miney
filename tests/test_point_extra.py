@@ -37,6 +37,15 @@ def test_normalize_and_angle_zero_length_raises():
         _ = p0.angle(Point(1, 0, 0))
 
 
+def test_equality_and_hash():
+    assert Point(1, 2, 3) == Point(1, 2, 3)
+    assert Point(1, 2, 3) != Point(1, 2, 4)
+    assert Point(1, 2, 3) != "somewhere"
+    assert hash(Point(1, 2, 3)) == hash(Point(1, 2, 3))
+    assert len({Point(1, 2, 3), Point(1, 2, 3), Point(4, 5, 6)}) == 2
+    assert {Point(1, 2, 3): "home"}[Point(1, 2, 3)] == "home"
+
+
 def test_repr_includes_coordinates():
     s = repr(Point(7, 8, 9))
     assert "Luanti Point" in s

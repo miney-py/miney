@@ -22,3 +22,8 @@ def test_iadd_isub_and_neg():
 def test_vector_equality():
     assert Vector(1, 2, 3) == Vector(1, 2, 3)
     assert Vector(1, 2, 3) != Vector(1, 2, 4)
+
+
+def test_vector_equality_with_other_types_is_false():
+    assert Vector(1, 2, 3) != "x"
+    assert not Vector(1, 2, 3) == None  # noqa: E711

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 
-from miney.env.paths import EnvPaths, find_env
+from miney.env.paths import EnvPaths, find_env, syncing_service
 
 
 def test_paths_are_derived_from_root(tmp_path: Path):
@@ -37,3 +37,25 @@ def test_find_env_returns_none_when_absent(tmp_path: Path):
 def test_find_env_ignores_a_file_named_miney(tmp_path: Path):
     (tmp_path / ".miney").write_text("not a directory")
     assert find_env(tmp_path) is None
+
+
+def test_syncing_service_finds_a_marker_in_a_parent(tmp_path: Path):
+    (tmp_path / ".sync-exclude.lst").write_text("")
+    deep = tmp_path / "project" / ".miney"
+    deep.mkdir(parents=True)
+
+    assert syncing_service(deep) == "Nextcloud or ownCloud"
+
+
+def test_syncing_service_finds_onedrive_by_environment(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OneDrive", str(tmp_path))
+    deep = tmp_path / "project" / ".miney"
+    deep.mkdir(parents=True)
+
+    assert syncing_service(deep) == "OneDrive"
+
+
+def test_syncing_service_returns_none_for_a_plain_directory(tmp_path: Path, monkeypatch):
+    for variable in ("OneDrive", "OneDriveConsumer", "OneDriveCommercial"):
+        monkeypatch.delenv(variable, raising=False)
+    assert syncing_service(tmp_path) is None

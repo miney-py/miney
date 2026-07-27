@@ -20,7 +20,7 @@ from . import __version__
 from .env import check, manage, pypi, upgrade
 from .env.contentdb import default_world_name, game_label
 from .env.logs import follow, read_tail
-from .env.paths import ENV_DIR_NAME
+from .env.paths import ENV_DIR_NAME, syncing_service
 from .env.process import is_pid_alive
 from .env.state import list_states
 from .env.world import DEFAULT_GAME
@@ -284,6 +284,19 @@ def cmd_init(args: argparse.Namespace) -> int:
     :return: Process exit code.
     """
     paths = manage.create_environment()
+    service = syncing_service(paths.root)
+    if service is not None:
+        _report(
+            manage.Progress(
+                message=(
+                    f"Warning: {paths.root} is inside a folder synced by {service}.\n"
+                    "The server writes its world databases continuously, and a sync "
+                    "client copying them mid-write kills the server thread. Run "
+                    "'uv run miney init' in a directory that is not synced."
+                ),
+                warning=True,
+            )
+        )
     world, game = _resolve_world_and_game(paths, args)
     manage.ensure_world(paths, world, game, report=_report)
     return 0

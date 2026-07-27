@@ -18,6 +18,15 @@ It is a dictionary, so there is nothing new to learn - ``in``, ``len()``, ``for`
     True
     >>> del lt.storage["home"]
 
+The first run of a script has nothing stored yet, so read with ``.get(key, default)``
+and you never have to handle that case separately:
+
+.. code-block:: python
+
+    runs = int(lt.storage.get("runs", "0")) + 1
+    lt.storage["runs"] = str(runs)
+    lt.chat.send_to_all(f"This script ran {runs} times.")
+
 Keys and values are always strings, because that is all Luanti stores. Miney does not
 hide that: a number raises a :class:`TypeError` rather than coming back as text you did
 not write. Use :class:`str` for single values and :mod:`json` for lists and dictionaries.

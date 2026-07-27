@@ -10,10 +10,21 @@ on its own.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ENV_DIR_NAME = ".miney"
+
+#: Files a sync client leaves in the root of the folder it watches, by service name.
+SYNC_MARKERS = {
+    ".sync-exclude.lst": "Nextcloud or ownCloud",
+    ".dropbox": "Dropbox",
+    ".dropbox.cache": "Dropbox",
+}
+
+#: Environment variables Microsoft sets to the root of a synced OneDrive folder.
+ONEDRIVE_VARS = ("OneDrive", "OneDriveConsumer", "OneDriveCommercial")
 
 #: Name of the shared Luanti directory in the user's home folder. Visible, not hidden:
 #: it is a normal Luanti install, meant to be seen and usable on its own.
@@ -110,6 +121,32 @@ class EnvPaths:
         :param name: The world name.
         """
         return self.world_run_dir(name) / "server.log"
+
+
+def syncing_service(path: Path) -> str | None:
+    """
+    Name the file sync service watching a directory, if there is one.
+
+    A world inside a synced folder is not a slow world, it is a broken one: the sync
+    client copies ``map.sqlite``, ``players.sqlite`` and ``env_meta.txt`` while the
+    server is writing them, the server gets *"Failed to overwrite env_meta.txt"* and its
+    thread dies. Detection is a handful of ``exists()`` calls for the marker files these
+    clients leave in the root of the folder they watch, plus the environment variables
+    OneDrive sets.
+
+    :param path: Directory to check, together with all its parents.
+    :return: Name of the service, or None if the directory looks unsynced.
+    """
+    candidates = [path.resolve(), *path.resolve().parents]
+    for candidate in candidates:
+        for marker, service in SYNC_MARKERS.items():
+            if (candidate / marker).exists():
+                return service
+    for variable in ONEDRIVE_VARS:
+        root = os.environ.get(variable)
+        if root and Path(root).resolve() in candidates:
+            return "OneDrive"
+    return None
 
 
 def find_env(start: Path | None = None) -> EnvPaths | None:

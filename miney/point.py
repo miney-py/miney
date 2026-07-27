@@ -29,6 +29,31 @@ class Point:
         """
         return (self + b) / 2
 
+    def __eq__(self, other) -> bool:
+        """
+        Two points are equal when all three coordinates are.
+
+        Anything that is not a Point is never equal, instead of raising::
+
+            >>> Point(1, 2, 3) == Point(1, 2, 3)
+            True
+            >>> Point(1, 2, 3) == "somewhere"
+            False
+        """
+        if not isinstance(other, Point):
+            return NotImplemented
+        return (self.x, self.y, self.z) == (other.x, other.y, other.z)
+
+    def __hash__(self) -> int:
+        """
+        Allow a Point in a set or as a dictionary key.
+
+        The trap: ``point += other`` changes the point in place, and a point that
+        changed while it sat in a set or dict is not found there anymore. Build a new
+        point with ``point + other`` when you keep it in one of those.
+        """
+        return hash((self.x, self.y, self.z))
+
     def __add__(self, other: "Point") -> "Point":
         return Point(self.x + other.x, self.y + other.y, self.z + other.z)
 

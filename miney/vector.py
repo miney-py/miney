@@ -13,10 +13,13 @@ class Vector:
         self.z = z
 
     def __eq__(self, other):
-        if self.x == other.x and self.y == other.y and self.z == other.z:
-            return True
-        else:
-            return False
+        """
+        Two vectors are equal when all three coordinates are. Anything that is not a
+        Vector is never equal, instead of raising.
+        """
+        if not isinstance(other, Vector):
+            return NotImplemented
+        return (self.x, self.y, self.z) == (other.x, other.y, other.z)
 
     def __len__(self) -> int:
         """

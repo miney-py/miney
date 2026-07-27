@@ -35,13 +35,20 @@ Unreleased
   back together on the other side. v0.7.0 turned the silent timeout into an error
   message, and this makes the error unnecessary. Code above 16 MB is still refused,
   which no script written by a person will ever reach.
+- :class:`~miney.Point` can be compared and used as a key. ``Point(1, 2, 3) ==
+  Point(1, 2, 3)`` is ``True``, and a point now goes into a ``set`` or a ``dict`` like
+  any other value. Note the trap: ``point += other`` changes the point in place, and a
+  point that changed while it sat in a set is not found there anymore - build a new one
+  with ``point + other``.
+- ``uv run miney init`` says so when the ``.miney`` directory it just created sits in a
+  folder synced by Nextcloud, ownCloud, Dropbox or OneDrive. The sync client copies the
+  world databases while the server writes them, which kills the server thread with
+  *"Couldn't save env meta"*.
 
 **Changed**
 
 - **The Lua mod on the server has to be updated** for the change above. Miney checks on
   the first call and says so.
-
-
 - **Luanti 5.9 or newer is required**, up from 5.7. Both of those are years old by now,
   and 5.9 is where the engine learned to accept a media file's contents directly rather
   than a path on the server's own disk - which is what will let a script hand a player
