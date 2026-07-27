@@ -8,6 +8,28 @@ Python interface to [Luanti](https://www.luanti.org/) (formerly Minetest). Two h
 
 Changing a wire message, command name or callback payload usually means touching **both** the Python side and the Lua mod.
 
+## Look it up in `luanti-src/`
+
+A checkout of the Luanti sources normally sits at `luanti-src/` in the repo root. It is
+gitignored, so it is reference material and never part of a commit — but when it is
+there, **read it instead of recalling what the engine does**:
+
+- `luanti-src/doc/lua_api.md` — the modding API. The authority on every field name,
+  every default and every "added in 5.x" note the mod half depends on.
+- `luanti-src/src/` — the C++ engine. Where to go when the Lua docs describe *what* but
+  the question is *what actually happens*: packet layout for `miney/luanticlient/`,
+  limits the docs do not name, whether a file survives a restart.
+- `luanti-src/src/defaultsettings.cpp` — what a setting really defaults to.
+
+Version-gated behaviour is worth checking twice: the checkout tracks a recent release
+(5.16 at the time of writing) while Miney supports back to 5.9, so a feature documented
+there may not exist on the oldest server Miney talks to. `core.get_version()` and the
+`core.features` table in `lua_api.md` say when something appeared.
+
+If `luanti-src/` is missing, an installed Luanti carries the same `doc/lua_api.md` — in
+a Miney-managed install that is `~/Luanti/doc/lua_api.md`. The C++ sources are only in
+the checkout.
+
 ## What Miney is for
 
 Miney is an education project: people use it to **learn Python**, with Luanti as the playground. There are exactly two things a user does with it:
