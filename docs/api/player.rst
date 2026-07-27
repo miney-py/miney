@@ -31,4 +31,5 @@ like :attr:`~miney.Player.fly` and :attr:`~miney.Player.creative` set the right 
 .. toctree::
    :maxdepth: 1
 
+   hud
    inventory

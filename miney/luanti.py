@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, Dict, Optional, Callable
 
+from .assets import Assets
 from .chat import Chat
 from .events import Event
 from .lua import Lua
@@ -304,6 +305,7 @@ class Luanti:
         self._chat: Chat = Chat(self)
         self._nodes: Nodes = Nodes(self)
         self._storage: Storage = Storage(self)
+        self._assets: Assets = Assets(self)
 
         self._tools_cache = self.lua.run(
             """
@@ -430,6 +432,24 @@ class Luanti:
         :return: :class:`~miney.nodes.Nodes`
         """
         return self._nodes
+
+    @property
+    def assets(self) -> 'Assets':
+        """
+        Pictures: the ones the game ships, and the ones you make yourself.
+
+        See :class:`~miney.assets.Assets` for the whole picture.
+
+        :Example:
+
+            >>> lt.assets.textures.default.dirt
+            'default_dirt.png'
+            >>> lt.assets.upload(Path("cat.png"))
+            'miney_3f9a1c7b2e04.png'
+
+        :return: :class:`~miney.assets.Assets`
+        """
+        return self._assets
 
     @property
     def storage(self) -> 'Storage':

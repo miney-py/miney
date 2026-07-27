@@ -28,7 +28,9 @@ local form_version = 4
 --      player_respawns, player_punched, player_hp_changed), filter values are checked
 --   5  a request may arrive in several submits, numbered with "part" and "parts";
 --      the engine floor is Luanti 5.9
-local MOD_API = 5
+--   6  miney_assets and miney_hud in the sandbox: pictures a script uploads, the
+--      texture names the game ships, and the named HUD registry per player
+local MOD_API = 6
 
 -- Logger function for consistent logging
 local function log(level, message)
@@ -117,6 +119,9 @@ end
 -- Before player.lua: smooth_move registers its frames here.
 dofile(minetest.get_modpath(modname) .. "/tasks.lua")
 dofile(minetest.get_modpath(modname) .. "/player.lua")
+-- Reads minetest.get_mod_data_path(), which only answers while mods load.
+dofile(minetest.get_modpath(modname) .. "/assets.lua")
+dofile(minetest.get_modpath(modname) .. "/hud.lua")
 local callbacks = dofile(minetest.get_modpath(modname) .. "/callbacks.lua")
 
 local cached_env = nil
@@ -372,6 +377,8 @@ local function execute_lua_code(code, player_name)
             PerlinNoiseMap = PerlinNoiseMap,
             SecureRandom = SecureRandom,
             smooth_move = smooth_move,
+            miney_assets = miney_assets,
+            miney_hud = miney_hud,
         }
 
         -- A list of approved prefixes for global variables from other mods.

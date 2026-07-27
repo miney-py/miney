@@ -32,6 +32,39 @@ class LuaResultTimeout(Exception):
     pass
 
 
+class AssetError(Exception):
+    """
+    The server would not take a picture.
+
+    Raised by :meth:`~miney.Assets.upload` when Luanti refused the file itself - most
+    often because something on the server already carries that name, which it cannot
+    know twice. The message carries what the mod reported.
+    """
+    pass
+
+
+class AssetTimeout(Exception):
+    """
+    A picture never arrived on the client.
+
+    :meth:`~miney.Assets.upload` waits until the client confirms it has the file,
+    because the name is useless before that. The size is nearly always the reason.
+    """
+    pass
+
+
+class HudElementGone(Exception):
+    """
+    The HUD element this handle points at is not on the screen anymore.
+
+    Something took it down - the player left the game, or a
+    :meth:`~miney.Hud.clear` ran - so there is nothing left to change. Only writing
+    raises this: reading a field answers from memory and cannot know, and
+    :meth:`~miney.HudElement.remove` stays quiet because the goal is already reached.
+    """
+    pass
+
+
 class DataError(Exception):
     """
     Malformed data received.

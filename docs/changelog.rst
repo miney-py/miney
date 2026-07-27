@@ -12,6 +12,23 @@ Unreleased
 
 **Added**
 
+- ``player.hud`` - the screen. A chat message scrolls away; this stays.
+  :meth:`player.hud.text() <miney.Hud.text>` puts a line on a player's screen and gives
+  back a handle to change it later, ``score.text = "Score: 7"``. Waypoints, images,
+  statbars, inventory and compass elements go the same way, all of them one line around
+  :meth:`~miney.Hud.add`. ``position`` takes one of nine names instead of numbers, and
+  Luanti's field names are translated - ``color="#ffcc00"`` rather than
+  ``number = 0xffcc00``. What Luanti draws by itself is here too:
+  ``player.hud.healthbar = False``, ``player.hud.hotbar_slots = 4``.
+- ``lt.assets`` - pictures. :attr:`lt.assets.textures <miney.Assets.textures>` makes
+  every texture the server's mods carry findable with TAB, the way ``lt.nodes.names``
+  does for blocks: ``lt.assets.textures.default.dirt`` is ``'default_dirt.png'``.
+  :meth:`lt.assets.upload() <miney.Assets.upload>` sends a picture of your own the other
+  way - a file, raw bytes, a Pillow image or a matplotlib figure - and gives back a name
+  usable anywhere a texture name goes. It waits until the picture has really arrived on
+  the client, so the next line can use it. ``player=`` sends it to one player and
+  forgets it again, ``keep=True`` keeps it across server restarts. Neither Pillow nor
+  matplotlib is needed to install Miney; they are recognised by the methods they carry.
 - :meth:`~miney.Lua.run` no longer has a length limit worth thinking about. A formspec
   submit carries less than 640 KB and the server drops anything larger without a word,
   so long code used to be refused outright; it is now sent in several pieces and put

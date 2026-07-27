@@ -49,7 +49,7 @@ MAX_LUA_SOURCE = 16 * 1024 * 1024
 #:
 #: This is not the Miney version and does not move with a release. Raise it only
 #: together with ``MOD_API``, when the two halves stop understanding each other.
-REQUIRED_MOD_API = 5
+REQUIRED_MOD_API = 6
 
 
 def _split_for_transport(text: str, limit: int) -> list[str]:

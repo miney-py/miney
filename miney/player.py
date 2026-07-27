@@ -90,6 +90,7 @@ class Player:
         :param luanti: Parent Luanti object
         :param name: Player name
         """
+        from .hud import Hud
         from .inventory import Inventory
         self.lt = luanti
         self.name = name
@@ -117,6 +118,23 @@ class Player:
         >>> import miney
         >>> lt = miney.Luanti()
         >>> lt.players.IhateDirt.inventory.remove(lt.nodes.names.default.dirt, 99)
+        """
+
+        self.hud: Hud = Hud(luanti, self)
+        """What this player sees on their screen, on top of the world.
+
+        A chat message scrolls away; this stays until something takes it down.
+
+        :Example, a message and a score that keeps counting:
+
+        >>> import miney
+        >>> lt = miney.Luanti()
+        >>> lt.players.Steve.hud.text("Welcome!")
+        >>> score = lt.players.Steve.hud.text("Score: 0", position="top left")
+        >>> score.text = "Score: 7"
+
+        See :class:`~miney.hud.Hud` for waypoints, images, bars, and for switching off
+        what Luanti draws by itself.
         """
 
     def __repr__(self):
