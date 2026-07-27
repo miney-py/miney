@@ -10,7 +10,20 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 Unreleased
 ----------
 
+**Added**
+
+- :meth:`~miney.Lua.run` no longer has a length limit worth thinking about. A formspec
+  submit carries less than 640 KB and the server drops anything larger without a word,
+  so long code used to be refused outright; it is now sent in several pieces and put
+  back together on the other side. v0.7.0 turned the silent timeout into an error
+  message, and this makes the error unnecessary. Code above 16 MB is still refused,
+  which no script written by a person will ever reach.
+
 **Changed**
+
+- **The Lua mod on the server has to be updated** for the change above. Miney checks on
+  the first call and says so.
+
 
 - **Luanti 5.9 or newer is required**, up from 5.7. Both of those are years old by now,
   and 5.9 is where the engine learned to accept a media file's contents directly rather

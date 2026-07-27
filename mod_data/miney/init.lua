@@ -26,7 +26,9 @@ local form_version = 4
 --   3  event payloads name their fields like miney/events.py, event filters are honoured
 --   4  node and player events (node_dug, node_placed, node_punched, player_dies,
 --      player_respawns, player_punched, player_hp_changed), filter values are checked
-local MOD_API = 4
+--   5  a request may arrive in several submits, numbered with "part" and "parts";
+--      the engine floor is Luanti 5.9
+local MOD_API = 5
 
 -- Logger function for consistent logging
 local function log(level, message)
@@ -429,6 +431,76 @@ local function execute_lua_code(code, player_name)
 end
 
 
+-- A formspec submit carries less than 640K of fields (pkt_read_formspec_fields in
+-- serverpackethandler.cpp), and anything above that the server drops without telling
+-- the client. So a longer request arrives as numbered pieces instead, and is put back
+-- together here before it runs.
+--
+-- Kept per player and per execution id, because one connection can have several
+-- requests in flight. Pieces are stored by their number rather than appended, so the
+-- order they arrive in does not matter.
+local MAX_ASSEMBLED = 16 * 1024 * 1024
+local pending_parts = {}
+
+-- Returns the whole source once the last piece has arrived, nil while pieces are still
+-- missing, and nil plus a message when the request is not worth collecting.
+local function assemble_parts(player_name, execution_id, fields)
+    local number, total = tonumber(fields.part), tonumber(fields.parts)
+    if not number or not total or number < 1 or total < 1 or number > total then
+        return nil, "A split request needs 'part' and 'parts' to be numbers, with " ..
+            "part between 1 and parts."
+    end
+    if not execution_id then
+        return nil, "A split request needs an execution_id to collect its pieces under."
+    end
+
+    local per_player = pending_parts[player_name]
+    if not per_player then
+        per_player = {}
+        pending_parts[player_name] = per_player
+    end
+
+    local request = per_player[execution_id]
+    if not request then
+        request = {pieces = {}, have = 0, total = total, size = 0}
+        per_player[execution_id] = request
+    elseif request.total ~= total then
+        per_player[execution_id] = nil
+        return nil, "The pieces of this request disagree about how many there are."
+    end
+
+    -- A piece sent twice must not count twice, or the request would look complete
+    -- while a different one is still missing.
+    if request.pieces[number] == nil then
+        request.pieces[number] = fields.lua
+        request.have = request.have + 1
+        request.size = request.size + #fields.lua
+    end
+
+    -- The pieces sit in the server's memory until the last one shows up. Miney refuses
+    -- anything larger before it sends (MAX_LUA_SOURCE in miney/lua.py); this is what
+    -- stops a client that does not.
+    if request.size > MAX_ASSEMBLED then
+        per_player[execution_id] = nil
+        return nil, "This Lua code is too long: the mod collects at most " ..
+            MAX_ASSEMBLED .. " bytes and this request is already past it."
+    end
+
+    if request.have < request.total then
+        return nil
+    end
+
+    per_player[execution_id] = nil
+    return table.concat(request.pieces)
+end
+
+-- Its own registration rather than a line in the one further up, because that handler
+-- is written before pending_parts exists and a local cannot be reached from above it.
+minetest.register_on_leaveplayer(function(player)
+    pending_parts[player:get_player_name()] = nil
+end)
+
+
 minetest.register_on_player_receive_fields(function(player, formname, fields)
     if formname == "miney:code_form" then
         local player_name = player:get_player_name()
@@ -447,6 +519,22 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
         end
 
         local execution_id = fields.execution_id
+
+        -- Too long for one submit: collect the pieces, and carry on once they are all
+        -- here. Everything below sees an ordinary request.
+        if fields.part and fields.lua then
+            local assembled, err = assemble_parts(player_name, execution_id, fields)
+            if err then
+                log("warning", "Refused a split request from " .. player_name .. ": " .. err)
+                show_code_form(player_name, {error = err}, execution_id)
+                return true
+            end
+            if not assembled then
+                return true
+            end
+            fields.lua = assembled
+        end
+
         if fields.execute and fields.lua and fields.lua ~= "" then
             local result_table = execute_lua_code(fields.lua, player_name)
             if execution_id then

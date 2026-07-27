@@ -61,6 +61,12 @@ class MockLuanti:
 
         exec_id = fields.get("execution_id")
 
+        # A request split over several submits is only run once the last piece has
+        # arrived, the way the mod does it. Answering the first one would let run()
+        # return while most of the code is still on the wire.
+        if fields.get("part") and fields["part"] != fields.get("parts"):
+            return True
+
         if self.mode == "noop":
             # Do not call the handler: simulates a server that never replies (timeout path).
             return True
@@ -161,24 +167,85 @@ def test_run_accepts_a_newer_mod():
     assert lua.run("return 1") == 42
 
 
-def test_run_refuses_code_over_the_formspec_limit():
+def test_run_sends_code_that_fits_in_one_submit():
     """
-    Oversized submits are dropped by the server without an answer, so the client has
-    to catch them - otherwise the only symptom is a timeout with no reason in it.
+    The common call must not pay for the multipart machinery: one submit, and no
+    part numbering for the mod to reassemble.
+    """
+    client = MockLuanti(mode="success", legacy=False)
+    lua = Lua(client)
+
+    assert lua.run("return 42") == 42
+    assert len(client.sent_fields) == 1
+    assert "part" not in client.sent_fields[0]
+
+
+def test_run_splits_code_too_long_for_one_submit():
+    """
+    The server drops a submit over 640K without a word (``pkt_read_formspec_fields``
+    in ``serverpackethandler.cpp``), so long code goes in several pieces instead.
     """
     from miney.lua import FORMSPEC_FIELD_LIMIT
 
     client = MockLuanti(mode="success", legacy=False)
     lua = Lua(client)
 
+    code = "--" + "x" * (FORMSPEC_FIELD_LIMIT * 2)
+    assert lua.run(code) == 42
+
+    assert len(client.sent_fields) > 1
+    # Every piece has to survive the trip on its own.
+    for fields in client.sent_fields:
+        payload = sum(
+            len(name.encode()) + len(value.encode()) for name, value in fields.items()
+        )
+        assert payload < FORMSPEC_FIELD_LIMIT
+
+    # Numbered from one so the mod can put them back in order, and complete.
+    assert [f["part"] for f in client.sent_fields] == [
+        str(i) for i in range(1, len(client.sent_fields) + 1)
+    ]
+    assert {f["parts"] for f in client.sent_fields} == {str(len(client.sent_fields))}
+    assert {f["execution_id"] for f in client.sent_fields} == {
+        client.sent_fields[0]["execution_id"]
+    }
+    assert "".join(f["lua"] for f in client.sent_fields) == code
+
+
+def test_run_splits_without_cutting_a_character_in_half():
+    """
+    The limit counts bytes and the code is text: a piece that ends in the middle of a
+    multi-byte character would arrive as two broken ones.
+    """
+    from miney.lua import FORMSPEC_FIELD_LIMIT
+
+    client = MockLuanti(mode="success", legacy=False)
+    lua = Lua(client)
+
+    # Three bytes per character, so a naive slice at a byte boundary lands mid-character.
+    code = "--" + "☃" * FORMSPEC_FIELD_LIMIT
+    assert lua.run(code) == 42
+
+    for fields in client.sent_fields:
+        assert len(fields["lua"].encode()) < FORMSPEC_FIELD_LIMIT
+    assert "".join(f["lua"] for f in client.sent_fields) == code
+
+
+def test_run_refuses_code_over_the_absolute_maximum():
+    """
+    Splitting has an end: the mod refuses to collect more than MAX_LUA_SOURCE, so
+    saying no here is better than filling the server's memory and timing out.
+    """
+    from miney.lua import MAX_LUA_SOURCE
+
+    client = MockLuanti(mode="success", legacy=False)
+    lua = Lua(client)
+
     with pytest.raises(Exception) as exc:
-        lua.run("local s = " + '"' + "x" * FORMSPEC_FIELD_LIMIT + '"')
+        lua.run("--" + "x" * (MAX_LUA_SOURCE + 1))
     assert "too long to send" in str(exc.value)
     assert not lua.pending_lua_results
-
-    # Just under the limit still goes out. The other fields cost a few bytes too, so
-    # leave room for them rather than testing the exact boundary.
-    assert lua.run("--" + "x" * (FORMSPEC_FIELD_LIMIT - 200)) == 42
+    assert not client.sent_fields
 
 
 def test_run_timeout_raises_fast():

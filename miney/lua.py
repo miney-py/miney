@@ -28,6 +28,20 @@ LUA_IDENTIFIER_REGEX = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 #: be measured here or it ends as a timeout with no reason given.
 FORMSPEC_FIELD_LIMIT = 640 * 1024
 
+#: What one submit may carry of the Lua source itself. The rest of
+#: :data:`FORMSPEC_FIELD_LIMIT` pays for the other fields and their names, which come to
+#: well under a hundred bytes - the kilobyte is slack, not arithmetic.
+_PART_LIMIT = FORMSPEC_FIELD_LIMIT - 1024
+
+#: The largest request Miney will assemble out of several submits. Mirrors
+#: ``MAX_ASSEMBLED`` in ``mod_data/miney/init.lua``: the mod refuses to collect more than
+#: this, so refusing it here turns a timeout into a sentence that names the problem.
+#:
+#: Nothing a person writes comes near it. It is there because the pieces sit in the
+#: server's memory until the last one arrives, and a runaway generator should not be able
+#: to fill it.
+MAX_LUA_SOURCE = 16 * 1024 * 1024
+
 #: The oldest Lua mod this version of Miney can talk to. The mod sends its own number
 #: with every answer (``MOD_API`` in ``mod_data/miney/init.lua``); anything lower, or a
 #: mod old enough not to send one at all, is refused with an error that says how to
@@ -35,7 +49,33 @@ FORMSPEC_FIELD_LIMIT = 640 * 1024
 #:
 #: This is not the Miney version and does not move with a release. Raise it only
 #: together with ``MOD_API``, when the two halves stop understanding each other.
-REQUIRED_MOD_API = 4
+REQUIRED_MOD_API = 5
+
+
+def _split_for_transport(text: str, limit: int) -> list[str]:
+    """
+    Cut Lua source into pieces that each fit into one formspec submit.
+
+    The limit counts bytes while the source is text, so the cut is made in the encoded
+    bytes - one character can be four of them. A cut that lands inside a character would
+    arrive as two broken ones, so it backs off onto the nearest character boundary: in
+    UTF-8 every byte that continues a character has its top bits set to ``10``, which
+    makes the boundary three steps away at the very most.
+
+    :param text: The source to send.
+    :param limit: How many bytes one piece may take.
+    :return: The pieces, in order. ``"".join()`` of them is ``text`` again.
+    """
+    data = text.encode()
+    pieces = []
+    start = 0
+    while start < len(data):
+        end = min(start + limit, len(data))
+        while end < len(data) and (data[end] & 0xC0) == 0x80:
+            end -= 1
+        pieces.append(data[start:end].decode())
+        start = end
+    return pieces
 
 #: Lua's own escapes for the characters that have one. Everything else below a space
 #: becomes a numeric escape - see :func:`_lua_string`.
@@ -327,31 +367,46 @@ class Lua:
         if execution_id is None:
             execution_id = str(uuid.uuid4())
 
+        source_size = len(lua_code.encode())
+        if source_size > MAX_LUA_SOURCE:
+            raise LuaError(
+                f"This Lua code is too long to send: {source_size} bytes, and the mod "
+                f"collects at most {MAX_LUA_SOURCE}. Send it in several smaller calls, "
+                f"or replace a long list of values in the code with a loop that builds "
+                f"it."
+            )
+
         # Register the execution ID as pending
         self.pending_lua_results[execution_id] = None
 
         # Send Lua code through the form with execution ID
         logger.debug(f"Sending Lua code with ID {execution_id}: {lua_code}")
-        fields = {
-            "lua": lua_code,
-            "execute": "true",
-            "execution_id": execution_id
-        }
 
-        payload_size = sum(
-            len(name.encode()) + len(value.encode()) for name, value in fields.items()
-        )
-        if payload_size >= FORMSPEC_FIELD_LIMIT:
-            self.pending_lua_results.pop(execution_id, None)
-            raise LuaError(
-                f"This Lua code is too long to send: {payload_size} bytes, and the "
-                f"server accepts less than {FORMSPEC_FIELD_LIMIT}. It would be dropped "
-                f"on arrival without an answer. Send it in several smaller calls, or "
-                f"replace a long list of values in the code with a loop that builds it."
-            )
+        pieces = _split_for_transport(lua_code, _PART_LIMIT)
+        if len(pieces) == 1:
+            submits = [{
+                "lua": lua_code,
+                "execute": "true",
+                "execution_id": execution_id,
+            }]
+        else:
+            # Numbered so the mod can put them back together whatever order they arrive
+            # in, and told the total so it knows when it has them all.
+            logger.debug(f"Sending {execution_id} in {len(pieces)} parts")
+            submits = [
+                {
+                    "lua": piece,
+                    "execute": "true",
+                    "execution_id": execution_id,
+                    "part": str(number),
+                    "parts": str(len(pieces)),
+                }
+                for number, piece in enumerate(pieces, start=1)
+            ]
 
         try:
-            self.luanti.send_formspec_response("miney:code_form", fields)
+            for fields in submits:
+                self.luanti.send_formspec_response("miney:code_form", fields)
         except ValueError as e:
             logger.error(f"Failed to send Lua code: {e}")
             return None
