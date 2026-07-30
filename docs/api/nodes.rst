@@ -67,6 +67,27 @@ straight into the next call.
 torches together, so it changes as the sun moves. Measure the *air* above the ground —
 the light inside a solid block is always 0.
 
+.. rubric:: A tree from one line
+
+.. code-block:: python
+
+   lt.nodes.grow_tree(lt.players[0].looking_at)
+
+Trunk, branches, leaves and fruit, all at once, and a little different every time. You
+do not have to know what the wood in this game is called — Miney's mod looks for the
+usual names — but you can say:
+
+.. code-block:: python
+
+   lt.nodes.grow_tree(Point(0, 10, 0), height=20,
+                      trunk=lt.nodes.names.mcl_core.darktree,
+                      leaves=lt.nodes.names.mcl_core.darkleaves)
+
+.. important::
+
+   The tree grows *upwards from* the point you give it. Point at the air above the
+   ground, not at the ground.
+
 .. autoclass:: miney.Nodes
    :members:
 

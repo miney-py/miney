@@ -316,6 +316,56 @@ minetest.load_area(p)
 return minetest.get_node_light(p)
 """
 
+#: One L-system tree, with the block names guessed where the caller did not name them.
+#:
+#: The names are the only part of a ``treedef`` that really differs between worlds, and
+#: they differ per *game* rather than per world - so the guess is a short list rather
+#: than a parameter the user has to fill in before anything grows. Everything after the
+#: names is the apple tree from ``lua_api.md``, with the axiom built from the height.
+_GROW_TREE_LUA = """
+local p = {pos}
+minetest.load_area(p)
+local trunk, leaves, fruit = {trunk}, {leaves}, {fruit}
+if trunk == nil or leaves == nil then
+    local guesses = {{
+        {{"default:tree", "default:leaves", "default:apple"}},
+        {{"mcl_core:tree", "mcl_core:leaves", "mcl_core:apple"}},
+    }}
+    for _, guess in ipairs(guesses) do
+        if minetest.registered_nodes[guess[1]] and minetest.registered_nodes[guess[2]] then
+            trunk = trunk or guess[1]
+            leaves = leaves or guess[2]
+            if fruit == nil then fruit = guess[3] end
+            break
+        end
+    end
+end
+if not trunk or not leaves then
+    error("This game does not call its wood 'default:tree' or 'mcl_core:tree', so "
+        .. "grow_tree cannot guess what a tree is made of here. Name the blocks "
+        .. "yourself: lt.nodes.grow_tree(point, trunk=..., leaves=...) - "
+        .. "lt.nodes.names autocompletes them.")
+end
+local treedef = {{
+    axiom = {axiom},
+    rules_a = "[&&&FFFFF&&FFFF][&&&++++FFFFF&&FFFF][&&&----FFFFF&&FFFF]",
+    rules_b = "[&&&++FFFFF&&FFFF][&&&--FFFFF&&FFFF][&&&------FFFFF&&FFFF]",
+    trunk = trunk,
+    leaves = leaves,
+    angle = 30,
+    iterations = 2,
+    random_level = 0,
+    trunk_type = "single",
+    thin_branches = true,
+}}
+if fruit and minetest.registered_items[fruit] then
+    treedef.fruit = fruit
+    treedef.fruit_chance = 10
+end
+minetest.spawn_tree(p, treedef)
+return true
+"""
+
 #: Looks the player up before anything is placed or dug, so a name that is not in the
 #: game says so instead of quietly turning into "no player at all".
 _PLAYER_LOOKUP_LUA = """
@@ -961,6 +1011,92 @@ class Nodes:
             _LIGHT_LUA.format(
                 pos=self.lt.lua.dumps({"x": floor(point.x), "y": floor(point.y),
                                        "z": floor(point.z)}),
+            ),
+            timeout=30,
+        )
+
+    def grow_tree(self, point: Point, trunk: str = None, leaves: str = None,
+                  fruit: str = None, height: int = 8) -> None:
+        """
+        Grow a whole tree from one call.
+
+        A tree is a lot of blocks, and this puts all of them there at once - trunk,
+        branches, leaves and, where the game has one, fruit. Every tree comes out a
+        little different.
+
+        :Examples:
+
+            A tree where you are looking:
+
+            >>> lt.nodes.grow_tree(lt.players[0].looking_at)
+
+            A small forest, which is a ``for`` loop and nothing else:
+
+            >>> import random
+            >>> from miney import Point
+            >>> for _ in range(20):
+            ...     x, z = random.randint(-40, 40), random.randint(-40, 40)
+            ...     ground = lt.nodes.find_in(Point(x, 0, z), Point(x, 40, z),
+            ...                               "group:soil", under_air=True)
+            ...     if ground:
+            ...         lt.nodes.grow_tree(ground[0] + Point(0, 1, 0))
+
+            A tall dark one:
+
+            >>> lt.nodes.grow_tree(Point(0, 10, 0), height=20,
+            ...                    trunk=lt.nodes.names.mcl_core.darktree,
+            ...                    leaves=lt.nodes.names.mcl_core.darkleaves)
+
+        **You do not have to say what wood it is made of.** Every game calls its blocks
+        something else, so Miney's mod looks for the usual names on this server and uses
+        those. Name them yourself when you want a particular kind of tree, and
+        :attr:`~miney.Nodes.names` autocompletes them.
+
+        .. important::
+
+           The tree grows **upwards from** ``point``, so give it the block of air just
+           above the ground rather than the ground itself - a tree started inside the
+           earth is a trunk nobody can see.
+
+        :param point: Where the trunk starts, one block above the ground.
+        :param trunk: The wood, e.g. ``"mcl_core:tree"``. Guessed when left out.
+        :param leaves: The leaves, e.g. ``"mcl_core:leaves"``. Guessed when left out.
+        :param fruit: What hangs in it, e.g. ``"mcl_core:apple"``. Guessed when left
+            out, and left off entirely where the game has none.
+        :param height: How many blocks tall the trunk is, from 4 to 30. 8 by default.
+        :return: Nothing.
+        :raises TypeError: If ``point`` is not a :class:`~miney.Point`.
+        :raises ValueError: If the height is outside 4 to 30, or this server has no
+            block of the name given.
+        :raises miney.LuaError: If the game's blocks could not be guessed and none were
+            given.
+        """
+        if not isinstance(point, Point):
+            raise TypeError(
+                f"'point' must be a Point, got {type(point).__name__}: "
+                f"lt.nodes.grow_tree(Point(0, 10, 0))"
+            )
+        if isinstance(height, bool) or not isinstance(height, int) \
+                or not 4 <= height <= 30:
+            raise ValueError(
+                f"'height' is how many blocks tall the trunk is and has to be a whole "
+                f"number between 4 and 30, got {height!r}."
+            )
+        for named in (trunk, leaves):
+            if named is not None:
+                self._wanted(named)
+
+        self.lt.lua.run(
+            _GROW_TREE_LUA.format(
+                pos=self.lt.lua.dumps({"x": floor(point.x), "y": floor(point.y),
+                                       "z": floor(point.z)}),
+                trunk=self.lt.lua.dumps(trunk) if trunk else "nil",
+                leaves=self.lt.lua.dumps(leaves) if leaves else "nil",
+                fruit=self.lt.lua.dumps(fruit) if fruit else "nil",
+                # AFFBF carries three more forward moves, so the count of F is the
+                # height. height=8 is the apple tree from lua_api.md, character for
+                # character, which is why it is the default.
+                axiom=self.lt.lua.dumps("F" * (height - 3) + "AFFBF"),
             ),
             timeout=30,
         )

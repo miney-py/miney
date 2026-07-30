@@ -12,6 +12,9 @@ Unreleased
 
 **Added**
 
+- ``lt.nodes.grow_tree(point)`` - a whole tree from one line, trunk, branches, leaves
+  and fruit, and a different one every time. You do not have to know what the wood is
+  called in this game; ``height=``, ``trunk=`` and ``leaves=`` are there when you do.
 - ``lt.entities`` - **Miney can see the mobs now.** Every cow, zombie, boat and
   dropped item within a radius, which it could not see at all before::
 
