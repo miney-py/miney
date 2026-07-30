@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Callable
 from .assets import Assets
 from .channel import Beacon, FileChannel, find_beacons
 from .chat import Chat
+from .entity import Entities
 from .events import Event
 from .lua import Lua
 from .callback import Callback
@@ -361,6 +362,7 @@ class Luanti:
         self._assets: Assets = Assets(self)
         self._particles: Particles = Particles(self)
         self._sound: Sound = Sound(self)
+        self._entities: Entities = Entities(self)
 
         self._tools_cache = self.lua.run(
             """
@@ -488,6 +490,22 @@ class Luanti:
         :return: :class:`~miney.particles.Particles`
         """
         return self._particles
+
+    @property
+    def entities(self) -> 'Entities':
+        """
+        Everything in the world that is not a block - mobs, dropped items, boats.
+
+        See :class:`~miney.entity.Entities` for what you can ask about them.
+
+        :Example:
+
+            >>> lt.entities.near(lt.players[0].position, radius=20)
+            [<Luanti Entity "mobs_mc:cow" at (12, 8, -3)>]
+
+        :return: :class:`~miney.entity.Entities`
+        """
+        return self._entities
 
     @property
     def sound(self) -> 'Sound':

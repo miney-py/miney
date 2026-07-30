@@ -12,6 +12,15 @@ Unreleased
 
 **Added**
 
+- ``lt.entities`` - **Miney can see the mobs now.** Every cow, zombie, boat and
+  dropped item within a radius, which it could not see at all before::
+
+      for thing in lt.entities.near(player.position, radius=20):
+          print(thing)
+      # <Luanti Entity "mobs_mc:cow" at (12, 8, -3)>
+
+  People are left out unless you ask with ``players=True`` - you are always within
+  any radius of yourself.
 - ``lt.nodes.light_at(point)`` - how bright it is somewhere, from 0 to 15. The number
   most games use to decide whether monsters may appear, so
   ``if lt.nodes.light_at(player.position) < 8:`` is a whole program.

@@ -9,6 +9,7 @@ from .point import Point
 from .node import Node
 
 from .assets import Assets
+from .entity import Entities, Entity
 from .luanti import Luanti
 from .player import Player, PlayerIterable
 from .chat import Chat
@@ -47,6 +48,8 @@ __all__ = [
     "ContentDBError",
     "DataError",
     "doc",
+    "Entities",
+    "Entity",
     "Hud",
     "HudElement",
     "HudElementGone",
