@@ -12,6 +12,13 @@ Unreleased
 
 **Added**
 
+- ``node.meta`` - the little table of text Luanti keeps on a block, used like a
+  dictionary. A sign's words, the ``infotext`` you see when you point at something,
+  whatever the game stored there::
+
+      sign = lt.nodes.get(Point(0, 10, 0))
+      sign.meta["text"] = "This way"
+
 - **A world you started yourself in Luanti now works.** ``miney.Luanti()`` finds the
   server on your computer whoever started it - a world from ``uv run miney start``, or
   a singleplayer world you opened from the Luanti menu, which Miney could not reach at
