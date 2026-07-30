@@ -12,6 +12,16 @@ Unreleased
 
 **Added**
 
+- ``player_near`` - **step on this and something happens.** A callback that fires when
+  a player comes within a radius of a place, which is the shape half the lesson ideas
+  have::
+
+      @lt.callbacks.on("player_near", {"pos": Point(10, 20, 30), "radius": 5})
+      def treasure(event):
+          lt.chat.send_to_player(event.player_name, "You found it!")
+
+  It fires on arriving, once, not for every moment spent standing there. This needs the
+  new mod version; Miney says so if the server is still carrying an older one.
 - ``lt.nodes.grow_tree(point)`` - a whole tree from one line, trunk, branches, leaves
   and fruit, and a different one every time. You do not have to know what the wood is
   called in this game; ``height=``, ``trunk=`` and ``leaves=`` are there when you do.

@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Callable, List, Optional, Dict, Any, Tuple
 from .events import EVENT_FIELDS, Event, create_event, ChatCommandEvent
+from .point import Point
 import json
 import logging
 import queue
@@ -30,6 +31,61 @@ def _is_comparable(value: Any) -> bool:
     return False
 
 
+def _area_from(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Take the area out of a ``player_near`` registration and check it.
+
+    ``pos`` and ``radius`` travel in the same dict as the filters, because one ``on()``
+    for every event is the shape this library teaches. They are not filters though -
+    a distance is not an ``==`` - so they are removed here, before the filter
+    validation runs and rejects a ``Point`` it was never meant to see.
+
+    :param parameters: The registration's parameters. The area keys are **removed**
+        from it; what is left is an ordinary filter.
+    :return: The area, ready for the wire.
+    :raises ValueError: If the area is missing or does not describe a place.
+    """
+    if "pos" not in parameters:
+        raise ValueError(
+            "'player_near' has to be told where to watch. Put a place and a radius in "
+            "the parameters: lt.callbacks.on('player_near', "
+            "{'pos': Point(10, 20, 30), 'radius': 5})"
+        )
+    pos = parameters.pop("pos")
+    if not isinstance(pos, Point):
+        raise ValueError(
+            f"'pos' has to be a Point, got {type(pos).__name__}: "
+            f"{{'pos': Point(10, 20, 30), 'radius': 5}}"
+        )
+
+    if "radius" not in parameters:
+        raise ValueError(
+            "'player_near' has to be told how close is near, and there is no sensible "
+            "default - too large and the handler fires for the whole map: "
+            "{'pos': Point(10, 20, 30), 'radius': 5}"
+        )
+    radius = parameters.pop("radius")
+    if isinstance(radius, bool) or not isinstance(radius, (int, float)) or radius < 1:
+        raise ValueError(
+            f"'radius' is how many blocks away still counts as near and has to be at "
+            f"least 1, got {radius!r}."
+        )
+
+    interval = parameters.pop("interval", 0.25)
+    if isinstance(interval, bool) or not isinstance(interval, (int, float)) \
+            or interval <= 0:
+        raise ValueError(
+            f"'interval' is how many seconds pass between two looks and has to be "
+            f"greater than 0, got {interval!r}."
+        )
+
+    return {
+        "pos": {"x": pos.x, "y": pos.y, "z": pos.z},
+        "radius": float(radius),
+        "interval": float(interval),
+    }
+
+
 class Callback:
     """
     Manages event and chat command registrations with the server.
@@ -48,6 +104,7 @@ class Callback:
         "chat_message", "player_leaves", "player_joins",
         "node_dug", "node_placed", "node_punched",
         "player_dies", "player_respawns", "player_punched", "player_hp_changed",
+        "player_near",
     }
 
     def __init__(self, luanti: 'Luanti'):
@@ -198,6 +255,24 @@ class Callback:
                 if event.pos.y < 10:
                     lt.chat.send_to_all(f"{event.player_name} is digging deep.")
 
+        One event is not a thing that happens to somebody but a place you are watching.
+        ``player_near`` takes a ``pos`` and a ``radius`` in the same parameters dict,
+        and fires when a player walks in:
+
+        .. code-block:: python
+
+            from miney import Point
+
+            @lt.callbacks.on("player_near", {"pos": Point(10, 20, 30), "radius": 5})
+            def treasure(event):
+                lt.chat.send_to_player(event.player_name, "You found it!")
+
+        It fires on **arriving**, once, not for every moment spent standing there.
+        ``radius`` has no default on purpose - a wrong guess is a handler that goes off
+        for the whole map. ``interval`` says how many seconds pass between two looks and
+        is 0.25 unless you say otherwise. Ordinary filters work next to all of it:
+        ``{"pos": ..., "radius": 5, "player_name": "Steve"}``.
+
         Every field named has to match, and the filter belongs to the one handler you are
         registering. Watching the same event twice for different things is fine, and each
         handler only ever sees what it asked for:
@@ -287,6 +362,15 @@ class Callback:
         if not callable(callback):
             raise ValueError("callback must be callable")
 
+        # The area is not a filter and has to leave before the filter checks run. The
+        # caller's dict is copied rather than emptied: they may well be reusing it for
+        # a second area.
+        area: Optional[Dict[str, Any]] = None
+        if event == "player_near":
+            parameters = dict(parameters) if parameters else {}
+            area = _area_from(parameters)
+            parameters = parameters or None
+
         # Checked here rather than only on the server: the mod answers asynchronously on
         # the same channel the events arrive on, so a rejection over there would reach
         # this process as a log line long after register() has returned. A misspelt field
@@ -322,6 +406,8 @@ class Callback:
         }
         if parameters:
             payload["filter"] = parameters
+        if area:
+            payload["area"] = area
         self._send(payload)
         logger.info("Registered a handler for '%s'%s", event,
                     " with a filter" if parameters else "")

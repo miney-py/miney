@@ -62,6 +62,30 @@ The events
    * - ``player_hp_changed``
      - :class:`~miney.events.PlayerHpChangedEvent`
      - A player lost or gained health.
+   * - ``player_near``
+     - :class:`~miney.events.PlayerNearEvent`
+     - A player comes within a radius of a place you named. Needs ``pos`` and
+       ``radius`` — see below.
+
+``player_near`` is the odd one out: it is not something that happens *to* somebody, it
+is a place you are watching, so the subscription has to say where and how close:
+
+.. code-block:: python
+
+    from miney import Point
+
+    @lt.callbacks.on("player_near", {"pos": Point(10, 20, 30), "radius": 5})
+    def treasure(event):
+        lt.chat.send_to_player(event.player_name, "You found it!")
+
+It fires when somebody *arrives*, once — not for every moment they stand there. Walking
+out and back in fires it again. ``interval`` sets how many seconds pass between two
+looks and is 0.25 unless you say otherwise.
+
+.. important::
+
+   ``radius`` has no default. There is no number that is right for everybody, and one
+   that is too large is a handler that goes off for the whole map.
 
 A chat command you registered yourself with :meth:`lt.chat.command()
 <miney.Chat.command>` arrives as a :class:`~miney.events.ChatCommandEvent`. It is

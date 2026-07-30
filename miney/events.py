@@ -231,6 +231,39 @@ class PlayerHpChangedEvent(Event):
 
 
 @dataclass(frozen=True)
+class PlayerNearEvent(Event):
+    """
+    A player walked into a place you are watching.
+
+    .. code-block:: python
+
+        from miney import Point
+
+        @lt.callbacks.on("player_near", {"pos": Point(10, 20, 30), "radius": 5})
+        def welcome(event):
+            lt.chat.send_to_player(event.player_name, "You found it!")
+
+    The one event Luanti has no register function for, so Miney's mod produces it: it
+    measures the distance from every player to every place you asked about, four times
+    a second by default.
+
+    It fires when somebody **arrives**, once, not for every moment they spend standing
+    there. Walking out and coming back fires it again.
+
+    ``pos`` is the place *you* named, not where the player is - one handler can watch
+    several places, and it has to be able to tell which one went off.
+    """
+    name: str = field(init=False, default="player_near")
+    #: Who arrived.
+    player_name: str
+    #: The place being watched, as a :class:`~miney.Point`.
+    pos: Point
+    #: How far from that place they were when it was noticed, in blocks.
+    distance: float
+    timestamp: float = field(default_factory=time.time)
+
+
+@dataclass(frozen=True)
 class GenericEvent(Event):
     """An event for which no specific type is defined."""
     raw_payload: Dict[str, Any]
@@ -250,6 +283,7 @@ _EVENT_CLASS_MAP: Dict[str, Type[Event]] = {
     "player_respawns": PlayerRespawnsEvent,
     "player_punched": PlayerPunchedEvent,
     "player_hp_changed": PlayerHpChangedEvent,
+    "player_near": PlayerNearEvent,
 }
 
 #: What each event carries, and therefore what a subscription filter may match on.
