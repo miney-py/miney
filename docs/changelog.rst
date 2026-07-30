@@ -184,6 +184,35 @@ Unreleased
   folder synced by Nextcloud, ownCloud, Dropbox or OneDrive. The sync client copies the
   world databases while the server writes them, which kills the server thread with
   *"Couldn't save env meta"*.
+- **Miney can find blocks now, not only write them.** :meth:`lt.nodes.find()
+  <miney.Nodes.find>` gives you the closest block of a kind around a point, and
+  :meth:`lt.nodes.find_in() <miney.Nodes.find_in>` every one of them inside a box. Both
+  answer with :class:`~miney.node.Node` objects, so what comes back is a position you can
+  use straight away, and both take a whole kind of block at once: ``"group:tree"``,
+  ``"group:water"``.
+
+  .. code-block:: python
+
+      water = lt.nodes.find("group:water", near=player.position, radius=20)
+      if water:
+          lt.chat.send_to_all(f"Water at {water.x}, {water.y}, {water.z}")
+
+  ``find_in(..., under_air=True)`` keeps only the blocks with air above them, which is
+  the surface of the terrain — what *"put a torch on every stone I can see"* needs.
+- :meth:`lt.nodes.place() <miney.Nodes.place>` and :meth:`lt.nodes.dig()
+  <miney.Nodes.dig>` do it the way a player does. ``lt.nodes.set()`` writes the block and
+  nothing else, so a chest placed with it has no inventory, a door has no top half and a
+  torch faces nowhere — the call looks right and the result is wrong. ``place`` runs the
+  game's own placement code instead, and ``dig`` runs the digging code, so a block breaks
+  into what it drops rather than simply vanishing. Both take a ``player=``, who then
+  decides which way anything rotatable faces and who gets what falls out. ``set`` and
+  ``fill`` stay the fast way to build walls, floors and terrain, and now say in their
+  documentation what they leave out.
+- Short names for the four things :meth:`~miney.Player.move` is usually asked for:
+  ``player.teleport(point)``, ``player.look_at(point)``, ``player.fly_to(point,
+  duration=3)`` and ``player.turn(yaw=...)``. Each one is a single call to ``move()`` and
+  says so, so nothing new happens — there is just something to find when you look for
+  "teleport".
 
 **Changed**
 

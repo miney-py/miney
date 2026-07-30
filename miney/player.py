@@ -420,6 +420,132 @@ class Player:
         while self.lt.lua.run(f"return miney_task_busy({key})"):
             time.sleep(self._WAIT_POLL_INTERVAL)
 
+    def teleport(self, destination: Point) -> None:
+        """
+        Put the player somewhere else, right now.
+
+        A short name for the simplest thing :meth:`move` does::
+
+            player.move(destination=destination)
+
+        Everything else - flying there instead of jumping there, turning while going,
+        looking at something on arrival - is a parameter of :meth:`move`.
+
+        .. important::
+
+            The player lands where you put them and then **falls**, exactly as they
+            would if they had jumped. To keep them in the air, use
+            :meth:`~miney.Player.hold` first.
+
+        :Examples:
+
+            >>> from miney import Point
+            >>> lt.players[0].teleport(Point(10, 20, 30))
+
+            Two blocks above the nearest tree, without falling out of the sky again:
+
+            >>> player = lt.players[0]
+            >>> tree = lt.nodes.find("group:tree", near=player.position, radius=30)
+            >>> player.hold()
+            >>> player.teleport(tree + Point(0, 2, 0))
+
+        :param destination: Where to put them.
+        """
+        self.move(destination=destination)
+
+    def look_at(self, point: Point) -> None:
+        """
+        Turn the player's view towards a point, without moving them.
+
+        A short name for::
+
+            player.move(look_at=point)
+
+        :Examples:
+
+            Look at where the sun comes up:
+
+            >>> from miney import Point
+            >>> lt.players[0].look_at(Point(1000, 30, 0))
+
+            Look at what somebody else is standing on:
+
+            >>> lt.players[0].look_at(lt.players[1].position)
+
+        :param point: What to look at. Any :class:`~miney.Point`, and a
+            :class:`~miney.node.Node` is one.
+        """
+        self.move(look_at=point)
+
+    def fly_to(self, destination: Point, duration: float = 1.0,
+               wait: bool = False) -> None:
+        """
+        Fly the player to a place instead of putting them there.
+
+        A short name for the animated :meth:`move`::
+
+            player.move(destination=destination, smooth=True, duration=duration)
+
+        The script carries on while the player is still travelling, which is how a
+        camera flies over a building site while the building goes on. ``wait=True``
+        holds the next line back until they have arrived.
+
+        A second flight replaces the first, and :meth:`move` is where turning while
+        flying lives.
+
+        :Examples:
+
+            >>> from miney import Point
+            >>> lt.players[0].fly_to(Point(50, 40, 50), duration=3)
+
+            Fly there, then say something - in that order:
+
+            >>> lt.players[0].fly_to(Point(50, 40, 50), duration=3, wait=True)
+            >>> lt.chat.send_to_all("Made it!")
+
+        :param destination: Where to fly to.
+        :param duration: How long the flight takes, in seconds.
+        :param wait: Wait here until the player has arrived.
+        """
+        self.move(destination=destination, smooth=True, duration=duration, wait=wait)
+
+    def turn(self, yaw: Optional[float] = None,
+             pitch: Optional[float] = None) -> None:
+        """
+        Point the player's view in a direction given as angles.
+
+        A short name for::
+
+            player.move(yaw=yaw, pitch=pitch)
+
+        :meth:`look_at` is usually easier - it takes a place instead of an angle. Use
+        this one when the direction is what you have, and :meth:`move` with
+        ``smooth=True`` when the turn should be animated.
+
+        :Examples:
+
+            Face north, then look up a little:
+
+            >>> import math
+            >>> player = lt.players[0]
+            >>> player.turn(yaw=math.pi)
+            >>> player.turn(pitch=-math.pi / 8)
+
+        :param yaw: Which way to face, in radians, counter-clockwise from south (+Z):
+            ``0`` south, ``math.pi / 2`` east, ``math.pi`` north,
+            ``3 * math.pi / 2`` west.
+        :param pitch: How far up or down, in radians, from ``-math.pi / 2`` (straight
+            up) through ``0`` (level) to ``math.pi / 2`` (straight down).
+        :raises ValueError: If neither angle is given.
+        """
+        if yaw is None and pitch is None:
+            raise ValueError(
+                "Give 'yaw', 'pitch' or both - turn() with neither has nothing to turn "
+                "to. To look at a place instead of an angle, there is "
+                "player.look_at(point)."
+            )
+        self.move(yaw=yaw, pitch=pitch)
+
     @property
     def speed(self) -> int:
         """

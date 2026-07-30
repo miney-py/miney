@@ -19,9 +19,14 @@ Feel free to contribute!
     exists nowhere in the package, so indexed lookup raised `AttributeError` in all of
     them. Names are sorted now, `len()` of a category counts that category, and the
     dead `parent` argument is gone
-* [ ] Convenience aliases for `Player.move()`: `teleport()`, `look_at()`, `fly_to()`, `turn()`
+* [x] Convenience aliases for `Player.move()`: `teleport()`, `look_at()`, `fly_to()`, `turn()`
   * Thin wrappers around `move()`, not separate implementations
   * Each one documents the equivalent `move()` call, so the alias teaches the general function
+  * `fly_to()` carries `duration` and `wait` and nothing else, `turn()` only the two
+    angles. Every combination beyond that - flying while turning, an animated turn -
+    stays a `move()` call, which is what keeps these four from becoming a second API
+  * `turn()` with neither angle raises instead of doing nothing, and the message names
+    `look_at()` for whoever wanted a place rather than an angle
 * [ ] Callbacks
   * [x] Basic API and some callbacks implemented
   * [x] Implement more "register_on_..." functions
@@ -290,18 +295,27 @@ Three pieces already exist and are the reason this is worth doing at all:
 
 ### Reading the world
 
-Miney writes nodes in bulk and cannot search them at all. This is the biggest hole per
-line of code in the whole list.
+Searching is in - `find` and `find_in` below. What is left is everything else a block
+can be asked about.
 
-* [ ] `lt.nodes.find(name, near=Point(...), radius=10)` and
+* [x] `lt.nodes.find(name, near=Point(...), radius=10)` and
   `lt.nodes.find_in(start, end, name)` - `find_node_near`, `find_nodes_in_area`,
   `find_nodes_in_area_under_air`
   * *"Where is the nearest water"* is a `for` loop over the result, which is first-week
     Python against a 3D world
-  * `find_nodes_in_area(..., grouped)` returns a dict per name - the natural shape when
-    several names are asked for at once
   * `find_nodes_in_area_under_air` is what *"put a torch on every stone I can see"*
-    needs, and nobody would write that filter themselves
+    needs, and nobody would write that filter themselves - it is `under_air=True` on
+    `find_in`, not a third method
+  * Both answer with `Node`, not `Point`, and the name is read back per position rather
+    than taken from what was asked for: `"group:tree"` matches several names and the
+    answer should say which one is standing there. That also made `grouped` unnecessary -
+    the dict per name would have been a second return shape for the same question
+  * `search_center` is always `true`, unlike Luanti's own default. Standing on dirt and
+    being told the nearest dirt is a block away reads as a bug, and no radius can express
+    the other behaviour anyway, so it is not a parameter
+  * A name this server does not have raises. A search that silently finds nothing looks
+    exactly like a world that has none of it, which is the wrong lesson for a typo.
+    `group:` is let through unchecked - Luanti has no list of the groups a game defines
 * [ ] `node.meta` - `core.get_meta`, `NodeMetaRef`
   * Sign text, furnace state, whatever a game stored there. `node.inventory` is already
     the other half of the same object, so this is one property on a class that exists
@@ -316,16 +330,29 @@ line of code in the whole list.
 
 ### Writing the world like a player does
 
-* [ ] `lt.nodes.place()` and `lt.nodes.dig()` - `core.place_node`, `core.dig_node`,
-  `core.punch_node`
+* [x] `lt.nodes.place()` and `lt.nodes.dig()` - `core.place_node`, `core.dig_node`
   * **This is a bug, not a feature request.** `nodes.set()` goes through `set_node`,
     which skips `on_place` - so a door placed by Miney has no top half, a torch faces
     nowhere and a chest has no inventory. The call looks correct and the result is wrong
   * `place_node` runs the game's own placement logic and takes a `placer`, so it also
     fixes orientation for free
-  * Shape is open: a `like_a_player=True` flag on `set()` keeps one function per concept,
-    a separate `place()` reads better. `set()` has to stay the fast bulk path either way -
-    `place_node` is per node and cannot be batched through the `VoxelManip` route
+  * Two methods, not a flag on `set()`. Digging has no `set()` to hang off in the first
+    place, and one of the two would have ended up somewhere else than the other
+  * Both return **how many the server really did**, and that is the whole reason they
+    wait for an answer where `set()` does not: `place_node` and `dig_node` answer `false`
+    for a protected area, and dropping that on the floor would be the same silent
+    failure this entry is about. `set()` stays the fast path that sends and forgets
+  * Both `load_area` first. `l_env.cpp` returns `false` outright where the map is not in
+    memory - *"Don't attempt to load non-loaded area as of now"* - so without it,
+    building away from a player is a hundred refusals and no blocks
+  * `player=` is a name or a `Player`, and it is looked up **in Lua before anything is
+    placed**, with an `error()` if they are not there. Passing a name that is offline had
+    to mean something other than "nobody at all"
+  * `punch_node` was left out. It is a third verb for a thing nobody has asked to do from
+    Python, and `dig` covers what a lesson wants
+  * `set()` and `fill()` now say in their own documentation what they leave out, and
+    `docs/api/nodes.rst` is three ways to build instead of two - the old prose claimed
+    `set()` gave a chest its inventory, which is exactly the bug
 * [ ] Make `Node.param2` mean something - `rotate_node`, `dir_to_facedir`,
   `facedir_to_dir`, `dir_to_wallmounted`, `yaw_to_dir`
   * Today it is a raw int nobody can read. A `node.facing` that takes and returns a

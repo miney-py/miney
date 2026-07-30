@@ -16,6 +16,26 @@ You never create a ``Player`` yourself — you get one from :doc:`lt.players <pl
     >>> player.fly = True
 
 
+.. rubric:: Moving a player
+
+:meth:`~miney.Player.move` is the one that does all of it — put them somewhere, turn
+them, or fly them there over a few seconds while they look at something else. Everything
+past the first argument can be left out.
+
+The short names lead back to it, so pick whichever reads better:
+
+.. code-block:: python
+
+   player.teleport(Point(10, 20, 30))          # move(destination=...)
+   player.look_at(Point(0, 20, 0))             # move(look_at=...)
+   player.fly_to(Point(50, 40, 50), duration=3)  # move(..., smooth=True, duration=3)
+   player.turn(yaw=math.pi)                    # move(yaw=...)
+
+.. important::
+
+   A player put in mid-air **falls**, and in some games that is fatal. Use
+   :meth:`~miney.Player.hold` before moving them somewhere with nothing under it.
+
 .. autoclass:: miney.Player
    :members:
 

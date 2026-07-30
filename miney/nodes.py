@@ -6,6 +6,7 @@ from .point import Point
 from typing import Union, Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from .luanti import Luanti
+    from .player import Player
 
 
 def _load_areas(positions: Iterable[tuple[int, int, int]]) -> str:
@@ -207,6 +208,115 @@ def _slabs(p1: tuple[int, int, int], p2: tuple[int, int, int]):
             yield (p1[0], y, z), (p2[0], min(y + y_step - 1, p2[1]), z_end)
 
 
+def _as_nodes(node: Union[Node, 'Iterable[Node]'], call: str) -> list[Node]:
+    """
+    Take one node or any collection of them and give back a plain list.
+
+    :param node: A single :class:`~miney.node.Node`, or a list, tuple, set or generator
+        of them.
+    :param call: The method this is for, so the error message shows a call that works.
+    :return: The nodes as a list, which a generator survives being walked twice.
+    :raises TypeError: If it is not a Node or a collection of Nodes.
+    """
+    # A Node is itself iterable (it is a Point), so it has to be recognised first.
+    if isinstance(node, Node):
+        return [node]
+    # A str and a dict are iterable too, and neither is a collection of nodes.
+    if isinstance(node, Iterable) and not isinstance(node, (str, bytes, Mapping)):
+        nodes = list(node)
+    else:
+        raise TypeError(
+            f"'node' must be a Node or a collection of Nodes, got "
+            f"{type(node).__name__}. A node name alone is not enough - it needs a "
+            f"position: lt.nodes.{call}(Node(10, 20, 30, name='default:dirt'))"
+        )
+
+    for n in nodes:
+        if not isinstance(n, Node):
+            raise TypeError(
+                f"Every element must be a Node, got {type(n).__name__}. A Point "
+                f"carries no node name: Node(point.x, point.y, point.z, "
+                f"name='default:dirt')"
+            )
+    return nodes
+
+
+def _as_points(point: Union[Point, 'Iterable[Point]'], call: str) -> list[Point]:
+    """
+    The same for positions, where no node name is needed.
+
+    :param point: A single :class:`~miney.Point` (or :class:`~miney.node.Node`, which is
+        one), or a collection of them.
+    :param call: The method this is for, so the error message shows a call that works.
+    :return: The points as a list.
+    :raises TypeError: If it is not a Point or a collection of Points.
+    """
+    if isinstance(point, Point):
+        return [point]
+    if isinstance(point, Iterable) and not isinstance(point, (str, bytes, Mapping)):
+        points = list(point)
+    else:
+        raise TypeError(
+            f"'point' must be a Point or a collection of Points, got "
+            f"{type(point).__name__}: lt.nodes.{call}(Point(10, 20, 30))"
+        )
+
+    for p in points:
+        if not isinstance(p, Point):
+            raise TypeError(
+                f"Every element must be a Point, got {type(p).__name__}: "
+                f"lt.nodes.{call}([Point(10, 20, 30), Point(10, 21, 30)])"
+            )
+    return points
+
+
+#: Looks for one node around a point.
+#:
+#: ``search_center`` is always ``true``, unlike Luanti's own default. Standing on dirt
+#: and being told the nearest dirt is a block away is the kind of answer that reads as a
+#: bug, and there is no call for the other behaviour that a radius cannot express.
+_FIND_NEAR_LUA = """
+local pos = {pos}
+minetest.load_area(vector.subtract(pos, {radius}), vector.add(pos, {radius}))
+local found = minetest.find_node_near(pos, {radius}, {names}, true)
+if not found then return nil end
+return {{x = found.x, y = found.y, z = found.z,
+         name = minetest.get_node(found).name}}
+"""
+
+#: Looks for every node in a box.
+#:
+#: The name is read back per position rather than taken from what was asked for: a
+#: search for ``"group:tree"`` matches several different names, and the answer should
+#: say which one is standing there.
+_FIND_IN_LUA = """
+local p1, p2 = {pos1}, {pos2}
+local c1 = {{x = math.min(p1.x, p2.x), y = math.min(p1.y, p2.y),
+             z = math.min(p1.z, p2.z)}}
+local c2 = {{x = math.max(p1.x, p2.x), y = math.max(p1.y, p2.y),
+             z = math.max(p1.z, p2.z)}}
+minetest.load_area(c1, c2)
+local found = minetest.{finder}(c1, c2, {names})
+local get_node = minetest.get_node
+local out = {{}}
+for i = 1, #found do
+    local p = found[i]
+    out[i] = {{x = p.x, y = p.y, z = p.z, name = get_node(p).name}}
+end
+return out
+"""
+
+#: Looks the player up before anything is placed or dug, so a name that is not in the
+#: game says so instead of quietly turning into "no player at all".
+_PLAYER_LOOKUP_LUA = """
+local who = minetest.get_player_by_name({name})
+if not who then
+    error("There is no player called " .. {name} .. " on this server right now. " ..
+          "Leave the 'player' out to have nobody do it.")
+end
+"""
+
+
 class Nodes:
     """
     Manipulate and get information's about node.
@@ -277,6 +387,13 @@ class Nodes:
         **The `node` parameter can be a single Node object, or any collection of Node
         objects - a list, a tuple, a set or a generator - for bulk setting.**
 
+        .. important::
+
+            This writes the block and nothing else - the game's own placement code never
+            runs. A door gets no top half, a torch faces nowhere, a chest has no
+            inventory and a sapling never grows. Use :meth:`place` for anything that has
+            a working part; ``set`` is the fast way to put plain blocks somewhere.
+
         :Examples:
 
             Replace the node under the first player's feet with dirt:
@@ -302,26 +419,7 @@ class Nodes:
         :raises TypeError: If something other than a Node or a collection of Nodes is
             passed.
         """
-        # A Node is itself iterable (it is a Point), so it has to be recognised first.
-        if isinstance(node, Node):
-            nodes = [node]
-        # A str and a dict are iterable too, and neither is a collection of nodes.
-        elif isinstance(node, Iterable) and not isinstance(node, (str, bytes, Mapping)):
-            nodes = list(node)  # so a generator survives being walked twice below
-        else:
-            raise TypeError(
-                f"'node' must be a Node or a collection of Nodes, got "
-                f"{type(node).__name__}. A node name alone is not enough - it needs a "
-                f"position: lt.nodes.set(Node(10, 20, 30, name='default:dirt'))"
-            )
-
-        for n in nodes:
-            if not isinstance(n, Node):
-                raise TypeError(
-                    f"Every element must be a Node, got {type(n).__name__}. A Point "
-                    f"carries no node name: Node(point.x, point.y, point.z, "
-                    f"name='default:dirt')"
-                )
+        nodes = _as_nodes(node, "set")
 
         if not nodes:  # nothing to do, and an empty run() would still cost a round trip
             return
@@ -333,6 +431,152 @@ class Nodes:
                     f"{self.lt.lua.dumps({'x': n.x, 'y': n.y, 'z': n.z})}, "
                     f"{self.lt.lua.dumps({'name': n.name})})\n")
         self.lt.lua.run(lua, wait=False)
+
+    def _placer(self, player: Union[str, 'Player', None]) -> tuple[str, str]:
+        """
+        Turn the ``player`` argument into the Lua that looks them up.
+
+        :param player: A player name, a :class:`~miney.player.Player`, or None.
+        :return: The lookup code to put in front, and the expression naming the player -
+            ``"nil"`` when there is nobody.
+        :raises TypeError: If it is neither a name nor a player.
+        """
+        if player is None:
+            return "", "nil"
+        name = getattr(player, "name", player)
+        if not isinstance(name, str):
+            raise TypeError(
+                f"'player' must be a player name or a Player, got "
+                f"{type(player).__name__}: lt.nodes.place(node, player=lt.players[0])"
+            )
+        return _PLAYER_LOOKUP_LUA.format(name=self.lt.lua.dumps(name)), "who"
+
+    def place(self, node: Union[Node, Iterable[Node]],
+              player: Union[str, 'Player', None] = None) -> int:
+        """
+        Place blocks the way a player would, so the ones with a working part work.
+
+        :meth:`set` writes the block straight into the map, which is fast and is what
+        you want for walls, floors and terrain. It also skips everything the game does
+        when a *player* places something - and that is where doors, chests, beds,
+        torches, saplings and signs get the half of themselves that makes them work.
+
+        ``place`` goes through the game's own placement code instead, so:
+
+        - a door gets its top half, a bed gets its foot end,
+        - a chest, furnace or sign gets its inventory and its metadata,
+        - a torch, ladder or stair faces the way it should,
+        - a sapling starts growing, and sand with nothing under it starts falling.
+
+        It is slower - the game does real work per block - so it is the right call for
+        the few blocks that need it and the wrong one for a wall. Use :meth:`set` or
+        :meth:`fill` for those.
+
+        Naming a ``player`` gives the game somebody to place *for*. That decides which
+        way anything rotatable ends up facing (a stair follows their look direction),
+        and it makes the game's protection rules apply, exactly as if they had done it
+        by hand.
+
+        :Examples:
+
+            Put a working chest next to the first player and fill it:
+
+            >>> from miney import Node
+            >>> here = lt.players[0].position
+            >>> chest = Node(here.x + 2, here.y, here.z, name="mcl_chests:chest")
+            >>> lt.nodes.place(chest)
+            1
+            >>> lt.nodes.get(chest).inventory.add(lt.items.mcl_core.apple, 5)
+
+            A door, which is two blocks and one call:
+
+            >>> lt.nodes.place(Node(10, 20, 30, name="doors:door_wood"))
+            1
+
+            Stairs that face the way the player is looking:
+
+            >>> lt.nodes.place(Node(10, 20, 30, name="stairs:stair_wood"),
+            ...                player=lt.players[0])
+            1
+
+        :param node: A single :class:`~miney.node.Node`, or a collection of them.
+        :param player: Who places it - a name or a :class:`~miney.player.Player`.
+            Leave it out and nobody does, which is fine for anything that does not turn.
+        :return: How many of them the game actually placed. Anything less means the rest
+            was refused - a protected area, or a block that cannot be there at all.
+        :raises TypeError: If it is not a Node or a collection of Nodes, or the player is
+            neither a name nor a :class:`~miney.player.Player`.
+        :raises miney.exceptions.LuaError: If that player is not on the server.
+        """
+        nodes = _as_nodes(node, "place")
+        if not nodes:
+            return 0
+
+        lookup, placer = self._placer(player)
+        lua = [lookup, _load_areas([(n.x, n.y, n.z) for n in nodes]), "local placed = 0"]
+        for n in nodes:
+            lua.append(
+                f"if minetest.place_node("
+                f"{self.lt.lua.dumps({'x': n.x, 'y': n.y, 'z': n.z})}, "
+                f"{self.lt.lua.dumps({'name': n.name})}, {placer}) "
+                f"then placed = placed + 1 end"
+            )
+        lua.append("return placed")
+        return self.lt.lua.run("\n".join(lua), timeout=60) or 0
+
+    def dig(self, point: Union[Point, Node, Iterable],
+            player: Union[str, 'Player', None] = None) -> int:
+        """
+        Dig blocks the way a player would, with drops, sound and particles.
+
+        The opposite of :meth:`place`, and the same difference to
+        ``lt.nodes.set(Node(..., name="air"))``: setting a block to air deletes it and
+        nothing else happens. Digging it runs the game's own code, so the block breaks
+        into whatever it drops, makes a noise, and anything that reacts to being dug
+        gets to react.
+
+        Without a ``player`` the drop falls on the ground where the block was. Name one
+        and it goes into their inventory instead - which is also what makes the game's
+        protection rules apply.
+
+        :Examples:
+
+            Dig the block the first player is looking at:
+
+            >>> player = lt.players[0]
+            >>> lt.nodes.dig(player.looking_at, player=player)
+            1
+
+            Dig a column of three, dropping the blocks on the floor:
+
+            >>> from miney import Point
+            >>> lt.nodes.dig([Point(10, 20, 30), Point(10, 21, 30), Point(10, 22, 30)])
+            3
+
+        :param point: A :class:`~miney.Point` or :class:`~miney.node.Node`, or a
+            collection of them.
+        :param player: Who digs - a name or a :class:`~miney.player.Player`. They get
+            what falls out.
+        :return: How many blocks were dug. Less than you asked for means the rest was
+            refused, usually because it was protected or already air.
+        :raises TypeError: If it is not a Point or a collection of Points, or the player
+            is neither a name nor a :class:`~miney.player.Player`.
+        :raises miney.exceptions.LuaError: If that player is not on the server.
+        """
+        points = _as_points(point, "dig")
+        if not points:
+            return 0
+
+        lookup, digger = self._placer(player)
+        positions = [(floor(p.x), floor(p.y), floor(p.z)) for p in points]
+        lua = [lookup, _load_areas(positions), "local dug = 0"]
+        for x, y, z in positions:
+            lua.append(
+                f"if minetest.dig_node({self.lt.lua.dumps({'x': x, 'y': y, 'z': z})}, "
+                f"{digger}) then dug = dug + 1 end"
+            )
+        lua.append("return dug")
+        return self.lt.lua.run("\n".join(lua), timeout=60) or 0
 
     def fill(self, start: Point, end: Point, name: str) -> int:
         """
@@ -485,6 +729,184 @@ class Nodes:
             f"'point' must be a Point or Node, or a list of two of them for a cuboid, "
             f"got {type(point).__name__}."
         )
+
+    def _wanted(self, name: Union[str, Iterable[str]]) -> list[str]:
+        """
+        Check the names to look for and give them back as a list.
+
+        A name that does not exist on this server would otherwise be a search that
+        finds nothing, which looks exactly like a world that has none of it.
+
+        :param name: One name, or several. ``"group:tree"`` asks for a whole group.
+        :return: The names, ready for :meth:`~miney.Lua.dumps`.
+        :raises TypeError: If it is not a string or a collection of strings.
+        :raises ValueError: If this server has no block of that name.
+        """
+        names = [name] if isinstance(name, str) else list(name)
+        for wanted in names:
+            if not isinstance(wanted, str):
+                raise TypeError(
+                    f"'name' must be a block name or a list of them, got "
+                    f"{type(wanted).__name__}: lt.nodes.find('default:water_source', "
+                    f"near=lt.players[0].position)"
+                )
+            # A group is not a name, so there is nothing to look it up in. Luanti has no
+            # list of the groups a game defines either, only the groups per block.
+            if not wanted.startswith("group:") and wanted not in self._names_cache:
+                raise ValueError(
+                    f"This server has no block called {wanted!r}. Find one with "
+                    f"lt.nodes.names - it autocompletes, so lt.nodes.names.mcl_core"
+                    f".stone finds 'mcl_core:stone' in a few keystrokes. For a whole "
+                    f"kind of block at once there is 'group:tree', 'group:water' and so "
+                    f"on."
+                )
+        return names
+
+    def find(self, name: Union[str, Iterable[str]], near: Point,
+             radius: int = 10) -> Node | None:
+        """
+        Find the closest block of a kind, somewhere around a point.
+
+        This is how a script gets to *look* at the world instead of only writing to it.
+        The answer is a :class:`~miney.node.Node`, which is also a
+        :class:`~miney.Point`, so it goes straight back into anything that takes a
+        position.
+
+        Blocks are searched outwards from ``near``, so the first one found is the
+        closest one. The point itself counts, so a player standing in water finds water
+        at their own feet. Nothing within ``radius`` gives ``None`` - which is a normal
+        answer, not an error, and ``if`` is how you read it.
+
+        A name that stands for a whole kind of block works too: ``"group:tree"`` finds
+        any tree of any wood, ``"group:water"`` any water.
+
+        :Examples:
+
+            Is there water near the first player?
+
+            >>> player = lt.players[0]
+            >>> water = lt.nodes.find("group:water", near=player.position, radius=20)
+            >>> if water:
+            ...     lt.chat.send_to_all(f"Water at {water.x}, {water.y}, {water.z}")
+            ... else:
+            ...     lt.chat.send_to_all("Nothing to drink around here.")
+
+            Stand on the nearest tree:
+
+            >>> from miney import Point
+            >>> tree = lt.nodes.find("group:tree", near=player.position, radius=30)
+            >>> if tree:
+            ...     player.teleport(tree + Point(0, 2, 0))
+
+        :param name: What to look for, e.g. ``"default:water_source"``, a list of names,
+            or a group like ``"group:tree"``. Use :attr:`~miney.Nodes.names` to find one
+            with autocomplete.
+        :param near: Where to look around.
+        :param radius: How far to look, in blocks. 10 by default.
+        :return: The closest matching :class:`~miney.node.Node`, or ``None`` if there is
+            none that close.
+        :raises TypeError: If ``near`` is not a Point, or the name is not a string.
+        :raises ValueError: If this server has no block of that name, or the radius is
+            not a positive number.
+        """
+        if not isinstance(near, Point):
+            raise TypeError(
+                f"'near' must be a Point, got {type(near).__name__}: "
+                f"lt.nodes.find('group:tree', near=lt.players[0].position)"
+            )
+        if not isinstance(radius, (int, float)) or isinstance(radius, bool) \
+                or radius < 1:
+            raise ValueError(
+                f"'radius' is how many blocks to look in every direction and has to be "
+                f"at least 1, got {radius!r}."
+            )
+
+        found = self.lt.lua.run(
+            _FIND_NEAR_LUA.format(
+                pos=self.lt.lua.dumps({"x": floor(near.x), "y": floor(near.y),
+                                       "z": floor(near.z)}),
+                radius=int(radius),
+                names=self.lt.lua.dumps(self._wanted(name)),
+            ),
+            timeout=30,
+        )
+        if not found:
+            return None
+        return Node(found["x"], found["y"], found["z"], name=found["name"],
+                    luanti=self.lt)
+
+    def find_in(self, start: Point, end: Point, name: Union[str, Iterable[str]],
+                under_air: bool = False) -> list[Node]:
+        """
+        Find every block of a kind inside a box.
+
+        Where :meth:`find` answers *"where is the nearest one"*, this answers *"where
+        are they all"* - and the answer is a list, so a ``for`` loop over it is a
+        program that does something to every one of them.
+
+        Nothing that does not match travels, so a search through a whole hillside comes
+        back with the few blocks that matched and not with the hillside. The box is
+        still walked block by block on the server though, so ask for the area you mean
+        rather than the whole world - and remember every match is in the answer, so a
+        search for stone in a big box is a very long list.
+
+        ``under_air=True`` keeps only the blocks with air directly above them, which is
+        the surface of the terrain - what you want for putting something *on* the
+        ground rather than inside it.
+
+        :Examples:
+
+            Turn every bit of dirt in a box into gold:
+
+            >>> from miney import Point
+            >>> for node in lt.nodes.find_in(Point(0, 0, 0), Point(50, 30, 50),
+            ...                              "mcl_core:dirt"):
+            ...     node.name = "mcl_core:goldblock"
+            ...     lt.nodes.set(node)
+
+            Put a torch on every stone you can see from above:
+
+            >>> from miney import Node
+            >>> ground = lt.nodes.find_in(Point(0, 0, 0), Point(30, 30, 30),
+            ...                           "mcl_core:stone", under_air=True)
+            >>> lt.nodes.place([Node(n.x, n.y + 1, n.z, name="mcl_torch:torch")
+            ...                 for n in ground])
+
+            How much wood is in there?
+
+            >>> len(lt.nodes.find_in(Point(0, 0, 0), Point(50, 30, 50), "group:tree"))
+            271
+
+        :param start: One corner of the box.
+        :param end: The opposite corner. The two may be given in any order.
+        :param name: What to look for - one name, a list of them, or a group like
+            ``"group:tree"``.
+        :param under_air: Only blocks with air directly above them.
+        :return: Every matching :class:`~miney.node.Node`, or an empty list.
+        :raises TypeError: If the corners are not points, or the name is not a string.
+        :raises ValueError: If this server has no block of that name.
+        """
+        for label, corner in (("start", start), ("end", end)):
+            if not isinstance(corner, Point):
+                raise TypeError(
+                    f"'{label}' must be a Point, got {type(corner).__name__}: "
+                    f"lt.nodes.find_in(Point(0, 0, 0), Point(50, 30, 50), 'group:tree')"
+                )
+
+        found = self.lt.lua.run(
+            _FIND_IN_LUA.format(
+                pos1=self.lt.lua.dumps({"x": floor(start.x), "y": floor(start.y),
+                                        "z": floor(start.z)}),
+                pos2=self.lt.lua.dumps({"x": floor(end.x), "y": floor(end.y),
+                                        "z": floor(end.z)}),
+                finder="find_nodes_in_area_under_air" if under_air
+                       else "find_nodes_in_area",
+                names=self.lt.lua.dumps(self._wanted(name)),
+            ),
+            timeout=60,
+        )
+        return [Node(n["x"], n["y"], n["z"], name=n["name"], luanti=self.lt)
+                for n in found or []]
 
     def __repr__(self):
         return '<Luanti node functions>'
