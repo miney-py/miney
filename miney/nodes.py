@@ -306,6 +306,16 @@ end
 return out
 """
 
+#: Light at one position, with the mapblock loaded first.
+#:
+#: ``get_node_light`` returns nil for an area the server does not hold, and nil is a
+#: missing key in the answer rather than a value, so it arrives in Python as ``None``.
+_LIGHT_LUA = """
+local p = {pos}
+minetest.load_area(p)
+return minetest.get_node_light(p)
+"""
+
 #: Looks the player up before anything is placed or dug, so a name that is not in the
 #: game says so instead of quietly turning into "no player at all".
 _PLAYER_LOOKUP_LUA = """
@@ -907,6 +917,53 @@ class Nodes:
         )
         return [Node(n["x"], n["y"], n["z"], name=n["name"], luanti=self.lt)
                 for n in found or []]
+
+    def light_at(self, point: Point) -> int | None:
+        """
+        How bright it is at one place, from 0 to 15.
+
+        The number most games use to decide whether monsters may appear: below about 8
+        is dark enough for them almost everywhere. It counts the sunlight *and* the
+        torches, at the current time of day, so the answer changes as the sun moves.
+
+        :Examples:
+
+            Is it dark where the player stands?
+
+            >>> player = lt.players[0]
+            >>> if lt.nodes.light_at(player.position) < 8:
+            ...     lt.chat.send_to_player(player.name, "It is dark here. Bring a torch.")
+
+            Light a dark corner:
+
+            >>> from miney import Node, Point
+            >>> point = Point(10, 20, 30)
+            >>> if lt.nodes.light_at(point) < 8:
+            ...     lt.nodes.place(Node(point.x, point.y, point.z, name="mcl_torch:torch"))
+
+        .. important::
+
+           The light is measured **inside** the block at that position, so a solid block
+           always answers with its own darkness. Measure the air *above* the ground, not
+           the ground: ``lt.nodes.light_at(ground + Point(0, 1, 0))``.
+
+        :param point: Where to measure.
+        :return: A number from 0 (pitch dark) to 15 (full daylight), or ``None`` where
+            the server does not have that part of the world in memory.
+        :raises TypeError: If ``point`` is not a :class:`~miney.Point`.
+        """
+        if not isinstance(point, Point):
+            raise TypeError(
+                f"'point' must be a Point, got {type(point).__name__}: "
+                f"lt.nodes.light_at(lt.players[0].position)"
+            )
+        return self.lt.lua.run(
+            _LIGHT_LUA.format(
+                pos=self.lt.lua.dumps({"x": floor(point.x), "y": floor(point.y),
+                                       "z": floor(point.z)}),
+            ),
+            timeout=30,
+        )
 
     def __repr__(self):
         return '<Luanti node functions>'

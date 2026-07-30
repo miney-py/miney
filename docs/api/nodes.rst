@@ -56,6 +56,17 @@ straight into the next call.
    for tree in lt.nodes.find_in(Point(0, 0, 0), Point(50, 30, 50), "group:tree"):
        lt.nodes.dig(tree)
 
+.. rubric:: How dark is it here?
+
+.. code-block:: python
+
+   if lt.nodes.light_at(player.position) < 8:
+       lt.chat.send_to_player(player.name, "Dark enough for monsters. Bring a torch.")
+
+:meth:`~miney.Nodes.light_at` answers with a number from 0 to 15, counting sunlight and
+torches together, so it changes as the sun moves. Measure the *air* above the ground —
+the light inside a solid block is always 0.
+
 .. autoclass:: miney.Nodes
    :members:
 

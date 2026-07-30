@@ -12,6 +12,9 @@ Unreleased
 
 **Added**
 
+- ``lt.nodes.light_at(point)`` - how bright it is somewhere, from 0 to 15. The number
+  most games use to decide whether monsters may appear, so
+  ``if lt.nodes.light_at(player.position) < 8:`` is a whole program.
 - ``node.meta`` - the little table of text Luanti keeps on a block, used like a
   dictionary. A sign's words, the ``infotext`` you see when you point at something,
   whatever the game stored there::
