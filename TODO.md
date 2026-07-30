@@ -27,10 +27,10 @@ Feel free to contribute!
     stays a `move()` call, which is what keeps these four from becoming a second API
   * `turn()` with neither angle raises instead of doing nothing, and the message names
     `look_at()` for whoever wanted a place rather than an angle
-* [ ] Callbacks
+* [x] Callbacks
   * [x] Basic API and some callbacks implemented
   * [x] Implement more "register_on_..." functions
-  * [ ] `player_near` - fire when a player comes within a radius of a position (see below)
+  * [x] `player_near` - fire when a player comes within a radius of a position (see below)
 * [ ] Asyncio
 * [ ] Reach a server on another machine again, properly
   * The file channel needs the server on this disk. A small relay - a process next to
@@ -133,24 +133,36 @@ def welcome(event):
     lt.chat.send_to_player(event.player_name, "You found it!")
 ```
 
-* [ ] Poll positions in the mod, not per server step
+* [x] Poll positions in the mod, not per server step
   * There is no Luanti registrar for this, so it is a `globalstep` walking the subscribed
     areas. Default around 0.25 s, per-subscription override
-* [ ] The area lives in the subscription record, not in `matches()`
+  * The `EVENTS` entry carries `on = false` rather than no `on` key at all, so the one
+    event without a registrar reads as a decision. `register_events()` skips it, and
+    `valid_filter()` and `event_names()` treat it like every other event for free
+* [x] The area lives in the subscription record, not in `matches()`
   * `matches()` does equality and lists only, and refuses a `Point` on purpose. Distance is
     checked before `matches()` runs, and `player_name` stays an ordinary filter next to it
-* [ ] Edge-triggered: fires when a player **enters** the radius, not for every tick spent
+  * The split happens in Python, in `_area_from()`, *before* the filter validation - so
+    `_is_comparable()` never sees the `Point` it would reject
+* [x] Edge-triggered: fires when a player **enters** the radius, not for every tick spent
   inside it
   * The mod keeps who is currently inside which area, per subscription. Leaving and coming
     back fires again
-* [ ] Payload: `player_name`, `pos` (the area, so one handler can serve several), `distance`
-* [ ] `radius` is required and has no default
+  * `inside` is marked whether or not the filter matches. Marking only on a match would
+    re-test that player every interval they stand there, which is a level trigger
+    wearing an edge trigger's name
+  * `register_on_leaveplayer` clears the name from every area. Without it somebody who
+    disconnects while inside stays inside forever, and the callback quietly stops working
+* [x] Payload: `player_name`, `pos` (the area, so one handler can serve several), `distance`
+  * Which is also why this event sends one message *per subscription* rather than one per
+    client the way `broadcast()` does: two areas have two payloads and cannot share one
+* [x] `radius` is required and has no default
   * A missing radius has no sensible guess, and a wrong one is a handler that fires for the
     whole map
-* [ ] Cost is bounded by subscriptions, not by players
+* [x] Cost is bounded by subscriptions, not by players
   * Ten areas and ten players is a hundred distance checks four times a second, which is
     nothing. Say so in the docstring so nobody is afraid of it
-* [ ] Raise `MOD_API` / `REQUIRED_MOD_API` together with this
+* [x] Raise `MOD_API` / `REQUIRED_MOD_API` together with this - both at 13 now
 
 A `player_leaves_area` twin is deliberately left out until somebody wants it - the state
 to fire it is already there, so it stays cheap to add later.
@@ -316,14 +328,25 @@ can be asked about.
   * A name this server does not have raises. A search that silently finds nothing looks
     exactly like a world that has none of it, which is the wrong lesson for a typo.
     `group:` is let through unchecked - Luanti has no list of the groups a game defines
-* [ ] `node.meta` - `core.get_meta`, `NodeMetaRef`
+* [x] `node.meta` - `core.get_meta`, `NodeMetaRef`
   * Sign text, furnace state, whatever a game stored there. `node.inventory` is already
     the other half of the same object, so this is one property on a class that exists
+  * `_MetaStore` took the whole thing: it already takes the Lua expression that finds
+    the ref as an argument, so this is that base with `prefix=""` and nothing else
+  * No prefix, unlike `player.storage` - the keys the *game* wrote are the entire point,
+    and a prefix would hide every one of them. The price is that `clear()` wipes the
+    block's own data, and the docstring says so in a warning
 * [x] `player.looking_at` - see the Presentation list above. Still the highest-value
   single property in this file
-* [ ] `lt.nodes.light_at(point)` - `get_node_light` / `get_natural_light` /
+* [x] `lt.nodes.light_at(point)` - `get_node_light` / `get_natural_light` /
   `get_artificial_light`
   * *"Is it dark enough for mobs here"*, and the answer is a number a beginner can print
+  * Only `get_node_light` went in. Splitting the answer into sunlight and torchlight is
+    a second question nobody has asked, and one number you can print is the feature -
+    so the other two are a note here rather than a parameter
+  * `None` for an unloaded area, which is a normal answer read with `if`. The docstring
+    carries the trap from `lua_api.md:6928`: the light is measured *inside* the block,
+    so a solid block always answers 0 and you measure the air above the ground
 * [ ] `lt.nodes.biome_at(point)` - `get_biome_data`, `get_biome_name`, `get_heat`,
   `get_humidity`
   * Low priority. Real, but nothing a lesson has asked for
@@ -357,9 +380,15 @@ can be asked about.
   `facedir_to_dir`, `dir_to_wallmounted`, `yaw_to_dir`
   * Today it is a raw int nobody can read. A `node.facing` that takes and returns a
     `Vector` would turn the single worst trap in node placement into a direction
-* [ ] `lt.nodes.grow_tree(point)` - `core.spawn_tree`
+* [x] `lt.nodes.grow_tree(point)` - `core.spawn_tree`
   * A tree from one call. Cheap to add, immediately visible, and the `treedef` table can
     stay hidden behind keyword arguments
+  * Not as cheap as this entry claimed: `spawn_tree` needs a whole L-system definition,
+    and the two fields that really differ - trunk and leaves - differ per *game*. The
+    mod guesses them (`default:*`, then `mcl_core:*`) and errors naming `trunk=` and
+    `leaves=` when neither is there, so `grow_tree(point)` stays one line everywhere
+  * `height` builds the axiom: `("F"):rep(height - 3) .. "AFFBF"`, which at the default
+    8 reproduces the apple tree from `lua_api.md:5975` character for character
 * [ ] Schematics - `create_schematic`, `place_schematic`, `read_schematic`
   * Copy a building and stamp it somewhere else, with rotation. High wow, moderate API,
     and it is the one thing in this section a lesson could be built around
@@ -456,10 +485,21 @@ The mechanism behind *"Python driven mobs"* in the General list.
     steps per step, which is not a mob, it is a slideshow. The prototype's `on_step` stays
     a Lua closure written once through `lt.lua.run()`; Python sets the *policy* - where to
     go, what to do - and reads state back
-* [ ] `lt.objects_near(point, radius)` - `get_objects_inside_radius`,
-  `get_objects_in_area`
+* [x] `lt.entities.near(point, radius)` - `get_objects_inside_radius`
   * Miney currently cannot see a single mob, dropped item or entity in the world.
     Needed by anything reactive, and it is one call
+  * It went to a namespace of its own rather than `lt.objects_near()` on the façade:
+    `spawn()`, `find_path()` and `clear()` all belong next to it, and a method on
+    `Luanti` would have been the one that ended up somewhere else than its siblings
+  * `players=False` by default. A player is always within any radius of themselves,
+    and meeting yourself in the answer to *"what is near me"* is a surprise in the
+    first loop somebody writes
+  * `get_objects_inside_radius`, not the `objects_inside_radius` iterator - that one is
+    newer than 5.9, and what it guards against cannot happen to a call that only reads
+  * Left out: the real name of a dropped item. Everything on the ground is
+    `__builtin:item` and digging out what it *is* is game-specific
+* [ ] `get_objects_in_area` - the box-shaped twin of `near()`
+  * Same call shape, `find_in` to `near`'s `find`. Nobody has needed it yet
 * [ ] `core.find_path` - free A* from the engine, no Python pathfinding needed
   * Makes *"walk over to the player"* a single call instead of a lesson in graph search
 * [ ] `clear_objects` - clean up after a script that spawned too much
