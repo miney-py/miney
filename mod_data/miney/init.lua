@@ -44,7 +44,10 @@ end)()
 --      to play in every game instead of a name only one of them happens to know
 --  12  miney_sky in the sandbox: a player's sky held against a game that paints its
 --      own. Without it player.sky lasted under a second in VoxeLibre
-local MOD_API = 12
+--  13  the player_near event: a globalstep in callbacks.lua watching the areas a
+--      subscription named, and an "area" field on the register message to name them.
+--      An older mod takes the registration, ignores the area and never fires
+local MOD_API = 13
 
 -- Logger function for consistent logging
 local function log(level, message)

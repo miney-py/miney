@@ -155,6 +155,17 @@ local EVENTS = {
             }
         end,
     },
+    -- The one event with no Luanti registrar behind it. It is produced by the
+    -- globalstep at the bottom of this file, so there is nothing to hook and `on` is
+    -- false rather than missing - a missing key reads like an oversight.
+    --
+    -- `needs_area` is what makes the register action ask for a place and a radius. A
+    -- subscription without one would be a handler that never fires and never says why.
+    player_near = {
+        on = false,
+        needs_area = true,
+        keys = {"player_name", "pos", "distance"},
+    },
 }
 
 -- [client_id] = { session = "@<uuid>", subs = { chat_message = { [handler_id] = {filter = {...}} } }, cmds = { [name] = true } }
@@ -235,6 +246,30 @@ local function valid_filter(event_name, filter)
     return true
 end
 
+-- The area a player_near subscription watches. Python checks all of this before it
+-- sends anything, so a message that fails here came from something other than a
+-- current Miney - which is exactly when a clear refusal beats a silent subscription.
+local function valid_area(area)
+    if type(area) ~= "table" then
+        return nil, "This event needs an area: {'pos': Point(10, 20, 30), 'radius': 5}."
+    end
+    local pos = area.pos
+    if type(pos) ~= "table" or type(pos.x) ~= "number" or type(pos.y) ~= "number"
+            or type(pos.z) ~= "number" then
+        return nil, "The area needs a 'pos' with an x, a y and a z."
+    end
+    local radius = tonumber(area.radius)
+    if not radius or radius < 1 then
+        return nil, "The area needs a 'radius' of at least 1."
+    end
+    local interval = tonumber(area.interval) or 0.25
+    if interval <= 0 then
+        return nil, "The area's 'interval' has to be greater than 0."
+    end
+    return {pos = {x = pos.x, y = pos.y, z = pos.z}, radius = radius,
+            interval = interval}
+end
+
 -- A filter is a flat table of payload field -> accepted value, or field -> list of
 -- accepted values. Every field has to match; no filter accepts everything.
 --
@@ -308,6 +343,77 @@ local function broadcast(event_name, payload)
     end
 end
 
+-- player_near, once per interval per subscription.
+--
+-- The loop is per subscription and the players are the inner loop, so what this costs
+-- is bounded by how many places the user asked about and not by how busy the world is.
+-- Ten places and ten players, four times a second, is four hundred distance checks -
+-- nothing. With nobody subscribed it walks an empty table and returns.
+local function check_areas(dtime)
+    local players = nil
+    for client_id, rec in pairs(miney_cb.clients) do
+        local subs = rec.subs and rec.subs.player_near
+        if subs then
+            for handler_id, sub in pairs(subs) do
+                sub.since = sub.since + dtime
+                if sub.since >= sub.area.interval then
+                    sub.since = 0
+                    players = players or minetest.get_connected_players()
+                    for _, player in ipairs(players) do
+                        local name = player:get_player_name()
+                        local distance = vector.distance(player:get_pos(), sub.area.pos)
+                        if distance <= sub.area.radius then
+                            if not sub.inside[name] then
+                                -- Marked whether or not the filter matches. Marking
+                                -- only on a match would test this player again every
+                                -- interval they spend standing here, which is a level
+                                -- trigger wearing an edge trigger's name.
+                                sub.inside[name] = true
+                                local payload = {
+                                    player_name = name,
+                                    pos = point(sub.area.pos),
+                                    distance = distance,
+                                }
+                                if matches(sub.filter, payload) then
+                                    -- One message per subscription, unlike broadcast():
+                                    -- two areas have two different payloads and cannot
+                                    -- share one.
+                                    miney_reply(rec.session, {
+                                        event = "player_near",
+                                        payload = payload,
+                                        ts = os.time(),
+                                        client_id = client_id,
+                                        handlers = {handler_id},
+                                    })
+                                end
+                            end
+                        else
+                            sub.inside[name] = nil
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+minetest.register_globalstep(check_areas)
+
+-- Somebody who disconnects while inside an area would stay marked inside forever: they
+-- rejoin somewhere else, walk back, and nothing fires. A callback that worked once and
+-- then quietly stopped is the worst shape this can fail in.
+minetest.register_on_leaveplayer(function(player)
+    local name = player:get_player_name()
+    for _, rec in pairs(miney_cb.clients) do
+        local subs = rec.subs and rec.subs.player_near
+        if subs then
+            for _, sub in pairs(subs) do
+                sub.inside[name] = nil
+            end
+        end
+    end
+end)
+
 -- Hook every event into Luanti, once, while the mod loads. Luanti has no unregister for
 -- these - builtin/game/register.lua only ever appends - so registration cannot depend on
 -- anyone being interested yet. anyone_wants() is what makes that free: with nobody
@@ -320,11 +426,13 @@ end
 -- all, because the answer would have to come back from Python from inside the callback.
 local function register_events()
     for name, ev in pairs(EVENTS) do
-        ev.on(function(...)
-            if anyone_wants(name) then
-                broadcast(name, ev.fields(...))
-            end
-        end)
+        if ev.on then
+            ev.on(function(...)
+                if anyone_wants(name) then
+                    broadcast(name, ev.fields(...))
+                end
+            end)
+        end
     end
 end
 
@@ -398,6 +506,7 @@ local function handle_receive_fields(session, fields)
         end
         -- Everything is checked before anything is stored, so a rejected request leaves
         -- no half-finished subscription behind.
+        local area = nil
         for _, ev in ipairs(events) do
             if not EVENTS[ev] then
                 send_cb_error(session, ("Unknown event '%s'. Available: %s."):format(
@@ -409,10 +518,19 @@ local function handle_receive_fields(session, fields)
                 send_cb_error(session, why, client_id, "bad_request")
                 return true
             end
+            if EVENTS[ev].needs_area then
+                local area_why
+                area, area_why = valid_area(req.area)
+                if not area then
+                    send_cb_error(session, area_why, client_id, "bad_request")
+                    return true
+                end
+            end
         end
         for _, ev in ipairs(events) do
             rec.subs[ev] = rec.subs[ev] or {}
-            rec.subs[ev][handler_id] = {filter = req.filter}
+            rec.subs[ev][handler_id] = {filter = req.filter, area = area,
+                                        since = 0, inside = {}}
         end
         log("action", ("register: client_id=%s, handler=%s, events_count=%d, filtered=%s"):format(
             client_id, handler_id, #(req.events or {}), tostring(req.filter ~= nil)))
