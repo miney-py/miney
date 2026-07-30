@@ -48,9 +48,12 @@ All interaction with the game world starts with the ``Luanti`` object. The follo
    assets
    callback
    chat
+   items
    lua
    nodes
+   particles
    players
    point
+   sound
    storage
    tool

@@ -43,4 +43,5 @@ not write. Use :class:`str` for single values and :mod:`json` for lists and dict
 
 .. autoclass:: miney.Storage
    :members:
+   :inherited-members: MutableMapping, Mapping, Collection, Iterable, Container, Sized
    :special-members: __getitem__, __setitem__, __delitem__, __iter__, __len__

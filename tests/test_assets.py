@@ -17,6 +17,7 @@ from miney.lua import Lua
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"pretend this is a picture"
 JPEG = b"\xff\xd8\xff\xe0" + b"pretend this is a photo"
+OGG = b"OggS\x00\x02" + b"pretend this is a fanfare"
 
 _PUT = re.compile(r'^return miney_assets\.put\("([^"]*)", "([^"]*)", (\{.*\})\)$')
 
@@ -30,13 +31,14 @@ class FakeAssets:
     which is also how a person would read it in a log.
     """
 
-    def __init__(self, textures=None, ready_after=0, answer=None):
+    def __init__(self, textures=None, sounds=None, ready_after=0, answer=None):
         self.calls: list[str] = []
         self.puts: list[tuple[str, str, str]] = []
         self.ready_calls = 0
         self.removed: list[str] = []
         self.cleared = 0
         self._textures = textures or {}
+        self._sounds = sounds or {}
         #: How many ``ready()`` polls answer no before one answers yes.
         self.ready_after = ready_after
         #: An answer to give ``put`` instead of the successful one.
@@ -57,6 +59,9 @@ class FakeAssets:
 
         if code == "return miney_assets.textures()":
             return {mod: list(files) for mod, files in self._textures.items()}
+
+        if code == "return miney_assets.sounds()":
+            return {mod: list(names) for mod, names in self._sounds.items()}
 
         if code == "return miney_assets.list()":
             return [name for name, _, _ in self.puts]
@@ -111,10 +116,22 @@ def test_a_path_takes_its_format_from_the_suffix(assets: Assets, tmp_path: Path)
     assert assets.upload(picture).endswith(".jpg")
 
 
+def test_ogg_bytes_are_recognised_by_their_magic_bytes(assets: Assets):
+    """A sound goes up the same way a picture does, so lt.sound.play() can use it."""
+    assert assets.upload(OGG).endswith(".ogg")
+
+
+def test_an_ogg_file_takes_its_format_from_the_suffix(assets: Assets, tmp_path: Path):
+    song = tmp_path / "fanfare.ogg"
+    song.write_bytes(OGG)
+    assert assets.upload(song).endswith(".ogg")
+
+
 def test_an_unsupported_format_names_what_works(assets: Assets):
     with pytest.raises(ValueError) as exc:
         assets.upload(b"GIF89a" + b"x" * 20)
-    assert "PNG" in str(exc.value) and "JPEG" in str(exc.value)
+    message = str(exc.value)
+    assert "PNG" in message and "JPEG" in message and "Ogg" in message
 
 
 def test_a_string_is_a_name_and_not_a_file(assets: Assets):
@@ -313,6 +330,53 @@ def test_every_texture_is_in_the_flat_list():
         "default_dirt.png", "default_stone.png", "mcl_core_sand.png",
     ]
     assert len(assets.textures) == 3
+
+
+# --- sounds ---------------------------------------------------------------------
+
+
+SOUNDS = {
+    "default": ["default_dig_stone", "default_place_node"],
+    "mcl_portals": ["mcl_portals_open"],
+}
+
+
+def test_sounds_are_not_read_until_something_asks():
+    assets = make_assets(sounds=SOUNDS)
+    assert assets.fake.calls == []
+
+    assets.sounds
+    assert assets.fake.calls == ["return miney_assets.sounds()"]
+
+
+def test_sounds_are_read_once_and_kept():
+    assets = make_assets(sounds=SOUNDS)
+    assets.sounds.default.dig_stone
+    assets.sounds.mcl_portals.open
+    assert assets.fake.calls.count("return miney_assets.sounds()") == 1
+
+
+def test_sounds_are_grouped_by_mod_with_the_prefix_stripped():
+    assets = make_assets(sounds=SOUNDS)
+    assert assets.sounds.default.dig_stone == "default_dig_stone"
+    assert assets.sounds.mcl_portals.open == "mcl_portals_open"
+
+
+def test_sounds_and_textures_do_not_share_their_flat_list():
+    """Both are read through the same Assets, and either one counting both would lie."""
+    assets = make_assets(textures=TEXTURES, sounds=SOUNDS)
+    assert len(assets.textures) == 3
+    assert len(assets.sounds) == 3
+    assert sorted(assets.sounds) == [
+        "default_dig_stone", "default_place_node", "mcl_portals_open",
+    ]
+
+
+def test_a_server_with_no_sounds_answers_with_nothing():
+    """An empty Lua table arrives as an empty list, not as an empty object."""
+    assets = make_assets()
+    assets.fake._sounds = {}
+    assert list(assets.sounds) == []
 
 
 def test_repr_says_what_it_is(assets: Assets):

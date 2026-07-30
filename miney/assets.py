@@ -1,5 +1,5 @@
 """
-Pictures: the ones the game already has, and the ones you make yourself.
+Pictures and sounds: the ones the game already has, and the ones you make yourself.
 """
 import base64
 import hashlib
@@ -33,14 +33,14 @@ POLL_INTERVAL = 0.2
 
 #: What the first bytes of a file say it is. Luanti goes by the file extension, so the
 #: name Miney invents has to carry the right one.
-_MAGIC = ((b"\x89PNG", "png"), (b"\xff\xd8\xff", "jpg"))
+_MAGIC = ((b"\x89PNG", "png"), (b"\xff\xd8\xff", "jpg"), (b"OggS", "ogg"))
 
 #: The same thing for a :class:`~pathlib.Path`, which is trusted to be named correctly.
-_SUFFIXES = {".png": "png", ".jpg": "jpg", ".jpeg": "jpg"}
+_SUFFIXES = {".png": "png", ".jpg": "jpg", ".jpeg": "jpg", ".ogg": "ogg"}
 
 #: What a ``name=`` of your own may look like. It becomes a file on the server with
 #: ``keep=True``, so the mod checks this again - never trust the client with a path.
-_NAME = re.compile(r"^[A-Za-z0-9._\-]+\.(?i:png|jpe?g)$")
+_NAME = re.compile(r"^[A-Za-z0-9._\-]+\.(?i:png|jpe?g|ogg)$")
 
 #: What the mod's ``kind`` field turns into on this side. Anything else is an
 #: :class:`~miney.exceptions.AssetError`.
@@ -57,13 +57,13 @@ def _read(image: Any) -> tuple[bytes, str]:
 
     :param image: Bytes, a :class:`~pathlib.Path`, a matplotlib figure, a Pillow image
         or an open file.
-    :return: The file's bytes, and ``"png"`` or ``"jpg"``.
+    :return: The file's bytes, and ``"png"``, ``"jpg"`` or ``"ogg"``.
     :raises TypeError: If a :class:`str` was given, which is a name and not a file.
     :raises ValueError: If the format is not one Miney can send.
     """
     if isinstance(image, str):
         raise TypeError(
-            f"A string is the name of a picture the server already has, not a file to "
+            f"A string is the name of something the server already has, not a file to "
             f'upload. Use Path("{image}") if you meant the file on your computer.'
         )
 
@@ -71,8 +71,9 @@ def _read(image: Any) -> tuple[bytes, str]:
         suffix = image.suffix.lower()
         if suffix not in _SUFFIXES:
             raise ValueError(
-                f"Miney can upload PNG and JPEG pictures, and {image.name!r} is "
-                f"neither. Save it as .png and try again."
+                f"Miney uploads PNG and JPEG pictures and Ogg sounds, and "
+                f"{image.name!r} is none of them. Save it as .png or .ogg and try "
+                f"again."
             )
         return image.read_bytes(), _SUFFIXES[suffix]
 
@@ -90,7 +91,7 @@ def _read(image: Any) -> tuple[bytes, str]:
         data = image.read()
     else:
         raise TypeError(
-            f"Miney cannot read a {type(image).__name__} as a picture. Give it bytes, "
+            f"Miney cannot read a {type(image).__name__} as a file. Give it bytes, "
             f"a Path, an open file, a Pillow image or a matplotlib figure."
         )
 
@@ -98,14 +99,41 @@ def _read(image: Any) -> tuple[bytes, str]:
         if data.startswith(magic):
             return data, kind
     raise ValueError(
-        "Miney can upload PNG and JPEG pictures, and this is neither - its first "
-        "bytes match no format Miney knows."
+        "Miney uploads PNG and JPEG pictures and Ogg sounds, and this is none of "
+        "them - its first bytes match no format Miney knows."
     )
+
+
+def _tree(by_mod: dict) -> NameIterable:
+    """
+    Turn the ``mod -> names`` table the server sends into something TAB completes.
+
+    Each tree carries its own flat list of names, because that is what iterating one and
+    :func:`len` read. Sharing a single list between the textures and the sounds would
+    make either of them answer with both.
+
+    :param by_mod: What the mod's ``textures()`` or ``sounds()`` returned.
+    :return: The root, with one :class:`~miney.nodes.NameIterable` per mod below it.
+    """
+    flat: list[str] = []
+    root = NameIterable()
+    for mod, names in sorted(by_mod.items()):
+        # Built empty and filled here rather than by the constructor: a media name is
+        # 'default_dirt.png', not 'default:dirt', so the mod it belongs to cannot be
+        # read off the name and has to come from the table the server sent.
+        group = NameIterable()
+        group._names = sorted(names)
+        for name in names:
+            flat.append(name)
+            setattr(group, _short_name(mod, name), name)
+        setattr(root, mod, group)
+    root._names = sorted(flat)
+    return root
 
 
 class Assets:
     """
-    Pictures: what the game already has, and what you make yourself.
+    Pictures and sounds: what the game already has, and what you make yourself.
 
     Luanti calls all of this **media**, which is the word to search for in its own
     documentation and on the forums.
@@ -113,23 +141,26 @@ class Assets:
     You do not create this class yourself, it is reached through
     :attr:`~miney.Luanti.assets`.
 
-    **Finding a picture the game ships.** Every texture name is one TAB away, the same
-    way :attr:`lt.nodes.names <miney.Nodes.names>` works for blocks::
+    **Finding what the game ships.** Every name is one TAB away, the same way
+    :attr:`lt.nodes.names <miney.Nodes.names>` works for blocks::
 
         >>> lt.assets.textures.default.dirt
         'default_dirt.png'
+        >>> lt.assets.sounds.default.dig_stone
+        'default_dig_stone'
 
-    **Getting your own picture in.** Anything Python can draw goes into the world::
+    **Getting your own in.** Anything Python can draw, and any Ogg file you have::
 
         >>> from pathlib import Path
         >>> name = lt.assets.upload(Path("cat.png"))
         >>> lt.players.Steve.hud.image(name)
+        >>> lt.sound.play(lt.assets.upload(Path("fanfare.ogg")))
 
     .. important::
 
-       The picture is gone when the server stops, unless you pass ``keep=True``. And it
-       travels over the same connection as the game, so a big one is felt as a stutter
-       by whoever receives it.
+       What you upload is gone when the server stops, unless you pass ``keep=True``. And
+       it travels over the same connection as the game, so a big one is felt as a
+       stutter by whoever receives it.
     """
 
     def __init__(self, luanti: "Luanti"):
@@ -138,9 +169,7 @@ class Assets:
         """
         self.lt = luanti
         self._textures: NameIterable | None = None
-        #: Every texture name, flat. Filled with :attr:`textures`, which is what
-        #: ``NameIterable`` iterates over.
-        self._names_cache: list[str] = []
+        self._sounds: NameIterable | None = None
 
     def __repr__(self) -> str:
         return "<Luanti Assets>"
@@ -178,26 +207,55 @@ class Assets:
         if self._textures is None:
             by_mod = self.lt.lua.run("return miney_assets.textures()")
             # An empty Lua table comes back as an empty list, not as an empty object.
-            if not isinstance(by_mod, dict):
-                by_mod = {}
-            root = NameIterable(self)
-            for mod, files in sorted(by_mod.items()):
-                group = NameIterable(self)
-                for filename in files:
-                    self._names_cache.append(filename)
-                    setattr(group, _short_name(mod, filename), filename)
-                setattr(root, mod, group)
-            self._textures = root
+            self._textures = _tree(by_mod if isinstance(by_mod, dict) else {})
         return self._textures
+
+    @property
+    def sounds(self) -> NameIterable:
+        """
+        Every sound the server's mods carry, grouped by the mod they came from.
+
+        These are what :meth:`lt.sound.play() <miney.Sound.play>` takes, and like a
+        texture name nothing in Luanti tells you which ones exist - so they are here to
+        be found with TAB instead of guessed::
+
+            >>> lt.assets.sounds.default.dig_stone
+            'default_dig_stone'
+            >>> lt.assets.sounds.miney.power_up_1
+            'miney_power_up_1'
+            >>> lt.sound.play(lt.assets.sounds.miney.power_up_1)
+
+        Iterating gives every sound the server has::
+
+            >>> len(lt.assets.sounds)
+            412
+
+        .. note::
+
+           A sound name is not a file name. ``default_dig_stone`` is played by that
+           name, and the game may hold it as ``default_dig_stone.ogg`` or as a whole set
+           of ``default_dig_stone.0.ogg`` to ``.9.ogg`` - one of which is picked at
+           random every time. Miney lists the name, not the files.
+
+        This is read from the server the first time you touch it, and kept.
+
+        :return: The names, grouped by mod. See the examples above.
+        """
+        if self._sounds is None:
+            by_mod = self.lt.lua.run("return miney_assets.sounds()")
+            self._sounds = _tree(by_mod if isinstance(by_mod, dict) else {})
+        return self._sounds
 
     def upload(self, image: Any, name: str = None,
                player: "Player | str" = None, keep: bool = False,
                timeout: float = 30) -> str:
         """
-        Put a picture on the server and give back the name it is usable under.
+        Put a picture or a sound on the server and give back the name it is usable
+        under.
 
         That name goes anywhere a texture name goes - a HUD image, a statbar, a node's
-        texture:
+        texture - and an uploaded Ogg goes to :meth:`lt.sound.play()
+        <miney.Sound.play>`:
 
         1. A file from your computer::
 
@@ -213,41 +271,54 @@ class Assets:
             >>> lt.assets.upload(pil_image)       # a Pillow image
             >>> lt.assets.upload(png_bytes)       # raw bytes
 
-        3. For one player only, and forgotten again once they have it. This is the one
+        3. Your own music::
+
+            >>> lt.sound.play(lt.assets.upload(Path("fanfare.ogg")))
+
+        4. For one player only, and forgotten again once they have it. This is the one
            to use for a picture that changes, because nothing piles up::
 
             >>> lt.assets.upload(chart, player=lt.players.Steve)
 
-        4. Still there after the server restarts::
+        5. Still there after the server restarts::
 
             >>> lt.assets.upload(logo, keep=True)
 
         .. important::
 
-           **The name is a hash of the picture**, so uploading the same one twice costs
+           **The name is a hash of the file**, so uploading the same one twice costs
            nothing - and a *changed* picture gets a *different* name. That is not a
            quirk: Luanti refuses to know the same name twice, so a chart that updates
            cannot keep its old name. Whatever shows the picture has to be told the new
            one.
 
-        This call comes back only once the picture has really arrived on the client, so
-        the next line can use the name straight away. A 800x600 chart is 40-80 KB and
-        arrives without anybody noticing.
+        This call comes back only once the file has really arrived on the client, so the
+        next line can use the name straight away. A 800x600 chart is 40-80 KB and
+        arrives without anybody noticing; a minute of Ogg is closer to a megabyte, so
+        that one is worth uploading before the show rather than during it.
 
-        :param image: The picture: :class:`bytes`, a :class:`~pathlib.Path`, an open
-            file, a Pillow image or a matplotlib figure. A :class:`str` is *not* a
-            picture, it is the name of one the server already has.
+        .. note::
+
+           A sound is uploaded as ``miney_3f9a1c7b2e04.ogg`` and *played* as
+           ``miney_3f9a1c7b2e04``, without the extension.
+           :meth:`lt.sound.play() <miney.Sound.play>` drops it for you, so the name can
+           go straight from here to there.
+
+        :param image: The file: :class:`bytes`, a :class:`~pathlib.Path`, an open file,
+            a Pillow image or a matplotlib figure. A :class:`str` is *not* a file, it is
+            the name of one the server already has.
         :param name: A name of your own instead of the hash. Letters, digits, ``.``,
-            ``-`` and ``_``, ending in ``.png`` or ``.jpg`` - it becomes a file on the
-            server. Nothing there may carry it yet, not even a texture of the game's.
-        :param player: Send it to this player alone. The server forgets the picture
-            again once it has arrived, so use this for anything that changes.
+            ``-`` and ``_``, ending in ``.png``, ``.jpg`` or ``.ogg`` - it becomes a
+            file on the server. Nothing there may carry it yet, not even a texture of
+            the game's.
+        :param player: Send it to this player alone. The server forgets the file again
+            once it has arrived, so use this for anything that changes.
         :param keep: Write it into Luanti's own data directory, so it is still there
             after a server restart. Everything else is gone when the server stops.
-        :param timeout: How many seconds to wait for the picture to arrive.
-        :return: The name the picture is usable under.
+        :param timeout: How many seconds to wait for the file to arrive.
+        :return: The name it is usable under.
         :raises TypeError: If ``image`` is a string, or something Miney cannot read.
-        :raises ValueError: If the format is not PNG or JPEG, or the picture is larger
+        :raises ValueError: If the format is not PNG, JPEG or Ogg, or the file is larger
             than :data:`~miney.assets.MAX_UPLOAD`.
         :raises ~miney.exceptions.PlayerOffline: If ``player`` is not in the game.
         :raises ~miney.exceptions.AssetError: If the server refused the picture.
@@ -257,7 +328,7 @@ class Assets:
 
         if len(data) > MAX_UPLOAD:
             raise ValueError(
-                f"This picture is {len(data)} bytes and Miney sends at most "
+                f"This file is {len(data)} bytes and Miney sends at most "
                 f"{MAX_UPLOAD}. It travels over the same connection as the game, so a "
                 f"big one makes the world stutter. Save it smaller and try again."
             )
@@ -266,9 +337,9 @@ class Assets:
             name = f"miney_{hashlib.sha256(data).hexdigest()[:12]}.{kind}"
         elif not _NAME.match(name) or ".." in name:
             raise ValueError(
-                f"{name!r} cannot be the name of a picture. With keep=True it becomes "
+                f"{name!r} cannot be the name of an asset. With keep=True it becomes "
                 f"a file on the server, so it may hold letters, digits, '.', '-' and "
-                f"'_' only, and it has to end in .png or .jpg."
+                f"'_' only, and it has to end in .png, .jpg or .ogg."
             )
 
         player_name = getattr(player, "name", player)
@@ -299,12 +370,13 @@ class Assets:
     def _wait_for(self, name: str, player_name: str | None, size: int,
                   timeout: float) -> None:
         """
-        Block until the client has the picture.
+        Block until the client has the file.
 
         Without this the next line would name a texture the client does not have yet,
-        and draw nothing at all - with no error to catch and nothing to search for.
+        and draw nothing at all - with no error to catch and nothing to search for. A
+        sound does the same, and even more quietly.
 
-        :param name: The name the picture went up under.
+        :param name: The name it went up under.
         :param player_name: Whose client to wait for, or None for everybody who was
             online when the upload started.
         :param size: How many bytes are on their way, for the error message.
@@ -319,7 +391,7 @@ class Assets:
                 return
             if time.time() >= deadline:
                 raise AssetTimeout(
-                    f"The picture {name!r} did not arrive within {timeout} seconds. It "
+                    f"The file {name!r} did not arrive within {timeout} seconds. It "
                     f"is {size} bytes, and that is nearly always the reason - try a "
                     f"smaller one."
                 )
@@ -329,8 +401,8 @@ class Assets:
         """
         The names of everything Miney has put on this server.
 
-        Textures the game itself ships are not in here - those are in
-        :attr:`textures`.
+        What the game itself ships is not in here - that is in :attr:`textures` and
+        :attr:`sounds`.
 
         :Example:
 
@@ -343,10 +415,10 @@ class Assets:
 
     def remove(self, name: str) -> None:
         """
-        Forget one picture.
+        Forget one picture or sound.
 
-        Anything already showing it keeps showing it until the player rejoins - the
-        client has its own copy by then. This only stops it being sent again.
+        Anything already using it keeps working until the player rejoins - the client
+        has its own copy by then. This only stops it being sent again.
 
         :param name: A name from :meth:`list`.
         """
@@ -354,7 +426,7 @@ class Assets:
 
     def clear(self) -> None:
         """
-        Forget everything Miney put on this server, kept pictures included.
+        Forget everything Miney put on this server, kept files included.
 
         The kept ones are deleted from disk, so this is how you empty them out again::
 
@@ -368,14 +440,15 @@ class Assets:
 
 def _short_name(mod: str, filename: str) -> str:
     """
-    The name a texture is reachable under below its mod.
+    The name a texture or a sound is reachable under below its mod.
 
-    ``default/default_dirt.png`` becomes ``dirt``, because the mod name is already the
-    attribute above it. Repeating it is a convention rather than a rule though, so a
-    file that does not follow it keeps its whole name.
+    ``default/default_dirt.png`` becomes ``dirt``, and the sound ``default_dig_stone``
+    becomes ``dig_stone``, because the mod name is already the attribute above it.
+    Repeating it is a convention rather than a rule though, so a name that does not
+    follow it keeps all of itself.
 
-    :param mod: The mod the file came from.
-    :param filename: The file's name, extension included.
+    :param mod: The mod it came from.
+    :param filename: A file name, extension included, or a sound group name.
     :return: The attribute name.
     """
     short = filename.rsplit(".", 1)[0]

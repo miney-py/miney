@@ -5,6 +5,7 @@ from .point import Point
 from .vector import Vector
 if TYPE_CHECKING:
     from .luanti import Luanti
+    from .node import Node
 
 
 class PrivilegeManager:
@@ -92,6 +93,8 @@ class Player:
         """
         from .hud import Hud
         from .inventory import Inventory
+        from .sky import Sky
+        from .storage import PlayerStorage
         self.lt = luanti
         self.name = name
         
@@ -135,6 +138,42 @@ class Player:
 
         See :class:`~miney.hud.Hud` for waypoints, images, bars, and for switching off
         what Luanti draws by itself.
+        """
+
+        self.sky: Sky = Sky(luanti, self)
+        """The sky this player sees: its colour, the clouds, sun, moon, stars and how
+        bright everything looks.
+
+        :Example, night at noon:
+
+        >>> import miney
+        >>> lt = miney.Luanti()
+        >>> lt.players.Steve.sky.color = "#101040"
+        >>> lt.players.Steve.sky.brightness = 0.05
+        >>> lt.players.Steve.sky.reset()
+
+        Only this player sees it - the world stays as bright as it was, and no mob
+        spawns because of it. :attr:`lt.time_of_day <miney.Luanti.time_of_day>` is the
+        one that really makes it night. See :class:`~miney.sky.Sky`.
+        """
+
+        self.storage: PlayerStorage = PlayerStorage(self)
+        """What you want to remember about this one player, used like a dictionary.
+
+        It stays with them after they log out and after the server restarts, which
+        nothing else in a script does.
+
+        :Example, counting somebody's visits:
+
+        >>> import miney
+        >>> lt = miney.Luanti()
+        >>> player = lt.players.Steve
+        >>> player.storage["visits"] = str(int(player.storage.get("visits", "0")) + 1)
+        >>> lt.chat.send_to_player(player.name, f"Visit number {player.storage['visits']}")
+
+        Keys and values are strings, the same as :attr:`lt.storage
+        <miney.Luanti.storage>`, which is the version for the whole world. See
+        :class:`~miney.storage.PlayerStorage`.
         """
 
     def __repr__(self):
@@ -428,6 +467,536 @@ class Player:
         self.lt.lua.run(
             "return minetest.get_player_by_name('{}'):set_physics_override({{gravity = {}}})".format(self.name, value),
             wait=False)
+
+    #: Where :meth:`hold` writes down the physics and the armor groups it takes away, in
+    #: the player's own metadata. Metadata survives a disconnect, so a script that dies
+    #: mid-hold still leaves a way back.
+    _HOLD_KEY = "miney:before_hold"
+
+    #: What the Lua answers when this player is not in the game. A byte no name and no
+    #: stored text can contain, so it can never be confused with a real answer.
+    _OFFLINE = "\0offline"
+
+    def _ask(self, body: str, wait: bool = True):
+        """
+        Run Lua with this player bound to the name ``player``, or say they are not there.
+
+        Every property below needs the same three lines in front of it, and every one of
+        them has to fail loudly rather than quietly do nothing - a script that thinks it
+        set something is worse off than one that got an error.
+
+        :param body: Lua, using ``player``.
+        :param wait: Whether to wait for the answer. ``False`` gives up the offline
+                     check with it, so only for writes that are worth the speed.
+        :return: What the Lua returned.
+        :raises ~miney.exceptions.PlayerOffline: If the player is not in the game.
+        """
+        answer = self.lt.lua.run(
+            f"local player = minetest.get_player_by_name({self.lt.lua.dumps(self.name)}) "
+            f"if not player then return {self.lt.lua.dumps(self._OFFLINE)} end "
+            f"{body}",
+            wait=wait,
+        )
+        if answer == self._OFFLINE:
+            raise PlayerOffline(f"There is no player {self.name!r} in the game.")
+        return answer
+
+    @property
+    def held(self) -> bool:
+        """
+        Whether this player is currently held by :meth:`hold`.
+
+        Read-only. Giving physics back is :meth:`release`, and it has an ordering trap
+        that is worth reading before you use it.
+
+        .. code-block:: python
+
+            player.hold()
+            print(player.held)      # True
+            player.release()
+            print(player.held)      # False
+
+        :return: ``True`` while a hold is on, ``False`` otherwise.
+        :raises ~miney.exceptions.PlayerOffline: if the player is not in the game.
+        """
+        return bool(self._ask(
+            f"return player:get_meta():get_string("
+            f"{self.lt.lua.dumps(self._HOLD_KEY)}) ~= \"\""
+        ))
+
+    def hold(self) -> None:
+        """
+        Hold this player in mid-air and stop the world from hurting them.
+
+        The player floats where they are and takes no damage - no fall, no drowning, no
+        mob. :meth:`release` gives all of it back.
+
+        This is what you want around a :meth:`move`. Teleporting or flying a player to a
+        point above ground ends in a fall, and in some games - VoxeLibre among them - a
+        fall from camera height is fatal.
+
+        .. code-block:: python
+
+            import miney
+            from miney import Point
+
+            lt = miney.Luanti()
+            player = lt.players["Steve"]
+
+            player.hold()
+            player.move(destination=Point(200, 80, 200), smooth=True, duration=5, wait=True)
+            lt.chat.send_to_all("Look down!")
+
+            player.move(destination=Point(200, 12, 200))    # somewhere solid, first
+            player.release()
+
+        The player can still walk and jump while held, they simply do it in the air. Use
+        :attr:`noclip` if you also want them to pass through walls.
+
+        .. important::
+            Read :meth:`release` before you use this. Handing physics back over thin air
+            is the very fall this was meant to prevent.
+
+        .. note::
+            A player who is already falling keeps falling, more slowly - switching gravity
+            off takes away the acceleration, not the speed they picked up on the way down.
+            They survive the landing, because being held also means taking no damage. Hold
+            first, move second, and it does not come up.
+
+        :return: None
+        :raises ~miney.exceptions.PlayerOffline: if the player is not in the game.
+        """
+        # What is taken away is written down first, so that release() puts back what this
+        # game gave the player instead of a guess - the same reason and the same place as
+        # `invisible`. Only if there is no record yet: a second hold() must not overwrite
+        # the real values with the held ones.
+        #
+        # Two engine calls, two different habits, and they are the reason gravity is
+        # stored as one number while the armor groups are stored whole:
+        # set_physics_override merges field by field (l_object.cpp:1900-1916), so
+        # {gravity = 0} leaves the speed and the jump the user set alone. set_armor_groups
+        # replaces the list outright (l_object.cpp:385), so the whole table has to come
+        # back or the game's own damage groups are gone.
+        #
+        # ponytail: no add_velocity to cancel a fall in progress - immortal covers the
+        # landing. Add it if somebody really needs to catch a falling player unharmed *and*
+        # motionless; that costs a get_velocity round trip before the hold.
+        self._ask(
+            f"""
+            -- minetest.serialize and not write_json: the same table of numbers goes back
+            -- into set_armor_groups later, and serialize is what `invisible` next door
+            -- already trusts with a props table.
+            local meta = player:get_meta()
+            if meta:get_string({self.lt.lua.dumps(self._HOLD_KEY)}) == "" then
+                meta:set_string({self.lt.lua.dumps(self._HOLD_KEY)}, minetest.serialize({{
+                    gravity = player:get_physics_override().gravity,
+                    armor_groups = player:get_armor_groups()
+                }}) or "")
+            end
+
+            player:set_physics_override({{gravity = 0}})
+            player:set_armor_groups({{immortal = 1}})
+            return true
+            """
+        )
+
+    def release(self) -> None:
+        """
+        Give this player their physics and their mortality back.
+
+        **Put the player somewhere solid first.** Releasing them in mid-air is a fall from
+        wherever they happen to be, which is the thing :meth:`hold` was there to prevent:
+
+        .. code-block:: python
+
+            import miney
+            from miney import Point
+
+            lt = miney.Luanti()
+            player = lt.players["Steve"]
+
+            player.hold()
+            player.move(destination=Point(200, 80, 200), smooth=True, duration=5, wait=True)
+
+            player.move(destination=Point(200, 12, 200))    # ground, then
+            player.release()                               # physics
+
+        What comes back is what the player had before :meth:`hold`, read from the record
+        that :meth:`hold` wrote into their metadata - so a script that set
+        ``player.gravity = 0.5`` gets ``0.5`` back and not ``1``. For a player this Miney
+        never held, Luanti's own defaults are used, and calling it twice is harmless.
+
+        .. note::
+            On a server with damage switched off, Luanti keeps every player immortal and
+            refuses to change it back. The player stays unhurtable after this call - which
+            is what they were before it too, so nothing is lost.
+
+        :return: None
+        :raises ~miney.exceptions.PlayerOffline: if the player is not in the game.
+        """
+        self._ask(
+            f"""
+            local meta = player:get_meta()
+            local saved = meta:get_string({self.lt.lua.dumps(self._HOLD_KEY)})
+            local gravity, groups = 1, {{fleshy = 100}}
+            if saved ~= "" then
+                -- deserialize answers nil for anything it cannot read, which is the whole
+                -- error handling this needs; the sandbox has no pcall.
+                local before = minetest.deserialize(saved)
+                if type(before) == "table" then
+                    gravity = before.gravity or gravity
+                    groups = before.armor_groups or groups
+                end
+                meta:set_string({self.lt.lua.dumps(self._HOLD_KEY)}, "")
+            end
+
+            player:set_physics_override({{gravity = gravity}})
+            player:set_armor_groups(groups)
+            return true
+            """
+        )
+
+    #: How far :attr:`looking_at` follows the player's gaze, in nodes. Ten is well past
+    #: the four Luanti lets a player reach, so it answers for things across a room rather
+    #: than only what they could touch. Assign to it for a longer or shorter reach.
+    look_range = 10
+
+    @property
+    def looking_at(self) -> Optional['Node']:
+        """
+        The block this player has their crosshair on, or ``None`` for open sky.
+
+        *"Put something where I am looking"* is a whole program, and this is the half
+        that was missing:
+
+        .. code-block:: python
+
+            import miney
+            from miney import Node
+
+            lt = miney.Luanti()
+            player = lt.players["Steve"]
+
+            target = player.looking_at
+            if target:
+                print("You are looking at", target.name)
+                # one block on top of it
+                lt.nodes.set(Node(target.x, target.y + 1, target.z,
+                                  lt.nodes.names.default.torch))
+
+        You get a :class:`~miney.node.Node`, so it carries where it is as well as what it is -
+        ``target.x``, ``target.name`` - and it can go straight into anything that takes a
+        position.
+
+        The line stops after :attr:`look_range` nodes, ten by default. Water counts as
+        something to look at, air does not.
+
+        :return: The :class:`~miney.node.Node` in the crosshair, or ``None`` if there is
+                 nothing within reach.
+        :raises ~miney.exceptions.PlayerOffline: If the player is not in the game.
+        """
+        from .node import Node
+
+        # From the eyes, not from the feet: get_pos() is where the player stands, and a
+        # ray from there aims about 1.6 nodes below the crosshair - close enough to look
+        # right and wrong enough to point at the floor when the player looks level.
+        # eye_height is a property because a game may change it (sitting, a mount).
+        seen = self._ask(
+            f"""
+            local props = player:get_properties()
+            local eye = vector.add(player:get_pos(),
+                {{x = 0, y = props.eye_height or 1.625, z = 0}})
+            local far = vector.add(eye,
+                vector.multiply(player:get_look_dir(), {self.look_range}))
+
+            -- objects = false: this answers with a node. liquids = true, because a
+            -- player looking at a lake and being told "nothing there" is a bug to them.
+            for pointed in minetest.raycast(eye, far, false, true) do
+                if pointed.type == "node" then
+                    local node = minetest.get_node(pointed.under)
+                    return {{x = pointed.under.x, y = pointed.under.y,
+                             z = pointed.under.z, name = node.name,
+                             param1 = node.param1, param2 = node.param2}}
+                end
+            end
+            return nil
+            """
+        )
+        if not seen:
+            return None
+        return Node(
+            seen["x"], seen["y"], seen["z"],
+            name=seen["name"],
+            param1=seen.get("param1"),
+            param2=seen.get("param2"),
+            luanti=self.lt,
+        )
+
+    @property
+    def wielding(self) -> str:
+        """
+        What this player is holding, as the item's name.
+
+        Together with :attr:`looking_at` this is the first interactive program somebody
+        writes - the game asks what you are doing, and Python decides what happens:
+
+        .. code-block:: python
+
+            if player.wielding == lt.items.default.torch and player.looking_at:
+                lt.chat.send_to_player(player.name, "Light it up!")
+
+        A hand can hold a block, a tool or anything else the game has, so
+        :attr:`lt.items <miney.Luanti.items>` is the list to compare against - it is the
+        only one that covers all three, and TAB finds the name for you.
+
+        An empty hand is an empty string, so ``if player.wielding:`` asks whether they
+        are holding anything at all.
+
+        Read-only on purpose. Luanti has no way to *give* somebody an item in their hand -
+        writing there replaces the whole stack, so putting a pickaxe into a hand holding
+        64 blocks of dirt would delete the dirt. Use
+        :meth:`player.inventory.add() <miney.Inventory.add>` to give something out; it
+        goes into the first free slot and takes nothing away.
+
+        :return: The item name, for example ``'default:pick_mese'``, or ``''`` for an
+                 empty hand.
+        :raises ~miney.exceptions.PlayerOffline: If the player is not in the game.
+        """
+        return self._ask("return player:get_wielded_item():get_name()")
+
+    @property
+    def keys(self) -> dict:
+        """
+        Which keys this player is holding down right now, as a dictionary of yes and no.
+
+        A program that reacts to the game without callbacks, decorators or events - a
+        ``while`` loop and an ``if`` is enough:
+
+        .. code-block:: python
+
+            import time
+
+            while True:
+                if player.keys["jump"]:
+                    lt.chat.send_to_all(f"{player.name} jumped!")
+                time.sleep(0.5)
+
+        The names are Luanti's: ``up``, ``down``, ``left``, ``right``, ``jump``,
+        ``sneak``, ``dig``, ``place``, ``aux1`` (the "special" key) and ``zoom``.
+        ``dig`` is the left mouse button and ``place`` the right one.
+
+        .. note::
+            This is a question asked of the server, so it costs a round trip - around
+            30 ms. Reading it in a tight loop asks hundreds of times a second and gets
+            nearly the same answer every time; a small :func:`time.sleep` in the loop
+            leaves the server room to breathe. :meth:`lt.callbacks.on()
+            <miney.callback.Callback.on>` is the other way round for anything that must not be
+            missed.
+
+        :return: Every key, with ``True`` while it is held down.
+        :raises ~miney.exceptions.PlayerOffline: If the player is not in the game.
+        """
+        control = self._ask("return player:get_player_control()") or {}
+        # Only the yes-or-no fields. LMB and RMB are the old names of dig and place and
+        # are documented as being there for compatibility, so they would be the same
+        # answer twice under a name nobody should learn. Newer servers also put
+        # movement_x and movement_y in here, which are floats and do not exist on the
+        # 5.9 Miney still supports - reachable through lt.lua.run() for whoever needs
+        # them, and out of a dictionary that promises True or False.
+        return {key: value for key, value in control.items()
+                if isinstance(value, bool) and key not in ("LMB", "RMB")}
+
+    @property
+    def velocity(self) -> Vector:
+        """
+        How fast this player is moving, and in which direction, in nodes per second.
+
+        Standing still is a vector of zeros; falling is a negative ``y``.
+
+        .. code-block:: python
+
+            if player.velocity.y < -10:
+                lt.chat.send_to_player(player.name, "That is a long way down.")
+
+        Read-only, because Luanti has no way to set a player's speed outright.
+        :meth:`push` adds to it, which is what a launchpad or a gust of wind does.
+
+        :return: A :class:`~miney.vector.Vector` of nodes per second.
+        :raises ~miney.exceptions.PlayerOffline: If the player is not in the game.
+        """
+        return Vector(**self._ask("return player:get_velocity()"))
+
+    def push(self, force: Vector) -> None:
+        """
+        Give this player a shove.
+
+        The force is added to how they are already moving, in nodes per second, so
+        ``Vector(0, 6.5, 0)`` is about the same as them pressing the jump key:
+
+        .. code-block:: python
+
+            import miney
+            from miney import Vector
+
+            lt = miney.Luanti()
+            player = lt.players["Steve"]
+
+            player.push(Vector(0, 20, 0))       # straight up, and quite far
+            player.push(player.look_dir * 15)   # forwards, wherever they are looking
+
+        .. note::
+            Luanti evens out a player's speed on every step, so a large push in one
+            direction eats away at the speed they had in the others, and the number you
+            give is not the number you get. Push, look at what happens, push harder -
+            that is the honest way to use it, and it is a fine thing to let a beginner
+            experiment with.
+
+            It does nothing at all while the player is flying (:attr:`fly` with the
+            client in free-move), and a held player (:meth:`hold`) keeps whatever push
+            they were given, because nothing slows them down again.
+
+        :param force: A :class:`~miney.vector.Vector` of nodes per second to add.
+        :return: None
+        :raises TypeError: If ``force`` is not a :class:`~miney.vector.Vector`.
+        :raises ~miney.exceptions.PlayerOffline: If the player is not in the game.
+        """
+        if not isinstance(force, Vector):
+            raise TypeError(
+                f"push() takes a Vector, not {type(force).__name__} - a direction with a "
+                f"length, like Vector(0, 20, 0) for straight up. A Point is a place, not "
+                f"a push."
+            )
+        self._ask(f"player:add_velocity({self.lt.lua.dumps(force)}) return true")
+
+    @property
+    def size(self) -> float:
+        """
+        How big this player looks, as a multiple of normal. ``1`` is normal size.
+
+        .. code-block:: python
+
+            player.size = 3      # a giant
+            player.size = 0.3    # small enough to lose
+            player.size = 1      # back to normal
+
+        .. important::
+            Only the picture changes. The player still takes up exactly one player's
+            worth of room, so a giant fits through a normal door and a tiny player does
+            not fit under a slab. Luanti draws the model and moves the body separately,
+            and this is the drawing.
+
+        :return: The current size, ``1`` being normal.
+        :raises TypeError: If the value is not a number.
+        :raises ValueError: If the value is not above zero.
+        :raises ~miney.exceptions.PlayerOffline: If the player is not in the game.
+        """
+        return self._ask("return player:get_properties().visual_size.x")
+
+    @size.setter
+    def size(self, value: float):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(
+                f"Size is a number, not {type(value).__name__}. Use 1 for normal size, "
+                f"2 for twice as big, 0.5 for half."
+            )
+        if value <= 0:
+            raise ValueError(
+                f"Size has to be above 0, not {value}. Use a small number like 0.1 for "
+                f"tiny; a size of 0 makes the player invisible instead - that is "
+                f"player.invisible = True."
+            )
+        # All three axes together, so the player stays in proportion. z only shows on the
+        # cube and sprite visuals, but setting it costs nothing and leaving it out would
+        # squash a player in a game that uses one.
+        self._ask(
+            f"player:set_properties({{visual_size = "
+            f"{{x = {value}, y = {value}, z = {value}}}}}) return true"
+        )
+
+    def respawn(self) -> None:
+        """
+        Send this player back to where they would appear after dying.
+
+        The same thing the *Respawn* button does, including everything the game does
+        about it. Their health, their inventory and everything else stay as they are -
+        this moves them, it does not kill them.
+
+        .. code-block:: python
+
+            player.respawn()
+
+        Useful for getting somebody out of a hole they dug themselves into, and as the
+        way home from a script that flew them somewhere:
+
+        .. code-block:: python
+
+            player.hold()
+            player.move(destination=Point(2000, 100, 2000), smooth=True, duration=10,
+                        wait=True)
+            player.release()
+            player.respawn()
+
+        :return: None
+        :raises ~miney.exceptions.PlayerOffline: If the player is not in the game.
+        """
+        self._ask("player:respawn() return true")
+
+    @property
+    def armor_groups(self) -> dict:
+        """
+        What this player can be hurt by, and how much, as a dictionary.
+
+        Luanti's own words for it are *armor groups*, and the useful one is
+        ``fleshy``: it is a percentage, ``100`` being the normal amount of damage, ``50``
+        half of it and ``0`` none::
+
+            >>> player.armor_groups
+            {'fleshy': 100}
+            >>> player.armor_groups = {"fleshy": 50}    # half damage from everything
+
+        ``{"immortal": 1}`` is the switch for *nothing hurts this player at all*, and it
+        also stops them drowning. :meth:`hold` sets it for you and :meth:`release` puts
+        back what was there before, which is the way to reach for it in a script.
+
+        .. warning::
+            Assigning replaces the whole dictionary, the way Luanti does it - the groups
+            you leave out are gone, not left alone. Read it, change what you want and
+            assign the result back::
+
+                groups = player.armor_groups
+                groups["fleshy"] = 20
+                player.armor_groups = groups
+
+        .. note::
+            A server with damage switched off keeps every player immortal whatever is
+            written here, and says so in its log.
+
+        :return: The groups and their percentages.
+        :raises TypeError: If the value is not a dictionary of names and whole numbers.
+        :raises ~miney.exceptions.PlayerOffline: If the player is not in the game.
+        """
+        return self._ask("return player:get_armor_groups()") or {}
+
+    @armor_groups.setter
+    def armor_groups(self, value: dict):
+        if not isinstance(value, dict):
+            raise TypeError(
+                f"Armor groups are a dictionary, not {type(value).__name__}. "
+                f'For example {{"fleshy": 50}} for half damage.'
+            )
+        for name, percent in value.items():
+            if not isinstance(name, str):
+                raise TypeError(
+                    f"An armor group is named with a string, not "
+                    f'{type(name).__name__}. For example {{"fleshy": 50}}.'
+                )
+            if isinstance(percent, bool) or not isinstance(percent, int):
+                raise TypeError(
+                    f"An armor group is a whole number, not "
+                    f'{type(percent).__name__}. {{"{name}": 100}} is the normal amount '
+                    f"of damage, 50 is half."
+                )
+        self._ask(f"player:set_armor_groups({self.lt.lua.dumps(value)}) return true")
 
     @property
     def look(self) -> dict:

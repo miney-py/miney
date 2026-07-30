@@ -1,36 +1,17 @@
-class ToolIterable:
-    """Tool type, implemented as iterable for easy autocomplete in the interactive shell"""
-    def __init__(self, parent, tool_types=None):
+from .nodes import NameIterable
 
-        self.__parent = parent
 
-        if tool_types:
+class ToolIterable(NameIterable):
+    """
+    Tool names, as attributes you can find with TAB.
 
-            # get type categories list
-            type_categories = {}
-            for ntype in tool_types:
-                if ":" in ntype:
-                    type_categories[ntype.split(":")[0]] = ntype.split(":")[0]
-            for tc in dict.fromkeys(type_categories):
-                self.__setattr__(tc, ToolIterable(parent))
+    ``lt.tool.default.pick_mese`` is the string ``'default:pick_mese'``. Only things a
+    player swings are in here - :attr:`lt.items <miney.Luanti.items>` is the list of
+    everything that can be in a hand, tools included.
 
-            # values to categories
-            for ttype in tool_types:
-                if ":" in ttype:
-                    self.__getattribute__(ttype.split(":")[0]).__setattr__(ttype.split(":")[1], ttype)
-                else:
-                    self.__setattr__(ttype, ttype)  # for 'air' and 'ignore'
+    Everything :class:`~miney.nodes.NameIterable` can do, this can do. You do not create
+    it yourself, it is :attr:`lt.tool <miney.Luanti.tool>`.
+    """
 
-    def __iter__(self):
-        return iter(self.__parent._tools_cache)
-
-    def __getitem__(self, item_key):
-        if item_key in self.__parent.node_types:
-            return item_key
-        else:
-            if type(item_key) == int:
-                return self.__parent.node_types[item_key]
-            raise IndexError("unknown node type")
-
-    def __len__(self):
-        return len(self.__parent._tools_cache)
+    def __repr__(self):
+        return f"<Luanti tools: {len(self)}>"

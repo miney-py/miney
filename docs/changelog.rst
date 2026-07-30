@@ -50,15 +50,126 @@ Unreleased
   Luanti's field names are translated - ``color="#ffcc00"`` rather than
   ``number = 0xffcc00``. What Luanti draws by itself is here too:
   ``player.hud.healthbar = False``, ``player.hud.hotbar_slots = 4``.
-- ``lt.assets`` - pictures. :attr:`lt.assets.textures <miney.Assets.textures>` makes
-  every texture the server's mods carry findable with TAB, the way ``lt.nodes.names``
-  does for blocks: ``lt.assets.textures.default.dirt`` is ``'default_dirt.png'``.
-  :meth:`lt.assets.upload() <miney.Assets.upload>` sends a picture of your own the other
-  way - a file, raw bytes, a Pillow image or a matplotlib figure - and gives back a name
-  usable anywhere a texture name goes. It waits until the picture has really arrived on
-  the client, so the next line can use it. ``player=`` sends it to one player and
-  forgets it again, ``keep=True`` keeps it across server restarts. Neither Pillow nor
-  matplotlib is needed to install Miney; they are recognised by the methods they carry.
+- ``player.sky`` - the sky one player sees. ``player.sky.color = "#101040"`` replaces
+  Luanti's painted sky with a flat colour, and :attr:`player.sky.brightness
+  <miney.Sky.brightness>` turns noon into night without touching the clock. ``clouds``,
+  ``sun``, ``moon`` and ``stars`` switch on and off, and :meth:`player.sky.reset()
+  <miney.Sky.reset>` puts everything back - a script that darkens a sky and ends leaves
+  the player in it otherwise. All of it is what that one player sees: the world stays
+  bright, and no mob spawns because of it.
+
+  A game that paints its own sky is handled: VoxeLibre repaints every player about once
+  a second, which used to wipe a colour out before the next line of a script ran. Miney's
+  mod is now the last link in that game's own chain of sky filters and lays what a script
+  set over what the game decided - for that one player, leaving everybody else's weather
+  and every part of the sky nobody claimed alone.
+- :meth:`player.hold() <miney.Player.hold>` and :meth:`player.release()
+  <miney.Player.release>` - **a player you move is no longer killed by the trip.**
+  ``player.move(destination=...)`` to a point above ground ends in a fall, and in games
+  like VoxeLibre a fall from camera height is fatal, so a correct-looking line came back
+  with a corpse. Held, the player floats where they are and takes no damage at all - not
+  from the fall, not from drowning, not from the mobs a script summoned by setting
+  :attr:`lt.time_of_day <miney.Luanti.time_of_day>` to night.
+
+  .. code-block:: python
+
+      player.hold()
+      player.move(destination=Point(200, 80, 200), smooth=True, duration=5, wait=True)
+
+      player.move(destination=Point(200, 12, 200))    # somewhere solid, first
+      player.release()
+
+  ``release()`` gives back what the player really had, not Luanti's defaults over the top:
+  a script that set ``player.gravity = 0.5`` gets ``0.5`` back. That is written into the
+  player's own data, so a script that stops halfway still leaves a way out. Put the player
+  somewhere solid before you release them - otherwise it is a fall from wherever they were
+  floating. :attr:`player.held <miney.Player.held>` says whether a hold is on.
+- :attr:`player.looking_at <miney.Player.looking_at>` and :attr:`player.wielding
+  <miney.Player.wielding>` - **the game can answer questions now, not only obey.** What
+  block is somebody pointing at, and what are they holding? Both were a raycast written
+  in Lua by hand; both are one word now, and together they are a whole first interactive
+  program.
+
+  .. code-block:: python
+
+      target = player.looking_at
+      if target and player.wielding == lt.nodes.names.default.torch:
+          lt.nodes.set(Node(target.x, target.y + 1, target.z,
+                            lt.nodes.names.default.torch))
+
+  ``looking_at`` gives back a :class:`~miney.node.Node`, so it says where as well as
+  what, and it goes straight into anything that takes a position. Open sky is ``None``.
+  The line runs ten blocks by default - ``player.look_range = 40`` makes it longer.
+- :attr:`lt.items <miney.Luanti.items>` - every name that can be in a hand, found with
+  TAB. ``lt.items.default.stick`` is ``'default:stick'``. Blocks had
+  :attr:`lt.nodes.names <miney.Nodes.names>` and tools had :attr:`lt.tool
+  <miney.Luanti.tool>`, but sticks, coal and apples had nothing at all - and
+  ``player.wielding`` can answer with any of the three, so this is the one list to
+  compare it against.
+- :attr:`player.keys <miney.Player.keys>` - which keys somebody is holding down, as a
+  dictionary of ``True`` and ``False``. A program that reacts to the game with nothing
+  but a ``while`` and an ``if``::
+
+      while True:
+          if player.keys["jump"]:
+              lt.chat.send_to_all(f"{player.name} jumped!")
+          time.sleep(0.5)
+- :attr:`player.velocity <miney.Player.velocity>` and :meth:`player.push()
+  <miney.Player.push>` - how fast somebody is moving, and a shove in any direction.
+  ``player.push(Vector(0, 20, 0))`` throws them into the air;
+  ``player.push(player.look_dir * 15)`` sends them wherever they are looking.
+- :attr:`player.storage <miney.Player.storage>` - :attr:`lt.storage
+  <miney.Luanti.storage>` for one person. A dictionary that stays with that player after
+  they log out and after the server restarts, so a script can remember where somebody set
+  their home or how far they got::
+
+      visits = int(player.storage.get("visits", "0")) + 1
+      player.storage["visits"] = str(visits)
+      lt.chat.send_to_player(player.name, f"Welcome back! Visit number {visits}.")
+
+  Your keys are the only ones you see and the only ones ``clear()`` removes - the game
+  keeps its own notes about a player in the same place, and nothing you write here can
+  disturb them.
+- Three more small ones on a player: :attr:`size <miney.Player.size>` makes them a giant
+  or tiny from one number (``player.size = 3``, and only the picture changes - they still
+  take up one player's worth of room), :meth:`respawn() <miney.Player.respawn>` sends them
+  back to where they would appear after dying, without hurting them, and
+  :attr:`armor_groups <miney.Player.armor_groups>` says what can hurt them and by how
+  much.
+- ``lt.particles`` - sparks, smoke and fireworks.
+  :meth:`lt.particles.spawn() <miney.Particles.spawn>` throws particles into the world
+  from one line, ``lt.particles.spawn(Point(10, 20, 30), color="#ffcc00")``, and gives
+  back a handle to stop it with. ``speed``, ``spread`` and ``gravity`` say how they fly,
+  ``time`` how long they keep coming and ``life`` how long each one lasts. The image
+  they are made of ships with Miney, so the same line looks the same in every game -
+  and ``time=0`` runs until :meth:`~miney.ParticleSpawner.stop` says otherwise, or
+  until your session ends.
+- ``lt.sound`` - a click, a chime, or music that plays until you stop it.
+  :meth:`lt.sound.play() <miney.Sound.play>` is one line,
+  ``lt.sound.play("miney_power_up_1")``, and gives back a handle with
+  :meth:`~miney.PlayingSound.stop` and :meth:`~miney.PlayingSound.fade_out`. ``point=``
+  puts the sound in the world so it fades with distance, ``player=`` decides who hears
+  it and ``follow=`` makes it travel with somebody. ``loop=True`` turns it into a
+  soundtrack - one that keeps playing until it is stopped, or until your session ends.
+
+  Miney's mod brings 47 sound effects along, so that line works in every game instead of
+  needing a name one of them happens to know: lasers, zaps, power-ups, beeps and chimes,
+  all called ``miney_`` something and all listed in ``lt.assets.sounds.miney``. They are
+  **Digital Audio** by `Kenney Vleugels <https://kenney.nl/assets/digital-audio>`_,
+  released under `CC0 <http://creativecommons.org/publicdomain/zero/1.0/>`_ - thank you,
+  Kenney.
+- ``lt.assets`` - pictures and sounds. :attr:`lt.assets.textures
+  <miney.Assets.textures>` and :attr:`lt.assets.sounds <miney.Assets.sounds>` make
+  everything the server's mods carry findable with TAB, the way ``lt.nodes.names`` does
+  for blocks: ``lt.assets.textures.default.dirt`` is ``'default_dirt.png'``,
+  ``lt.assets.sounds.default.dig_stone`` is ``'default_dig_stone'``.
+  :meth:`lt.assets.upload() <miney.Assets.upload>` sends one of your own the other way -
+  a file, raw bytes, a Pillow image, a matplotlib figure, or an Ogg sound - and gives
+  back a name usable anywhere a texture or sound name goes. It waits until the file has
+  really arrived on the client, so the next line can use it. ``player=`` sends it to one
+  player and forgets it again, ``keep=True`` keeps it across server restarts. Neither
+  Pillow nor matplotlib is needed to install Miney; they are recognised by the methods
+  they carry.
 - :meth:`~miney.Lua.run` no longer has a length limit worth thinking about. The old
   route carried less than 640 KB per request and the server dropped anything larger
   without a word, so long code was refused outright. 8 MB now crosses in a single server
@@ -254,6 +365,13 @@ section covers everything since then, 0.6.0 included.
   your connection alone, and that the sandbox has no ``_G``.
 
 **Fixed**
+
+- Looking a name up by square brackets works. ``lt.nodes.names["default:dirt"]``,
+  ``lt.nodes.names.default["dirt"]``, ``lt.tool[0]`` and every other indexed form raised
+  ``AttributeError`` from inside Miney, whichever way round you asked - the lookup read
+  something that does not exist. Names now also come back in the same order every time,
+  and ``len(lt.nodes.names.default)`` counts that mod's blocks rather than every block in
+  the game.
 
 - **Two scripts can drive one world at the same time.** Each ``miney.Luanti()`` already
   got a world of its own to work in - separate variables, separate callbacks, separate

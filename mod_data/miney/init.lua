@@ -34,7 +34,17 @@ end)()
 --   8  the file channel is the only way in. The formspec transport, the 'miney'
 --      privilege and the split-request assembly are gone, and with them the last
 --      reason for this mod to know anything about players or client addresses.
-local MOD_API = 8
+--   9  textures/miney_spark.png, the image every particle is made of unless a script
+--      says otherwise, and the particle spawners a session leaves behind are deleted
+--      when it goes
+--  10  miney_assets.sounds(), and the sounds a session leaves playing are stopped when
+--      it goes, the same way its particle spawners are. miney_assets.put() also takes
+--      .ogg files now, so a script can bring its own music
+--  11  sounds/miney_*.ogg, 47 CC0 sound effects, so that lt.sound.play() has something
+--      to play in every game instead of a name only one of them happens to know
+--  12  miney_sky in the sandbox: a player's sky held against a game that paints its
+--      own. Without it player.sky lasted under a second in VoxeLibre
+local MOD_API = 12
 
 -- Logger function for consistent logging
 local function log(level, message)
@@ -85,6 +95,7 @@ dofile(minetest.get_modpath(modname) .. "/player.lua")
 -- Reads minetest.get_mod_data_path(), which only answers while mods load.
 dofile(minetest.get_modpath(modname) .. "/assets.lua")
 dofile(minetest.get_modpath(modname) .. "/hud.lua")
+dofile(minetest.get_modpath(modname) .. "/sky.lua")
 -- Before callbacks.lua: it defines miney_reply, which is how an event leaves the mod.
 dofile(minetest.get_modpath(modname) .. "/channel.lua")
 local callbacks = dofile(minetest.get_modpath(modname) .. "/callbacks.lua")
@@ -254,6 +265,7 @@ local function execute_lua_code(code, session)
             smooth_move = smooth_move,
             miney_assets = miney_assets,
             miney_hud = miney_hud,
+            miney_sky = miney_sky,
         }
 
         -- A list of approved prefixes for global variables from other mods.
@@ -346,10 +358,42 @@ local function handle_fields(session, fields)
     return true
 end
 
+-- What a session can leave running in the world, and how to end it. Both are handles the
+-- engine hands out as numbers; miney/particles.py and miney/sound.py park them under a
+-- key of their own in this session's scratch table so that nothing has to be read back
+-- over the channel, and so that forget_session can find them again.
+local LEFTOVERS = {
+    {key = "miney_spawners", what = "particle spawner",
+     stop = function(id) minetest.delete_particlespawner(id) end},
+    {key = "miney_sounds", what = "sound",
+     stop = function(id) minetest.sound_stop(id) end},
+}
+
 -- Everything one session left behind, thrown away when it says goodbye or falls silent:
 -- a killed Python process must not leave a re-scheduling timer or a chat command
 -- running on the server for the rest of the day.
 local function forget_session(session)
+    -- A particle spawner or a sound outlives the code that made it, and an endless one
+    -- (time = 0, loop = true) outlives it forever. Timers are cleaned up the same way,
+    -- a few lines further down.
+    local scratch = player_scratch[session]
+    for _, kind in ipairs(LEFTOVERS) do
+        local handles = scratch and rawget(scratch, kind.key)
+        if type(handles) == "table" then
+            local stopped = 0
+            for _, id in pairs(handles) do
+                if type(id) == "number" then
+                    kind.stop(id)
+                    stopped = stopped + 1
+                end
+            end
+            if stopped > 0 then
+                log("action", "Stopped " .. stopped .. " " .. kind.what ..
+                    "(s) left by " .. session .. ".")
+            end
+        end
+    end
+
     player_scratch[session] = nil
     local cancelled = miney_tasks.stop_all(session)
     if cancelled > 0 then

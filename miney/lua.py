@@ -34,7 +34,7 @@ MAX_LUA_SOURCE = 16 * 1024 * 1024
 #:
 #: This is not the Miney version and does not move with a release. Raise it only
 #: together with ``MOD_API``, when the two halves stop understanding each other.
-REQUIRED_MOD_API = 8
+REQUIRED_MOD_API = 12
 
 #: How many commands may be in flight before Miney waits for them whether or not
 #: anything needs their answer.

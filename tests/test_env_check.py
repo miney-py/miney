@@ -1,4 +1,5 @@
 """Tests for miney.env.check."""
+import shutil
 from pathlib import Path
 
 
@@ -43,11 +44,11 @@ def _env(tmp_path: Path, *, world=True, mod=True, luanti=True) -> EnvPaths:
         write_world_mt(paths.world_dir(WORLD), DEFAULT_GAME)
     if mod:
         target = paths.world_dir(WORLD) / "worldmods" / "miney"
-        target.mkdir(parents=True)
-        source = check.manage.mod_source()
-        for item in source.iterdir():
-            if item.is_file():
-                (target / item.name).write_bytes(item.read_bytes())
+        target.parent.mkdir(parents=True)
+        # The whole tree, the way install_mod does it. Copying only the top-level files
+        # left the mod's textures/ behind, and the fingerprint step called that an
+        # out-of-date mod.
+        shutil.copytree(check.manage.mod_source(), target)
     return paths
 
 

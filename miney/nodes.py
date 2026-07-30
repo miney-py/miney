@@ -225,7 +225,7 @@ class Nodes:
             end return node
             """
         )
-        self._types = NameIterable(self, self._names_cache)
+        self._types = NameIterable(self._names_cache)
 
     @property
     def names(self) -> 'NameIterable':
@@ -491,40 +491,72 @@ class Nodes:
 
 
 class NameIterable:
-    """Node names, implemented as iterable for easy autocomplete in the interactive shell"""
-    def __init__(self, parent, nodes_types=None):
+    """
+    Node names, as attributes you can find with TAB instead of having to remember them.
 
-        self._parent = parent
+    ``lt.nodes.names.default.dirt`` is the string ``'default:dirt'``. The first level is
+    the mod a block comes from, the second is the block, and typing a dot and pressing
+    TAB in an interactive shell shows what there is. Being able to *find* the name is
+    the whole point - nobody guesses ``'default:stone_with_mese'``.
 
-        if nodes_types:
+    It is also a list, so ``len()``, ``for`` and ``[0]`` work, and a dictionary, so
+    ``lt.nodes.names["default:dirt"]`` and ``lt.nodes.names.default["dirt"]`` both give
+    the same string back.
 
-            # get type categories list
-            type_categories = {}
-            for ntype in nodes_types:
-                if ":" in ntype:
-                    type_categories[ntype.split(":")[0]] = ntype.split(":")[0]
-            for tc in dict.fromkeys(type_categories):
-                self.__setattr__(tc, NameIterable(parent))
+    You do not create this yourself. :attr:`lt.nodes.names <miney.Nodes.names>` is one,
+    :attr:`lt.tool <miney.Luanti.tool>` and :attr:`lt.items <miney.Luanti.items>` are
+    the same thing for tools and for everything else.
+    """
 
-            # values to categories
-            for ntype in nodes_types:
-                if ":" in ntype:
-                    self.__getattribute__(ntype.split(":")[0]).__setattr__(ntype.split(":")[1], ntype)
-                else:
-                    self.__setattr__(ntype, ntype)  # for 'air' and 'ignore'
+    def __init__(self, names=None):
+        """
+        :param names: Every full name, ``'mod:thing'``. Left out for a level that gets
+                      its names put in afterwards.
+        """
+        # Sorted, so that lt.nodes.names[0] is the same name on every run. Luanti hands
+        # them over out of a Lua table, which has no order worth relying on.
+        self._names = sorted(names or [])
+
+        categories: dict[str, list[str]] = {}
+        for name in self._names:
+            mod, colon, short = name.partition(":")
+            if not colon:
+                # 'air' and 'ignore' belong to no mod and sit at the top level.
+                setattr(self, name, name)
+                continue
+            categories.setdefault(mod, []).append(name)
+
+        for mod, mod_names in categories.items():
+            # Built empty and filled here rather than by another round of __init__:
+            # the names below still carry their colon, so letting the constructor sort
+            # them again would build a 'default' inside 'default' forever.
+            category = NameIterable()
+            category._names = mod_names
+            for name in mod_names:
+                setattr(category, name.partition(":")[2], name)
+            setattr(self, mod, category)
+
+    def __repr__(self):
+        return f"<Luanti names: {len(self._names)}>"
 
     def __iter__(self):
-        return iter(self._parent._names_cache)
+        return iter(self._names)
 
     def __getitem__(self, item_key):
-        if type(self._parent) is not type(self):  # if we don't have a category below
-            return self.__getattribute__(item_key)
-        if item_key in self._parent.node_types:
+        """
+        :param item_key: A full name, the short name below a mod, or a position.
+        :return: The name as a string, or the level below for a mod name.
+        :raises KeyError: If there is no such name.
+        :raises IndexError: If the position is past the end.
+        """
+        if isinstance(item_key, int):
+            return self._names[item_key]
+        if item_key in self._names:
             return item_key
-        else:
-            if type(item_key) == int:
-                return self._parent.node_types[item_key]
-            raise IndexError("unknown node type")
+        value = getattr(self, item_key, None) if isinstance(item_key, str) else None
+        if isinstance(value, (str, NameIterable)):
+            return value
+        raise KeyError(item_key)
 
     def __len__(self):
-        return len(self._parent._names_cache)
+        return len(self._names)

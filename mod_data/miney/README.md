@@ -24,6 +24,19 @@ of reach, because a file on your disk is not on theirs.
 - Delivers the events and chat commands a Python script registers.
 - Cleans up after a session that stops answering: its timers are cancelled and its chat
   commands unregistered, so a killed script leaves nothing behind.
+- Brings media along, so a script has something to show and something to play in any
+  game: `textures/miney_spark.png` and 47 sound effects in `sounds/`.
+- Holds the sky a script sets for one player against a game that paints its own. VoxeLibre
+  repaints every player about once a second; `sky.lua` hangs Miney's overlay at the end of
+  that game's own filter chain, for that one player and only for the parts that were set.
+
+## Bundled media
+
+- `sounds/` - **Digital Audio** by **Kenney Vleugels**
+  ([kenney.nl](https://kenney.nl/assets/digital-audio)), CC0. See `sounds/README.md` for
+  the credit in full and for what was changed from the original pack.
+- `textures/miney_spark.png` - the default particle, made for Miney and covered by the
+  mod's own licence.
 
 ## Settings
 

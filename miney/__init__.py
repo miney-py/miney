@@ -14,7 +14,10 @@ from .player import Player, PlayerIterable
 from .chat import Chat
 from .hud import Hud, HudElement
 from .nodes import Nodes
-from .storage import Storage
+from .particles import ParticleSpawner, Particles
+from .sky import Sky
+from .sound import PlayingSound, Sound
+from .storage import PlayerStorage, Storage
 from .lua import Lua
 from .inventory import Inventory
 from .exceptions import (
@@ -31,6 +34,7 @@ from .exceptions import (
     PlayerNotFoundError,
     PlayerOffline,
 )
+from .items import ItemIterable
 from .tool import ToolIterable
 from .helper import doc
 
@@ -47,6 +51,7 @@ __all__ = [
     "HudElement",
     "HudElementGone",
     "Inventory",
+    "ItemIterable",
     "Luanti",
     "LuantiConnectionError",
     "Lua",
@@ -55,12 +60,18 @@ __all__ = [
     "MineyRunError",
     "Node",
     "Nodes",
+    "ParticleSpawner",
+    "Particles",
     "NoValidPosition",
     "Player",
     "PlayerNotFoundError",
     "PlayerIterable",
     "PlayerOffline",
+    "PlayerStorage",
+    "PlayingSound",
     "Point",
+    "Sky",
+    "Sound",
     "Storage",
     "ToolIterable",
 ]

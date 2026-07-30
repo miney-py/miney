@@ -36,7 +36,7 @@ local pending = {}
 
 local kept_bytes = 0
 
-local ALLOWED_SUFFIX = {png = true, jpg = true, jpeg = true}
+local ALLOWED_SUFFIX = {png = true, jpg = true, jpeg = true, ogg = true}
 
 --- Refuse a name that must not become a file name.
 --
@@ -58,7 +58,7 @@ local function bad_name(name)
     end
     local suffix = string.match(name, "%.(%a+)$")
     if not suffix or not ALLOWED_SUFFIX[string.lower(suffix)] then
-        return "The name '" .. name .. "' has to end in .png or .jpg."
+        return "The name '" .. name .. "' has to end in .png, .jpg or .ogg."
     end
     return nil
 end
@@ -307,6 +307,44 @@ function miney_assets.textures()
         end
     end
 
+    return out
+end
+
+--- Every sound the server can play, grouped by the mod it belongs to.
+--
+-- Simpler than textures() in one way: only a mod's own sounds/ directory carries these.
+-- The engine scans the game's directory for textures/ alone (server.cpp, fillMediaCache)
+-- while sounds/ is collected per mod (server/mods.cpp, getModsMediaPaths), and a game
+-- like VoxeLibre is made of mods anyway.
+--
+-- What comes back are sound *group* names, which is what sound_play takes: no ".ogg", and
+-- the numbered variants of one sound ("x.0.ogg", "x.1.ogg", ...) collapse into the single
+-- name that plays a random one of them.
+--
+-- @return (table) - modname -> {sound group names}
+function miney_assets.sounds()
+    local out = {}
+    for _, mod in ipairs(minetest.get_modnames()) do
+        local dir = minetest.get_modpath(mod) .. "/sounds"
+        if minetest.path_exists(dir) then
+            local files = {}
+            collect(dir, files)
+            local seen, groups = {}, {}
+            for _, filename in ipairs(files) do
+                local group = string.match(filename, "^(.*)%.ogg$")
+                if group then
+                    group = string.match(group, "^(.*)%.%d$") or group
+                    if not seen[group] then
+                        seen[group] = true
+                        groups[#groups + 1] = group
+                    end
+                end
+            end
+            if #groups > 0 then
+                out[mod] = groups
+            end
+        end
+    end
     return out
 end
 

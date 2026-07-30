@@ -33,3 +33,5 @@ like :attr:`~miney.Player.fly` and :attr:`~miney.Player.creative` set the right 
 
    hud
    inventory
+   player_storage
+   sky

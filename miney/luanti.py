@@ -14,8 +14,11 @@ from .events import Event
 from .lua import Lua
 from .callback import Callback
 from .nodes import Nodes
+from .particles import Particles
 from .player import PlayerIterable
+from .sound import Sound
 from .storage import Storage
+from .items import ItemIterable
 from .tool import ToolIterable
 from .env import manage
 from .env.paths import EnvPaths, find_env, syncing_service
@@ -356,6 +359,8 @@ class Luanti:
         self._nodes: Nodes = Nodes(self)
         self._storage: Storage = Storage(self)
         self._assets: Assets = Assets(self)
+        self._particles: Particles = Particles(self)
+        self._sound: Sound = Sound(self)
 
         self._tools_cache = self.lua.run(
             """
@@ -365,7 +370,20 @@ class Luanti:
             end return node
             """
         )
-        self._tool = ToolIterable(self, self._tools_cache)
+        self._tool = ToolIterable(self._tools_cache)
+
+        # registered_items is every node, tool and craftitem in one table - the set
+        # player.wielding can answer with, and the only list that covers it. The empty
+        # name is the definition of a bare hand and has no mod in front of it, so it
+        # would land at the top level next to 'air' as an attribute nobody can type.
+        self._items = ItemIterable(self.lua.run(
+            """
+            local items = {}
+            for name, def in pairs(minetest.registered_items) do
+                if name ~= "" then table.insert(items, name) end
+            end return items
+            """
+        ))
 
         # Registered once the connection really exists, so a failed connect leaves
         # nothing behind to run at exit.
@@ -454,6 +472,38 @@ class Luanti:
         :return: :class:`~miney.assets.Assets`
         """
         return self._assets
+
+    @property
+    def particles(self) -> 'Particles':
+        """
+        Sparks, smoke and fireworks.
+
+        See :class:`~miney.particles.Particles` for everything you can throw around.
+
+        :Example:
+
+            >>> lt.particles.spawn(Point(10, 20, 30), color="#ffcc00", amount=300)
+            <Luanti ParticleSpawner "spawner-1">
+
+        :return: :class:`~miney.particles.Particles`
+        """
+        return self._particles
+
+    @property
+    def sound(self) -> 'Sound':
+        """
+        A click, a chime, or music that plays until you stop it.
+
+        See :class:`~miney.sound.Sound` for everything you can make noise with.
+
+        :Example:
+
+            >>> lt.sound.play(lt.assets.sounds.miney.power_up_1)
+            <Luanti PlayingSound "sound-1">
+
+        :return: :class:`~miney.sound.Sound`
+        """
+        return self._sound
 
     @property
     def storage(self) -> 'Storage':
@@ -614,6 +664,27 @@ class Luanti:
         :return: An iterable object for tool types.
         """
         return self._tool
+
+    @property
+    def items(self) -> 'ItemIterable':
+        """
+        Every name that can be in a player's hand, with TAB completion.
+
+        Blocks, tools and everything else - sticks, coal, apples - in one list, which is
+        what :attr:`player.wielding <miney.Player.wielding>` answers with:
+
+            >>> lt.items.default.stick
+            'default:stick'
+
+            >>> if player.wielding == lt.items.default.torch:
+            ...     lt.chat.send_to_all("Mind the fire.")
+
+        :attr:`lt.nodes.names <miney.Nodes.names>` and :attr:`tool` are the same thing
+        for blocks alone and tools alone. See :class:`~miney.ItemIterable`.
+
+        :return: An iterable object for every item name.
+        """
+        return self._items
 
     def disconnect(self):
         """
