@@ -1068,8 +1068,8 @@ class Nodes:
         :raises TypeError: If ``point`` is not a :class:`~miney.Point`.
         :raises ValueError: If the height is outside 4 to 30, or this server has no
             block of the name given.
-        :raises miney.LuaError: If the game's blocks could not be guessed and none were
-            given.
+        :raises miney.exceptions.LuaError: If the game's blocks could not be guessed
+            and none were given.
         """
         if not isinstance(point, Point):
             raise TypeError(

@@ -1,4 +1,5 @@
 from miney import Point
+from collections.abc import MutableMapping
 from typing import Union, TYPE_CHECKING
 from math import floor
 from .inventory import Inventory
@@ -36,7 +37,7 @@ class Node(Point):
         return self._inventory
 
     @property
-    def meta(self) -> _MetaStore:
+    def meta(self) -> MutableMapping[str, str]:
         """
         What Luanti stored on this block, used like a dictionary.
 
