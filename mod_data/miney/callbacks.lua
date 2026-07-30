@@ -506,7 +506,9 @@ local function handle_receive_fields(session, fields)
         end
         -- Everything is checked before anything is stored, so a rejected request leaves
         -- no half-finished subscription behind.
-        local area = nil
+        -- Per event, not one for the whole request: only some events want an area, and a
+        -- request naming two of them would otherwise hand the same one to both.
+        local areas = {}
         for _, ev in ipairs(events) do
             if not EVENTS[ev] then
                 send_cb_error(session, ("Unknown event '%s'. Available: %s."):format(
@@ -519,17 +521,17 @@ local function handle_receive_fields(session, fields)
                 return true
             end
             if EVENTS[ev].needs_area then
-                local area_why
-                area, area_why = valid_area(req.area)
+                local area, area_why = valid_area(req.area)
                 if not area then
                     send_cb_error(session, area_why, client_id, "bad_request")
                     return true
                 end
+                areas[ev] = area
             end
         end
         for _, ev in ipairs(events) do
             rec.subs[ev] = rec.subs[ev] or {}
-            rec.subs[ev][handler_id] = {filter = req.filter, area = area,
+            rec.subs[ev][handler_id] = {filter = req.filter, area = areas[ev],
                                         since = 0, inside = {}}
         end
         log("action", ("register: client_id=%s, handler=%s, events_count=%d, filtered=%s"):format(

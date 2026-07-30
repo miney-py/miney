@@ -51,6 +51,13 @@ def _load_areas(positions: Iterable[tuple[int, int, int]]) -> str:
 #: larger into slabs instead of refusing it, so this number never reaches the user.
 _MAX_FILL_VOLUME = 4_000_000
 
+#: Biggest box :meth:`Nodes.find_in` will search. The search loads the whole box first,
+#: and ``load_area`` emerges every mapblock in it one blocking call at a time, on the
+#: thread that runs the game - so a box the size of a continent is a server standing
+#: still rather than a slow answer. Unlike :meth:`Nodes.fill` there is nothing to split
+#: into slabs (a search is one question), so this one reaches the user as a ValueError.
+_MAX_SEARCH_VOLUME = 4_000_000
+
 _FILL_LUA = """
 local p1 = {{x = {x1}, y = {y1}, z = {z1}}}
 local p2 = {{x = {x2}, y = {y2}, z = {z2}}}
@@ -326,7 +333,7 @@ _GROW_TREE_LUA = """
 local p = {pos}
 minetest.load_area(p)
 local trunk, leaves, fruit = {trunk}, {leaves}, {fruit}
-if trunk == nil or leaves == nil then
+if trunk == nil or leaves == nil or fruit == nil then
     local guesses = {{
         {{"default:tree", "default:leaves", "default:apple"}},
         {{"mcl_core:tree", "mcl_core:leaves", "mcl_core:apple"}},
@@ -358,7 +365,9 @@ local treedef = {{
     trunk_type = "single",
     thin_branches = true,
 }}
-if fruit and minetest.registered_items[fruit] then
+-- spawn_tree writes the fruit into the map, so a game whose apple is only an item and
+-- not a block gets a tree without one rather than a tree full of unknown blocks.
+if fruit and minetest.registered_nodes[fruit] then
     treedef.fruit = fruit
     treedef.fruit_chance = 10
 end
@@ -562,8 +571,11 @@ class Nodes:
         :param node: A single :class:`~miney.node.Node`, or a collection of them.
         :param player: Who places it - a name or a :class:`~miney.player.Player`.
             Leave it out and nobody does, which is fine for anything that does not turn.
-        :return: How many of them the game actually placed. Anything less means the rest
-            was refused - a protected area, or a block that cannot be there at all.
+        :return: For how many of them the game accepted the call. Do not read it as how
+            many blocks are standing there: Luanti answers the same whether the block
+            was really placed or a protected area quietly refused it, so a chest in
+            somebody else's claim is counted too. Read the position back with
+            :meth:`get` where you have to be sure.
         :raises TypeError: If it is not a Node or a collection of Nodes, or the player is
             neither a name nor a :class:`~miney.player.Player`.
         :raises miney.exceptions.LuaError: If that player is not on the server.
@@ -802,7 +814,11 @@ class Nodes:
         :raises TypeError: If it is not a string or a collection of strings.
         :raises ValueError: If this server has no block of that name.
         """
-        names = [name] if isinstance(name, str) else list(name)
+        # A number is neither a name nor a list of them, and list(42) would raise Python's
+        # own "'int' object is not iterable" before the message below ever runs - which is
+        # exactly the case that message was written for.
+        names = list(name) if not isinstance(name, str) and isinstance(name, Iterable) \
+            else [name]
         for wanted in names:
             if not isinstance(wanted, str):
                 raise TypeError(
@@ -908,7 +924,9 @@ class Nodes:
         back with the few blocks that matched and not with the hillside. The box is
         still walked block by block on the server though, so ask for the area you mean
         rather than the whole world - and remember every match is in the answer, so a
-        search for stone in a big box is a very long list.
+        search for stone in a big box is a very long list. A box of more than four
+        million blocks (200 x 100 x 200) is refused rather than searched: the server has
+        to load all of it first, and it stands still while it does.
 
         ``under_air=True`` keeps only the blocks with air directly above them, which is
         the surface of the terrain - what you want for putting something *on* the
@@ -944,7 +962,8 @@ class Nodes:
         :param under_air: Only blocks with air directly above them.
         :return: Every matching :class:`~miney.node.Node`, or an empty list.
         :raises TypeError: If the corners are not points, or the name is not a string.
-        :raises ValueError: If this server has no block of that name.
+        :raises ValueError: If this server has no block of that name, or the box holds
+            more than four million blocks.
         """
         for label, corner in (("start", start), ("end", end)):
             if not isinstance(corner, Point):
@@ -952,6 +971,17 @@ class Nodes:
                     f"'{label}' must be a Point, got {type(corner).__name__}: "
                     f"lt.nodes.find_in(Point(0, 0, 0), Point(50, 30, 50), 'group:tree')"
                 )
+
+        volume = 1
+        for a, b in ((start.x, end.x), (start.y, end.y), (start.z, end.z)):
+            volume *= abs(floor(b) - floor(a)) + 1
+        if volume > _MAX_SEARCH_VOLUME:
+            raise ValueError(
+                f"That box is {volume:,} blocks, and searching more than "
+                f"{_MAX_SEARCH_VOLUME:,} at once would stop the server while it loads "
+                f"them. Search a smaller box, or several of them one after the other - "
+                f"{_MAX_SEARCH_VOLUME:,} blocks is a box of 200 x 100 x 200."
+            )
 
         found = self.lt.lua.run(
             _FIND_IN_LUA.format(
@@ -981,14 +1011,16 @@ class Nodes:
             Is it dark where the player stands?
 
             >>> player = lt.players[0]
-            >>> if lt.nodes.light_at(player.position) < 8:
+            >>> light = lt.nodes.light_at(player.position)
+            >>> if light is not None and light < 8:
             ...     lt.chat.send_to_player(player.name, "It is dark here. Bring a torch.")
 
             Light a dark corner:
 
             >>> from miney import Node, Point
             >>> point = Point(10, 20, 30)
-            >>> if lt.nodes.light_at(point) < 8:
+            >>> light = lt.nodes.light_at(point)
+            >>> if light is not None and light < 8:
             ...     lt.nodes.place(Node(point.x, point.y, point.z, name="mcl_torch:torch"))
 
         .. important::
@@ -1082,9 +1114,16 @@ class Nodes:
                 f"'height' is how many blocks tall the trunk is and has to be a whole "
                 f"number between 4 and 30, got {height!r}."
             )
-        for named in (trunk, leaves):
-            if named is not None:
-                self._wanted(named)
+        for label, named in (("trunk", trunk), ("leaves", leaves), ("fruit", fruit)):
+            if named is None:
+                continue
+            if isinstance(named, str) and named.startswith("group:"):
+                raise ValueError(
+                    f"A tree is built from one kind of block, so '{label}' cannot be a "
+                    f"group like {named!r}. lt.nodes.names autocompletes the names: "
+                    f"lt.nodes.grow_tree(point, {label}=lt.nodes.names.mcl_core.tree)"
+                )
+            self._wanted(named)
 
         self.lt.lua.run(
             _GROW_TREE_LUA.format(

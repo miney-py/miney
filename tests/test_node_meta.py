@@ -46,8 +46,18 @@ def test_meta_reads_through_get_meta_at_the_nodes_position(sign):
 
     code = sign._luanti.lua.calls[0]
     # dumps() writes a dict with identifier keys as {x=10, y=20, z=30}.
-    assert "minetest.get_meta({x=10, y=20, z=30})" in code
+    assert "local p = {x=10, y=20, z=30}" in code
+    assert "minetest.get_meta(p)" in code
     assert "to_table" in code
+
+
+def test_meta_loads_the_mapblock_before_it_reads_or_writes(sign):
+    # get_meta answers nil where the server does not hold the block, and a nil
+    # MetaDataRef writes nowhere and reads back empty - the silent failure load_area
+    # exists for.
+    sign.meta["text"] = "This way"
+
+    assert "minetest.load_area(p)" in sign._luanti.lua.calls[0]
 
 
 def test_meta_writes_the_games_own_key_without_a_prefix(sign):

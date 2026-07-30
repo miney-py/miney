@@ -77,6 +77,27 @@ def test_grow_tree_refuses_a_block_this_server_does_not_have(nodes):
         nodes.grow_tree(Point(0, 10, 0), trunk="nosuch:tree")
 
 
+def test_grow_tree_checks_the_fruit_too(nodes):
+    # It used to go straight to Lua, where an unknown name simply grew a tree without
+    # fruit and said nothing.
+    with pytest.raises(ValueError, match="no block called"):
+        nodes.grow_tree(Point(0, 10, 0), fruit="mcl_core:aple")
+
+
+def test_grow_tree_refuses_a_group_because_a_tree_is_one_kind_of_wood(nodes):
+    with pytest.raises(ValueError, match="cannot be a group"):
+        nodes.grow_tree(Point(0, 10, 0), trunk="group:tree")
+
+
+def test_grow_tree_still_guesses_the_fruit_when_only_the_wood_was_named(nodes):
+    # The guess block used to be entered only where trunk or leaves was missing, so
+    # naming both and leaving the fruit out skipped the fruit guess with them.
+    nodes.grow_tree(Point(0, 10, 0), trunk="mcl_core:tree", leaves="mcl_core:leaves")
+
+    assert "if trunk == nil or leaves == nil or fruit == nil then" \
+        in nodes.lt.lua.calls[0]
+
+
 def test_grow_tree_default_height_reproduces_the_documented_apple_tree(nodes):
     nodes.grow_tree(Point(0, 10, 0))
 

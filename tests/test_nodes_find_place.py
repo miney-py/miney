@@ -92,8 +92,10 @@ def test_place_takes_a_player_object_by_name(nodes):
     assert 'get_player_by_name("Steve")' in nodes.lt.lua.calls[0]
 
 
-def test_place_counts_what_the_server_really_placed(nodes):
-    nodes.lt.lua.answer = 2  # the third was protected
+def test_place_hands_back_the_count_the_server_answered(nodes):
+    # What the count means is weaker than it looks - place_node answers true for a
+    # protected refusal too - so this only checks that the number travels.
+    nodes.lt.lua.answer = 2
     placed = nodes.place([Node(1, 2, 3, name="mcl_core:stone"),
                           Node(1, 3, 3, name="mcl_core:stone"),
                           Node(1, 4, 3, name="mcl_core:stone")])
@@ -251,3 +253,27 @@ def test_find_in_survives_an_empty_answer(nodes):
 def test_find_in_refuses_corners_that_are_not_points(nodes):
     with pytest.raises(TypeError, match="'end' must be a Point"):
         nodes.find_in(Point(0, 0, 0), (1, 1, 1), "mcl_core:dirt")
+
+
+def test_find_in_refuses_a_box_too_big_to_load(nodes):
+    # load_area emerges every mapblock in the box one blocking call at a time, so a box
+    # like this is a server standing still rather than a slow answer.
+    with pytest.raises(ValueError, match="4,000,000"):
+        nodes.find_in(Point(-1000, 0, -1000), Point(1000, 100, 1000), "group:tree")
+
+    assert nodes.lt.lua.calls == []
+
+
+def test_find_in_searches_a_box_right_up_to_the_limit(nodes):
+    nodes.lt.lua.answer = []
+    # 200 x 100 x 200 blocks, inclusive of both corners.
+    nodes.find_in(Point(0, 0, 0), Point(199, 99, 199), "mcl_core:stone")
+
+    assert len(nodes.lt.lua.calls) == 1
+
+
+def test_find_refuses_a_name_that_is_not_even_a_list_of_names(nodes):
+    # list(42) used to raise Python's own "'int' object is not iterable" before the
+    # message written for exactly this case could run.
+    with pytest.raises(TypeError, match="must be a block name or a list of them"):
+        nodes.find(42, near=Point(0, 0, 0))

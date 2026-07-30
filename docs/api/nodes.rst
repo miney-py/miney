@@ -60,12 +60,17 @@ straight into the next call.
 
 .. code-block:: python
 
-   if lt.nodes.light_at(player.position) < 8:
+   light = lt.nodes.light_at(player.position)
+
+   if light is not None and light < 8:
        lt.chat.send_to_player(player.name, "Dark enough for monsters. Bring a torch.")
 
 :meth:`~miney.Nodes.light_at` answers with a number from 0 to 15, counting sunlight and
 torches together, so it changes as the sun moves. Measure the *air* above the ground —
 the light inside a solid block is always 0.
+
+The answer is ``None`` where the server does not have that part of the world in memory,
+which is why the ``is not None`` is there: comparing ``None`` with a number raises.
 
 .. rubric:: A tree from one line
 

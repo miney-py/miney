@@ -78,9 +78,13 @@ class Node(Point):
             )
         if self._meta is None:
             position = self._luanti.lua.dumps({"x": self.x, "y": self.y, "z": self.z})
+            # get_meta answers nil for a block the server does not hold in memory, and a
+            # nil MetaDataRef writes nowhere and reads back empty - without a word. The
+            # mapblock is loaded first for the same reason nodes.set() does it.
             self._meta = _MetaStore(
                 self._luanti,
-                f"minetest.get_meta({position})",
+                f"(function() local p = {position} "
+                f"minetest.load_area(p) return minetest.get_meta(p) end)()",
                 f"Luanti Node meta ({self.x}, {self.y}, {self.z})",
                 "lt.nodes.get(point).meta",
             )

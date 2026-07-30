@@ -361,10 +361,15 @@ can be asked about.
     fixes orientation for free
   * Two methods, not a flag on `set()`. Digging has no `set()` to hang off in the first
     place, and one of the two would have ended up somewhere else than the other
-  * Both return **how many the server really did**, and that is the whole reason they
-    wait for an answer where `set()` does not: `place_node` and `dig_node` answer `false`
-    for a protected area, and dropping that on the floor would be the same silent
-    failure this entry is about. `set()` stays the fast path that sends and forgets
+  * `dig()` returns **how many the server really dug**: `dig_node` propagates what
+    `on_dig` answered (`s_node.cpp:116-141`), so a protected block is a `false` and
+    dropping that on the floor would be the same silent failure this entry is about.
+    `set()` stays the fast path that sends and forgets
+  * `place()`'s count is weaker and its docstring now says so. `place_node` returns
+    `item_OnPlace` (`l_env.cpp:355-393`), and that answers `false` only where the item
+    has no `on_place` at all - the protection refusal happens *inside*
+    `core.item_place_node`, which returns the stack unchanged and reads as success.
+    A count of 1 therefore means "the game took the call", not "the block is there"
   * Both `load_area` first. `l_env.cpp` returns `false` outright where the map is not in
     memory - *"Don't attempt to load non-loaded area as of now"* - so without it,
     building away from a player is a hundred refusals and no blocks
